@@ -159,7 +159,7 @@
         <span><i style="background:var(--border-strong)"></i>未启用 / 未命中</span>
       </div>
       <div id="outcome"></div>
-      <div id="trace"><p class="empty">还没跑。点上面任意一个场景。</p></div>
+      <div id="trace"><p class="empty">还没跑。点上面任意一个场景。（手动提问的结果显示在「手动探索」区里）</p></div>
       <div id="answerBox"></div>
     </div>
   </details>
@@ -179,6 +179,7 @@
             <button class="primary" id="ask">提问</button>
             <button id="bump">语料改版</button>
             <button id="reset">清空缓存</button>
+            <span class="mono" id="askStatus" style="color:var(--muted)"></span>
           </div>
         </div>
         <div>
@@ -198,6 +199,8 @@
           </select>
         </div>
       </div>
+
+      <div id="manualOut" style="margin-top:1.2rem"></div>
 
       <div class="cols" style="margin-top:1.4rem">
         <div>
@@ -261,6 +264,7 @@ const EXPERIMENTS = [
 
 let DEF = {};
 let cfg = {};
+let GEN = null;   // 生成端 —— 决定要不要显示等待提示、要不要拦下实验卡
 let SCEN = [];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
@@ -362,7 +366,7 @@ function pill(v) {
 }
 
 function renderResult(r, sc) {
-  const names = { reuse:"直接复用缓存", tune:"微调后复用", regenerate:"重新生成" };
+  const names = DECISION_NAMES;
   if (sc) {
     const got = r.decision === "regenerate" ? "regenerate" : "reuse";
     const ok = got === sc.expect;
@@ -372,7 +376,12 @@ function renderResult(r, sc) {
   } else {
     $("outcome").innerHTML = `<div class="outcome">判定：<b>${names[r.decision]}</b>${r.exitedAt ? `　（第 ${r.exitedAt} 道闸拦下）` : ""}${r.entryId ? `　命中条目 #${r.entryId}` : ""}</div>`;
   }
-  $("trace").innerHTML = r.trace.map(t => `
+  $("trace").innerHTML = traceHtml(r);
+  $("answerBox").innerHTML = answerHtml(r);
+}
+
+function traceHtml(r) {
+  return r.trace.map(t => `
     <div class="gate ${t.verdict === "exit" ? "g-exit" : t.verdict === "would-exit" ? "g-would" : ""}">
       <div class="n">${["","①","②","③","④","⑤","⑥"][t.gate]}</div>
       <div>
@@ -383,8 +392,13 @@ function renderResult(r, sc) {
       </div>
       <div>${pill(t.verdict)}</div>
     </div>`).join("");
-  $("answerBox").innerHTML = `<label class="fld">返回给学生的答案</label><div class="answer">${esc(r.answer)}</div>`;
 }
+
+function answerHtml(r) {
+  return `<label class="fld">返回给学生的答案</label><div class="answer">${esc(r.answer)}</div>`;
+}
+
+const DECISION_NAMES = { reuse:"直接复用缓存", tune:"微调后复用", regenerate:"重新生成" };
 
 async function runScenario(sc) {
   // 播种 → 改版 → 探测 全部在服务端一次做完，跑在场景自己的缓存上。
@@ -406,27 +420,64 @@ function renderToggles() {
   }
 }
 
+// 上一次画出来的内容。整表无条件重绘会让页面每次提问都闪一下，
+// 看起来像刷新 —— 内容没变就别动 DOM。
+const painted = { cache: null, docs: null };
+
 function renderState(s) {
+  const docsKey = JSON.stringify(s.docs);
+  if (docsKey !== painted.docs) {
+    painted.docs = docsKey;
+    paintDocs(s);
+  }
+  const cacheKey = JSON.stringify(s.cache.slice(-25));
+  if (cacheKey !== painted.cache) {
+    painted.cache = cacheKey;
+    paintCache(s);
+  }
+  const c = s.counters;
+  $("counters").textContent = `提问 ${c.ask} · 精确命中 ${c.exact} · 直接复用 ${c.reuse} · 微调 ${c.tune} · 重生成 ${c.regen} · 驱逐 ${c.evict}`;
+}
+
+function paintCache(s) {
   $("cache").innerHTML = s.cache.length
     ? s.cache.slice(-25).reverse().map(e => `<tr><td class="mono">${e.id}</td><td class="mono">${esc(e.scope)}</td><td class="mono">${esc(e.by)}</td><td>${esc(e.prompt)}</td></tr>`).join("")
     : `<tr><td colspan="4" class="empty">空</td></tr>`;
+}
+
+function paintDocs(s) {
   $("docs").innerHTML = s.docs.map(d =>
     `<tr><td class="mono">${d.id}</td><td class="mono">${esc(d.unit)}</td><td>${esc(d.title)}</td><td class="mono">${d.version > 1 ? `<b style="color:var(--bad)">v${d.version}</b>` : `v${d.version}`}</td></tr>`).join("");
-  const c = s.counters;
-  $("counters").textContent = `提问 ${c.ask} · 精确命中 ${c.exact} · 直接复用 ${c.reuse} · 微调 ${c.tune} · 重生成 ${c.regen} · 驱逐 ${c.evict}`;
 }
 
 async function boot() {
   const s = await (await fetch("/api/state")).json();
   DEF = s.defaults; cfg = { ...s.defaults }; SCEN = s.scenarios;
 
+  GEN = s.generator ?? { kind: "stub", note: "", approxMsPerCall: 0 };
+
   const stub = s.mode === "stub";
+  // 生成端和编码器是两件事，都得写出来 —— 先前页面只说编码器，
+  // 于是 GEN 还是 stub 时看不出「答案不是真生成的」。
+  const genLine = GEN.kind === "stub"
+    ? "　生成：stub（拼接片段，非真生成 —— ⑥ 的支撑度会偏高）"
+    : `　生成：${GEN.kind}（真生成，未命中时每次约 ${(GEN.approxMsPerCall / 1000).toFixed(0)} 秒）`;
   $("banner").className = "banner" + (stub ? " warn" : "");
-  $("banner").textContent = stub
+  $("banner").textContent = (stub
     ? "stub 模式 —— 玩具相似度（字符 Jaccard），分数没有统计意义，只用来跑通控制流。要看真数字：npm start"
-    : `模型：${s.note}${s.rerankAvailable ? "" : "　（重排器未加载，④ 会退化为纯余弦）"}`;
+    : `模型：${s.note}${s.rerankAvailable ? "" : "　（重排器未加载，④ 会退化为纯余弦）"}`) + genLine;
 
   renderExps();
+  if (GEN.kind !== "stub") {
+    // 一张卡 = 两遍完整场景集 ≈ 832 次生成。真生成下要一个多小时，
+    // 而且会一直占着额度 —— 与其让人误点，不如直接禁掉并说明。
+    $("runAll").disabled = true;
+    $("allStatus").textContent = `生成端是 ${GEN.kind}，对照实验已禁用（一张卡约 832 次生成，一个多小时）。手动提问和单条场景回放不受影响。`;
+    for (const e of EXPERIMENTS) {
+      const btn = $(`exp-${e.key}`).querySelector("[data-run]");
+      if (btn) { btn.disabled = true; btn.title = "真生成下跑不完，改用 GEN=stub"; }
+    }
+  }
   for (const e of EXPERIMENTS) {
     const h = $(`exp-${e.key}`).querySelector("[data-hint]");
     if (e.needsRerank && !s.rerankAvailable) h.textContent = "⚠ 当前没有可用的重排器，这个实验两边会跑出一样的结果。要 npm start（真模型）才有意义。";
@@ -492,9 +543,55 @@ async function boot() {
   });
 }
 
+/**
+ * 手动提问。
+ *
+ * 结果渲染在**手动区自己的面板里**，不再写到上面「单条场景细看」那块 ——
+ * 先前按钮在页面底部、结果出现在屏幕外的上方，加上 renderState 整体重绘三张表，
+ * 看起来就像整页刷新了一次，实际上什么反馈都没给到。
+ *
+ * 真生成（GEN=claude-cli）一次要 8~18 秒，所以等待期间必须有东西在动。
+ */
 async function ask() {
-  const r = await post("/api/ask", { text: $("q").value, user: $("u").value, unit: $("c").value, config: cfg });
-  renderResult(r, null); renderState(r.state);
+  const btn = $("ask");
+  const out = $("manualOut");
+  const status = $("askStatus");
+  if (btn.disabled) return;
+
+  const started = Date.now();
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "问着…";
+  const slow = GEN && GEN.kind !== "stub";
+  const tick = setInterval(() => {
+    status.textContent = `${((Date.now() - started) / 1000).toFixed(1)}s${slow ? "　（真生成，未命中时约 8~18 秒）" : ""}`;
+  }, 100);
+  out.innerHTML = `<p class="empty">${slow ? "未命中的话要调一次 LLM，请稍候…" : "跑着…"}</p>`;
+
+  try {
+    const r = await post("/api/ask", { text: $("q").value, user: $("u").value, unit: $("c").value, config: cfg });
+    const secs = ((Date.now() - started) / 1000).toFixed(1);
+    // 命中缓存时不调 LLM —— 这个耗时差本身就是缓存在省的东西，值得显式写出来
+    const hit = r.decision !== "regenerate";
+    out.innerHTML = `
+      <div class="outcome">判定：<b>${DECISION_NAMES[r.decision]}</b>${r.exitedAt ? `　（第 ${r.exitedAt} 道闸拦下）` : ""}${r.entryId ? `　条目 #${esc(String(r.entryId))}` : ""}　<span class="mono" style="color:var(--muted)">${secs}s${slow ? (hit ? "　· 命中，没调 LLM" : "　· 未命中，调了一次 LLM") : ""}</span></div>
+      <div class="legend" style="margin:.6rem 0">
+        <span><i style="background:var(--accent)"></i>放行 / 命中</span>
+        <span><i style="background:var(--bad)"></i>在这里拦下</span>
+        <span><i style="background:var(--warn)"></i>本会拦下，但闸关着</span>
+        <span><i style="background:var(--border-strong)"></i>未启用 / 未命中</span>
+      </div>
+      ${traceHtml(r)}
+      ${answerHtml(r)}`;
+    renderState(r.state);
+  } catch (e) {
+    out.innerHTML = `<div class="outcome wrong">请求失败：${esc(String(e && e.message ? e.message : e))}</div>`;
+  } finally {
+    clearInterval(tick);
+    status.textContent = "";
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 }
 
 boot();
