@@ -40,7 +40,7 @@ MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm s
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `CORPUS_LANG` | `zh` | `zh` / `en`。同一套场景，两种语言各一份 |
+| `CORPUS_LANG` | `zh` | `zh` / `en`。**同一套 26 条场景，key 与顺序逐条对齐**，两种语言各一份 |
 
 ### ③ 存储
 
