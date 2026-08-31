@@ -55,7 +55,17 @@ export interface ComposeChunk {
  * 用的是 SDK 的 `ProbePair`：`checkReranker` 要的就是这个形状，
  * 验证台不该为同一件事再造一套（先前那套 spread 判据比它弱，见 Server.ts）。
  */
-export type RerankProbe = ProbePair;
+export interface RerankProbe extends ProbePair {
+	/**
+	 * `b` 那一侧的答案该依据哪篇文档。
+	 *
+	 * **`target: "answer"` 的自检要拿它的答案当 candidate。** 探针必须跟着形态走，
+	 * 不只跟着语料语言走：④ 比问↔答时，拿问↔问探针算出来的 margin 是另一个尺度上的数，
+	 * 看着正常、算得出来，和 ④ 实际用的分数没有关系 —— 那正是「标定与实现同算子」
+	 * 这条规矩在 ④ 上的同一个要求。
+	 */
+	readonly bDoc: string;
+}
 
 /** 一门课的完整语料包。中英文各一份，结构相同以便直接比较。 */
 export interface CourseCorpus {

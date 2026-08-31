@@ -67,6 +67,43 @@ test("④ 精排：分数低于闸值就在这里退出，且 detail 带上标�
 	assert.match(found.trace.find(t => t.gate === 4)?.detail ?? "", /标定于/u);
 });
 
+test("④ target: \"answer\" 时打分的是缓存的答案，不是缓存的问题", async () => {
+	// 表按**答案**文本建键。实现要是还在传 matchText，这张表就查不到、落到 fallback 1 而过闸
+	const byAnswer = { rerank: { 缓存的答案: 0.2 }, rerankFloor: 0.5, recallFloor: 0.1 };
+	const answerForm = harness({ ...byAnswer, rerankTarget: "answer" });
+	await answerForm.cache.resolve(P, async () => ({ kind: "answer", answer: "缓存的答案", sourceIds: ["n1"] }));
+	const blocked = await answerForm.cache.lookup({ matchText: "另一句话", retrievalText: "另一句话", context: {} });
+	assert.equal(blocked.exitedAt, 4, "0.2 < 0.5，该在 ④ 退出 —— 说明 candidate 用的是答案文本");
+	assert.match(blocked.trace.find(t => t.gate === 4)?.detail ?? "", /问↔答尺度/u);
+
+	// 同一张表在问↔问形态下查不到（键是答案文本），所以不该退出 —— 两个形态确实在比不同的东西
+	const questionForm = harness({ ...byAnswer, rerankTarget: "question" });
+	await questionForm.cache.resolve(P, async () => ({ kind: "answer", answer: "缓存的答案", sourceIds: ["n1"] }));
+	const passed = await questionForm.cache.lookup({ matchText: "另一句话", retrievalText: "另一句话", context: {} });
+	assert.notEqual(passed.exitedAt, 4);
+	assert.match(passed.trace.find(t => t.gate === 4)?.detail ?? "", /问↔问尺度/u);
+});
+
+test("④ target: \"answer\" 遇到 plan 条目：这道闸不适用，不是把它淘汰", async () => {
+	/**
+	 * plan 条目的 `answer` 是空串。拿空串去打分会必然低分、把 plan 全拦掉；
+	 * 回落到 matchText 则是拿问↔答标定的 θq 去卡问↔问的分数。两条都不行 ——
+	 * 和 ⑤⑥ 对 plan 不适用是同一个道理，所以标 off 并保留 ③ 的名次。
+	 */
+	const { cache } = harness({
+		recallFloor: 0.1,
+		// 空串键值给 0（若实现真拿空串去打分，就会低于闸值而退出，测试随即变红）
+		rerank: { "": 0 },
+		rerankFloor: 0.5,
+		rerankTarget: "answer",
+	});
+	await cache.resolve(P, async () => ({ kind: "plan" as const, plan: { tool: "getGrade", assignment: "2" } }));
+	const found = await cache.lookup({ matchText: "另一句话", retrievalText: "另一句话", context: {} });
+	assert.equal(verdicts(found.trace)[4], "off");
+	assert.match(found.trace.find(t => t.gate === 4)?.detail ?? "", /plan/u);
+	assert.equal(found.outcome, "reuse", "④ 不适用不等于淘汰：plan 条目该照常按 ③ 的名次复用");
+});
+
 test("⑤ 资料版本：不符就驱逐；关掉这道闸时标 would-exit 并照常放行", async () => {
 	let version = "v1";
 	const stale = { sourceVersion: () => version };

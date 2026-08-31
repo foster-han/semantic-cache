@@ -57,11 +57,21 @@ const median = (xs: ReadonlyArray<number>): number => {
 /**
  * 探针取自语料包（`RERANK_PROBES`）—— 和验证台页面上那个自检**同一份**。
  * 先前这里自带一套写死的问句，于是「页面说可用」和「标定脚本说可用」测的不是同一件事。
+ *
+ * **b 侧跟着 `CE_TARGET` 走。** ④ 比问↔答时，拿问句当 candidate 标出来的 θq
+ * 是另一个尺度上的数 —— 同一个 bge-reranker-base，问↔问的最优闸值 0.1228、
+ * 问↔答 0.3494。答案用 `composeAnswer()` 拼，和运行路径同一个函数。
  */
-const PROBES = RERANK_PROBES.map(p => [p.label, p.a, p.b, p.shouldMatch]);
+const RERANK_TARGET = enc.models.rerankTarget;
+const PROBES = RERANK_PROBES.map(p => {
+  if (RERANK_TARGET !== "answer") return [p.label, p.a, p.b, p.shouldMatch];
+  const doc = DOCS.find(d => d.id === p.bDoc);
+  if (!doc) throw new Error(`探针「${p.label}」的 bDoc=${p.bDoc} 不在语料里 —— 无法为 target: "answer" 构造 candidate。`);
+  return [p.label, p.a, composeAnswer([{ title: doc.title, text: doc.text, version: doc.version }]), p.shouldMatch];
+});
 
 console.log(`\n== 语言 ${LANGUAGE} ==\n`);
-console.log("① 重排器判别力（问题↔问题）");
+console.log(`① 重排器判别力（${RERANK_TARGET === "answer" ? "问题↔答案" : "问题↔问题"}）　模型 ${enc.models.rerank ?? "无"}`);
 const rr: Array<{ s: number | null; want: boolean }> = [];
 for (const [tag, a, b, want] of PROBES) {
   const s = await enc.rerank(String(a), String(b));
@@ -73,7 +83,11 @@ if (rr[0].s !== null) {
   const pos = scored.filter(r => r.want).map(r => r.s), neg = scored.filter(r => !r.want).map(r => r.s);
   const margin = Math.min(...pos) - Math.max(...neg);
   console.log(`    → 正例最低 ${Math.min(...pos).toFixed(4)} | 负例最高 ${Math.max(...neg).toFixed(4)} | margin ${margin.toFixed(4)} → ${margin >= 0.15 ? "可用" : "**不可用**"}`);
-  if (margin > 0) console.log(`    → 建议 θq ≈ ${((Math.min(...pos) + Math.max(...neg)) / 2).toFixed(3)}`);
+  if (margin > 0) {
+    console.log(`    → 建议 θq ≈ ${((Math.min(...pos) + Math.max(...neg)) / 2).toFixed(3)}`);
+    // θq 属于 (模型 × 形态)，抄进 RERANK_CALIBRATIONS 时这两个必须一起记，否则那一行不可复现
+    console.log(`      （这个数只对 ${enc.models.rerank ?? "?"} × ${RERANK_TARGET === "answer" ? "问↔答" : "问↔问"} 成立 —— 补进 lab/Calibrations.ts 的 RERANK_CALIBRATIONS 时要连模型与形态一起写）`);
+  }
 }
 
 console.log("\n② 检索 top-1（问题↔段落）");

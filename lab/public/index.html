@@ -422,20 +422,22 @@ function markCeCard(p) {
     hint.textContent = "⚠ 当前没有可用的重排器，④ 这道闸不存在 —— 这张卡跑不出差别。要 npm start（真模型）才有意义。";
     return;
   }
+  // 形态决定自检测的是哪个尺度，所以每句话都得带上它 —— 同一个模型换个形态就是另一组数
+  const form = p.target === "answer" ? "问题↔答案" : "问题↔问题";
   if (!p.usable) {
-    hint.textContent = `⚠ 自检未通过（margin ${p.margin.toFixed(4)} < ${p.minMargin}）：这个重排器和「问题↔问题配对」任务不匹配。这张卡此时测的是一个错配模型的代价，不是「精排值不值」。`;
+    hint.textContent = `⚠ 自检未通过（${form}，margin ${p.margin.toFixed(4)} < ${p.minMargin}）：这个重排器和「${form}」这个任务不匹配。这张卡此时测的是一个错配模型的代价，不是「精排值不值」。换形态或换模型都可能改变结论 —— 中文上已知可用：CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer。`;
     if (btn) btn.title = "自检未通过，结果只能这么读";
     return;
   }
   if (p.thetaQ === null || p.thetaQ === undefined) {
-    hint.textContent = "⚠ 当前组合没有标定过的 θq —— 这张卡的 A 侧会被拒绝。跑 scripts/calibrate.ts 补一行标定，或显式 THETA_Q=。";
+    hint.textContent = `⚠ 当前 (模型 × ${form}) 没有标定过的 θq —— 这张卡的 A 侧会被拒绝。θq 属于 (模型 × 形态)，换任一个都要重标：跑 scripts/calibrate.ts 出建议值并补一行到 RERANK_CALIBRATIONS，或显式 THETA_Q=。`;
     return;
   }
   if (p.thetaQ <= p.maxNegative) {
     hint.textContent = `⚠ θq ${p.thetaQ} 低于负例最高分 ${p.maxNegative.toFixed(4)} —— ④ 会放过一切，这张卡两边必然一样。这不是「这道闸没用」，是阈值没落在分布里。`;
     return;
   }
-  hint.textContent = `自检通过（margin ${p.margin.toFixed(4)}），θq ${p.thetaQ} 落在两组之间 —— 这张卡的结果可以按字面读。`;
+  hint.textContent = `自检通过（${form}，margin ${p.margin.toFixed(4)}），θq ${p.thetaQ} 落在两组之间 —— 这张卡的结果可以按字面读。`;
 }
 
 /* ---------- 单条场景 ---------- */
@@ -502,9 +504,13 @@ function renderAxes(s) {
 
   const modelLines = s.mode === "stub"
     ? `字符 Jaccard 的哈希投影，256 维`
-    : [`句对（③ 召回）　${esc(m.pair ?? "?")}`,
-       `检索（⑥ 支撑度）${esc(m.retrieval ?? "?")}`,
-       `重排（④ 精排）　${m.rerank ? esc(m.rerank) : "无 —— 没有这道闸"}`].join("<br>");
+    // pooling 也要显示：拿 mean 跑一个 CLS 模型，1000 对 QQP 上「正命中率 ≥97% 时的
+    // 命中率」从 60.0% 掉到 54.8%，而且一路不报错
+    : [`句对（③ 召回）　${esc(m.pair ?? "?")} <span class="d">${esc(m.pairPooling ?? "?")}</span>`,
+       `检索（⑥ 支撑度）${esc(m.retrieval ?? "?")} <span class="d">${esc(m.retrievalPooling ?? "?")}</span>`,
+       // 形态和模型 id 一样重要：同一个模型换个形态就是另一个尺度（bge 上 0.1228 vs 0.3494），
+       // 只显示模型名的话，「④ 到底在比什么」看不出来
+       `重排（④ 精排）　${m.rerank ? `${esc(m.rerank)} <span class="d">${m.rerankTarget === "answer" ? "问↔答" : "问↔问"}</span>` : "无 —— 没有这道闸"}`].join("<br>");
 
   const genDetail = GEN.kind === "stub"
     ? "拼接首个片段，非真生成"
@@ -618,6 +624,8 @@ async function boot() {
   const warnings = [];
   if (stub) warnings.push("编码器是 stub —— 玩具相似度（字符 Jaccard 的哈希投影），分数没有统计意义，只用来跑通控制流。要看真数字：npm start");
   if (!stub && !s.rerankAvailable) warnings.push("重排器没加载 —— 没有 ④ 这道闸（不会退化成拿 θq 去卡余弦）");
+  // 加载到了模型却没有 θq，和根本没加载到是两件事，警告要分开说 —— 前者的出路是标定，后者是换模型
+  if (!stub && s.rerankAvailable && DEF.thetaQ === null) warnings.push(`重排器加载了，但 (${(s.models ?? {}).rerank} × ${(s.models ?? {}).rerankTarget === "answer" ? "问↔答" : "问↔问"}) 这个组合没标定过 θq —— ④ 因此是关的。中文上已知可用：CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer`);
   if (GEN.kind === "stub") warnings.push("生成端是 stub —— 答案是拼接检索到的首个片段，不是真生成，⑥ 的支撑度因此天然偏高，θa 的绝对值在它上面标不准");
   if (CALIB.borrowed) warnings.push("阈值是借用的 —— 当前组合没标定过，见上面「标定」那行");
   if ((CALIB.overridden ?? []).length > 0) warnings.push(`阈值被环境变量覆盖：${CALIB.overridden.join("、")}`);
@@ -642,7 +650,8 @@ async function boot() {
     }
   }
   if (!s.rerankAvailable) markCeCard({ available:false });
-  else if (DEF.thetaQ === null) markCeCard({ available:true, usable:true, margin:0, minMargin:0.15, maxNegative:0, thetaQ:null });
+  // 形态也要递进去 —— 那句提示要说清是「哪个 (模型 × 形态) 没标定」
+  else if (DEF.thetaQ === null) markCeCard({ available:true, usable:true, margin:0, minMargin:0.15, maxNegative:0, thetaQ:null, target:(s.models ?? {}).rerankTarget });
 
   $("c").innerHTML = s.units.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join("");
   $("scen").innerHTML = SCEN.map(sc => `

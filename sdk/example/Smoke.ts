@@ -83,7 +83,7 @@ const store = createMemoryCacheStore();
 const cache = createSemanticCache({
 	// 阈值跟着打分器走 —— 换打分器就拿不到旧尺度的阈值
 	recall: { scorer: pair, thresholds: { floor: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
-	rerank: { scorer: rerank, thresholds: { floor: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
+	rerank: { scorer: rerank, thresholds: { floor: 0.3, target: "question" }, calibratedOn: "假模型词袋，仅供跑通" },
 	support: { scorer: retrieval, thresholds: { high: 0.35, low: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
 	store,
 	retriever,
@@ -165,7 +165,7 @@ console.log("\n--- 工具分支：缓存计划而非结果，实体做参数 ---
 await store.clear();
 const planCache = createSemanticCache({
 	recall: { scorer: pair, thresholds: { floor: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
-	rerank: { scorer: rerank, thresholds: { floor: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
+	rerank: { scorer: rerank, thresholds: { floor: 0.3, target: "question" }, calibratedOn: "假模型词袋，仅供跑通" },
 	support: { scorer: retrieval, thresholds: { high: 0.35, low: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
 	store,
 	retriever,

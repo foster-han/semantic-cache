@@ -4,11 +4,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { checkReranker } from "../sdk/src/index.ts";
+import { checkReranker, type ProbePair } from "../sdk/src/index.ts";
 import { createEncoders } from "./Models.ts";
 import { createLab } from "./LabCache.ts";
 import { createLabStore } from "./Store.ts";
-import { COURSE, DOCS, LANGUAGE, RERANK_PROBES, SCENARIOS } from "./Corpus.ts";
+import { compose, COURSE, DOCS, LANGUAGE, RERANK_PROBES, SCENARIOS } from "./Corpus.ts";
 import type { LabConfig } from "./types/LabConfig.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -51,6 +51,30 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 
 function configOf(body: Record<string, unknown>): Partial<LabConfig> {
 	return (body.config ?? {}) as Partial<LabConfig>;
+}
+
+/**
+ * ④ 的自检探针，**按当前形态构造**。
+ *
+ * 探针跟着语料语言走这件事语料包里已经写了；这里是同一条规矩的另一半：它还得跟着
+ * `CE_TARGET` 走。`target: "answer"` 时 ④ 比的是问↔答，而 `RERANK_PROBES` 的 `b`
+ * 是问句 —— 拿它算出来的 margin 是另一个尺度上的数，看着正常、算得出来，
+ * 和 ④ 实际用的分数没有关系。自检要是测错了尺度，它挡不住任何东西。
+ *
+ * 答案用语料的 `compose()` 拼，和运行路径、和 `_probe_ce6.ts` 同一个函数。
+ */
+function activeProbes(): ReadonlyArray<ProbePair> {
+	if (encoders.models.rerankTarget !== "answer") return RERANK_PROBES;
+	return RERANK_PROBES.map(p => {
+		const doc = DOCS.find(d => d.id === p.bDoc);
+		if (!doc) {
+			throw new Error(
+				`探针「${p.label}」的 bDoc=${p.bDoc} 在语料里找不到。target: "answer" 的自检需要 b 侧对应的文档 —— ` +
+					"退回用问句当 candidate 会把自检测到另一个尺度上去，所以这里直接抛。",
+			);
+		}
+		return { ...p, b: compose([{ title: doc.title, text: doc.text, version: doc.version }]) };
+	});
 }
 
 async function snapshot() {
@@ -165,11 +189,13 @@ const server = createServer(async (req, res) => {
 				json(res, 200, { available: false, rows: [], margin: null, minMargin: MIN_RERANK_MARGIN, usable: false });
 				return;
 			}
-			const report = await checkReranker(encoders.reranker, RERANK_PROBES, MIN_RERANK_MARGIN);
+			const probes = activeProbes();
+			const report = await checkReranker(encoders.reranker, probes, MIN_RERANK_MARGIN);
 			json(res, 200, {
 				available: true,
 				minMargin: MIN_RERANK_MARGIN,
-				rows: report.rows.map((r, i) => ({ ...r, a: RERANK_PROBES[i].a, b: RERANK_PROBES[i].b })),
+				target: encoders.models.rerankTarget,
+				rows: report.rows.map((r, i) => ({ ...r, a: probes[i].a, b: probes[i].b })),
 				minPositive: report.minPositive,
 				maxNegative: report.maxNegative,
 				margin: report.margin,

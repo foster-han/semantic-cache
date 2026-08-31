@@ -143,6 +143,9 @@ export function createLab(
 		corpus: LANGUAGE,
 		encoders: encoder.mode,
 		generator: generator.kind,
+		// ④ 的 θq 属于 (重排模型 × 形态)，所以这两个也得递进去 —— 见 Calibrations.ts 的 RERANK_CALIBRATIONS
+		rerankModel: encoder.reranker ? encoder.models.rerank : null,
+		rerankTarget: encoder.models.rerankTarget,
 	});
 	const defaults = defaultsFor(calibration);
 
@@ -260,8 +263,10 @@ export function createLab(
 		 */
 		if (cfg.gate4 && encoder.reranker && cfg.thetaQ === null) {
 			throw new Error(
-				`④ 打开了，但当前组合（${LANGUAGE} × ${encoder.mode} 编码器）没有标定过的 θq。${calibration.rerankNote}。` +
-					`出路：换 CE_MODEL= 成句对相似度模型后跑 scripts/calibrate.ts 补一行标定，或显式 THETA_Q= 一个值（那就由你自己为它负责）。`,
+				`④ 打开了，但当前组合（${LANGUAGE} × ${encoder.models.rerank ?? "无重排器"} × ` +
+					`${calibration.rerankTarget === "answer" ? "问↔答" : "问↔问"}）没有标定过的 θq。${calibration.rerankNote}。` +
+					"出路：跑 lab/_probe_ce6.ts 量一下这个 (模型 × 形态) 分不分得开，分得开就补一行到 RERANK_CALIBRATIONS；" +
+					"中文上已知可用的组合是 CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer。或显式 THETA_Q= 一个值（那就由你自己为它负责）。",
 			);
 		}
 		return createSemanticCache({
@@ -278,7 +283,12 @@ export function createLab(
 			// 关掉 ④ 就是不传这一段 —— 连同它的阈值一起消失
 			rerank:
 				cfg.gate4 && encoder.reranker && cfg.thetaQ !== null
-					? { scorer: encoder.reranker, thresholds: { floor: cfg.thetaQ }, calibratedOn: calibration.rerankNote }
+					? {
+							scorer: encoder.reranker,
+							// target 和 floor 捆在一起：换形态就是换尺度，θq 不通用
+							thresholds: { floor: cfg.thetaQ, target: calibration.rerankTarget },
+							calibratedOn: calibration.rerankNote,
+						}
 					: undefined,
 			store: storeOverride ?? store,
 			retriever: { retrieve: (text, ctx) => retrieveChunks(text, ctx.unit || null, cfg) },

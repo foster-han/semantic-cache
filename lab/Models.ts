@@ -7,11 +7,98 @@
  *
  * MODE=stub 是零依赖的玩具相似度，只用来跑通控制流；**分数没有统计意义**。
  */
-import type { PairEncoder, Reranker, RetrievalEncoder } from "../sdk/src/index.ts";
+import type { PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "../sdk/src/index.ts";
 
 const PAIR_ID = process.env.PAIR_MODEL ?? "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
 const RETR_ID = process.env.RETR_MODEL ?? "Xenova/multilingual-e5-small";
 const CE_ID = process.env.CE_MODEL ?? "Xenova/ms-marco-MiniLM-L-6-v2";
+
+/**
+ * ④ 把旧问题还是旧答案递给重排器。**默认仍是 `question`，因为默认没有 ④。**
+ *
+ * 实测问↔答明显更好（同一个 bge-reranker-base，留一交叉验证 27.8% 对 50%，且假负归零），
+ * 但那需要 `CE_MODEL=Xenova/bge-reranker-base` 一起换 —— 默认的 ms-marco 在中文上
+ * 两种形态都饱和，标定表里两种形态都没有它的行，所以中文默认 ④ 是关的。
+ * 把默认形态改成 answer 只会让英文那行已标定的 θq（ms-marco × 问↔问 = 0.979）失配，
+ * 白白关掉一道在英文上确实标定过的闸。要跑新配置：
+ *
+ *   CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer npm start
+ */
+if (process.env.CE_TARGET !== undefined && process.env.CE_TARGET !== "answer" && process.env.CE_TARGET !== "question") {
+	throw new Error(
+		`CE_TARGET=${process.env.CE_TARGET} 无效，只能是 question 或 answer。` +
+			"它决定 ④ 把旧问题还是旧答案递给重排器 —— 两者尺度不同，θq 不通用，所以不给它一个「差不多」的解释。",
+	);
+}
+
+const CE_TARGET: RerankTarget = process.env.CE_TARGET === "answer" ? "answer" : "question";
+
+/**
+ * 每个 embedding 模型的 pooling 模式。**这不是可以取默认值的东西。**
+ *
+ * 先前 `run()` 一律传 `pooling: "mean"`。实测代价：`redis/langcache-embed-v1` 的
+ * `1_Pooling/config.json` 写着 `pooling_mode_cls_token: true`，拿 mean 去跑它，
+ * 1000 对 QQP 上「正命中率 ≥ 97% 时的命中率」从 60.0% 掉到 54.8%（≥95% 时 89.0% → 76.6%）——
+ * **少一成多的命中率，而且不报错**。这和「三个模型角色不能共用」是同一类问题：
+ * 模型的元数据靠猜，猜错了没人告诉你。
+ *
+ * 表里只放**查过出处**的。查法：读模型仓库的 `1_Pooling/config.json`。
+ */
+const POOLING_BY_MODEL: ReadonlyArray<readonly [RegExp, "mean" | "cls", string]> = [
+	// 读过 1_Pooling/config.json：pooling_mode_cls_token=true
+	[/^redis\/langcache-embed/u, "cls", "读过 1_Pooling/config.json"],
+	// gte / bge 系列的 embedding 模型官方都取 [CLS]
+	[/gte-|bge-(?!reranker)/u, "cls", "gte / bge embedding 官方用 [CLS]"],
+	// E5 官方 README 明确 average pooling
+	[/e5-/u, "mean", "E5 官方用 average pooling"],
+	// sentence-transformers 的 paraphrase-* 系列是 mean
+	[/paraphrase-/u, "mean", "sentence-transformers paraphrase-* 为 mean"],
+];
+
+type Pooling = "mean" | "cls";
+
+/**
+ * 取值合法性在**模块顶层**查，不等 `poolingFor` 被调到。
+ *
+ * `poolingFor` 是在两个 extractor 都加载完之后才调用的，把校验留在那里等于
+ * 一个拼错的环境变量要先付掉一次 600MB 下载 + 两次模型加载才报错。
+ * sdk 那边同一条规矩写成了测试：「守卫跑在任何编码之前 —— 别先付掉一整批 embedding 再抛」。
+ */
+for (const name of ["PAIR_POOLING", "RETR_POOLING"] as const) {
+	const v = process.env[name];
+	if (v !== undefined && v !== "" && v !== "mean" && v !== "cls") {
+		throw new Error(
+			`${name}=${v} 无效，只能是 mean 或 cls。它决定句向量怎么从 token 向量聚合 —— ` +
+				"配错不报错，只会给出判别力差一档的向量（实测少一成多的命中率）。",
+		);
+	}
+}
+
+/**
+ * 定这个模型该用哪种 pooling。顺序：环境变量 > 已知表 > **mean 加警告**。
+ *
+ * 落到最后一档时会打一行警告而不是默默用 mean —— 那正是 FINDINGS 坑 #5
+ * 「静默降级比跑不起来更难发现」说的事。
+ */
+function poolingFor(id: string, override: string | undefined, role: string): Pooling {
+	if (override === "cls" || override === "mean") {
+		process.stdout.write(`${role} pooling=${override}（由环境变量指定）\n`);
+		return override;
+	}
+	// 非法值已在模块顶层拦掉，这里只剩「没设」这一种情况
+	for (const [pattern, mode, why] of POOLING_BY_MODEL) {
+		if (pattern.test(id)) {
+			process.stdout.write(`${role} pooling=${mode}（${why}）\n`);
+			return mode;
+		}
+	}
+	process.stdout.write(
+		`⚠ ${role} 的模型 ${id} 不在 pooling 表里，回落到 mean。**这可能是错的且不会报错** ——\n` +
+			`  查一下它仓库里的 1_Pooling/config.json，补一行到 Models.ts 的 POOLING_BY_MODEL，\n` +
+			`  或显式 ${role === "句对" ? "PAIR_POOLING" : "RETR_POOLING"}=cls|mean。实测配错的代价是少一成多的命中率。\n`,
+	);
+	return "mean";
+}
 
 export interface LabEncoders extends PairEncoder, RetrievalEncoder {
 	readonly mode: "stub" | "local";
@@ -28,6 +115,14 @@ export interface LabEncoders extends PairEncoder, RetrievalEncoder {
 		readonly retrieval: string;
 		/** 没加载到重排器时为 null —— 那就是没有 ④ 这道闸 */
 		readonly rerank: string | null;
+		/**
+		 * ④ 比的是问题还是答案。**和模型 id 一样要摊在页面上** —— 同一个模型换个形态
+		 * 就是另一个尺度（bge 上 0.1228 vs 0.3494），只显示模型名看不出跑的是哪一个。
+		 */
+		readonly rerankTarget: RerankTarget;
+		/** 两个 embedding 模型各自的 pooling。配错不报错，所以要显示出来 */
+		readonly pairPooling: string;
+		readonly retrievalPooling: string;
 	};
 	/** 无重排器时返回 null */
 	rerank(a: string, b: string): Promise<number | null>;
@@ -74,7 +169,7 @@ function stubEncoders(): LabEncoders {
 		note: "玩具相似度，仅供跑通流程；分数无统计意义",
 		rerankAvailable: false,
 		retrievalModel: "stub",
-		models: { pair: "stub", retrieval: "stub", rerank: null },
+		models: { pair: "stub", retrieval: "stub", rerank: null, rerankTarget: CE_TARGET, pairPooling: "—", retrievalPooling: "—" },
 		embedQuestions: embed,
 		embedQuery: embed,
 		embedPassage: embed,
@@ -139,24 +234,34 @@ export async function createEncoders(): Promise<LabEncoders> {
 			);
 		}
 		const usesE5Prefix = retrOk && /e5/iu.test(RETR_ID);
+		// 检索模型加载失败回退到句对模型时，pooling 必须跟着**实际在用的那个模型**走
+		const pairPooling = poolingFor(PAIR_ID, process.env.PAIR_POOLING, "句对");
+		const retrievalPooling = retrOk
+			? poolingFor(RETR_ID, process.env.RETR_POOLING, "检索")
+			: pairPooling;
 
 		let ceTok: Awaited<ReturnType<typeof AutoTokenizer.from_pretrained>> | null = null;
 		let ceModel: Awaited<ReturnType<typeof AutoModelForSequenceClassification.from_pretrained>> | null = null;
 		try {
-			process.stdout.write(`加载 cross-encoder ${CE_ID} …\n`);
+			process.stdout.write(`加载 cross-encoder ${CE_ID}（${CE_TARGET === "answer" ? "问↔答" : "问↔问"}）…\n`);
 			ceTok = await AutoTokenizer.from_pretrained(CE_ID);
 			ceModel = await AutoModelForSequenceClassification.from_pretrained(CE_ID);
 		} catch (err) {
 			process.stdout.write(`cross-encoder 加载失败，④ 将被跳过：${String(err)}\n`);
 		}
 
+		/**
+		 * pooling 由调用处按模型给出，**不再写死 mean** —— 见 POOLING_BY_MODEL 的注释，
+		 * 拿 mean 跑一个 CLS 模型会少一成多的命中率而且不报错。
+		 */
 		async function run(
 			extractor: typeof pairEx,
 			texts: ReadonlyArray<string>,
 			prefix: string,
+			pooling: Pooling,
 		): Promise<Array<Array<number>>> {
 			const input = prefix ? texts.map(t => `${prefix}${t}`) : [...texts];
-			const out = await extractor(input, { pooling: "mean", normalize: true });
+			const out = await extractor(input, { pooling, normalize: true });
 			return out.tolist() as Array<Array<number>>;
 		}
 
@@ -196,15 +301,18 @@ export async function createEncoders(): Promise<LabEncoders> {
 			mode: "local",
 			rerankAvailable: ceModel !== null,
 			retrievalModel: retrOk ? RETR_ID : `${PAIR_ID}（回退）`,
-			note: `句对 ${PAIR_ID} | 检索 ${retrOk ? RETR_ID : `${PAIR_ID}（回退）`} | 重排 ${ceModel ? CE_ID : "无"}`,
+			note: `句对 ${PAIR_ID}（${pairPooling}）| 检索 ${retrOk ? RETR_ID : `${PAIR_ID}（回退）`}（${retrievalPooling}）| 重排 ${ceModel ? `${CE_ID}（${CE_TARGET === "answer" ? "问↔答" : "问↔问"}）` : "无"}`,
 			models: {
 				pair: PAIR_ID,
 				retrieval: retrOk ? RETR_ID : `${PAIR_ID}（⚠ 回退，任务错配）`,
 				rerank: ceModel ? CE_ID : null,
+				rerankTarget: CE_TARGET,
+				pairPooling,
+				retrievalPooling,
 			},
-			embedQuestions: texts => run(pairEx, texts, ""),
-			embedQuery: texts => run(retrEx, texts, usesE5Prefix ? "query: " : ""),
-			embedPassage: texts => run(retrEx, texts, usesE5Prefix ? "passage: " : ""),
+			embedQuestions: texts => run(pairEx, texts, "", pairPooling),
+			embedQuery: texts => run(retrEx, texts, usesE5Prefix ? "query: " : "", retrievalPooling),
+			embedPassage: texts => run(retrEx, texts, usesE5Prefix ? "passage: " : "", retrievalPooling),
 			rerank,
 			reranker: ceModel ? { score: async (q, c) => (await rerank(q, c)) ?? 0 } : undefined,
 		};

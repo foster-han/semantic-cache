@@ -168,11 +168,11 @@ export const DISTRACTORS: ReadonlyArray<string> = [
  * 判据是 margin（正例最低 − 负例最高），不是跨度：跨度大但顺序反的模型毫无用处。
  */
 export const RERANK_PROBES: ReadonlyArray<RerankProbe> = [
-	{ label: "同义改写（该高）", a: "什么是过拟合？", b: "过拟合是什么意思？", shouldMatch: true },
-	{ label: "逐字相同（该高）", a: "什么是过拟合？", b: "什么是过拟合？", shouldMatch: true },
-	{ label: "近义反义（该低）", a: "什么是过拟合？", b: "什么是欠拟合？", shouldMatch: false },
-	{ label: "同主题不同问（该低）", a: "什么是过拟合？", b: "正则化强度怎么调？", shouldMatch: false },
-	{ label: "完全无关（该低）", a: "什么是过拟合？", b: "成绩什么时候公布？", shouldMatch: false },
+	{ label: "同义改写（该高）", a: "什么是过拟合？", b: "过拟合是什么意思？", bDoc: "n5", shouldMatch: true },
+	{ label: "逐字相同（该高）", a: "什么是过拟合？", b: "什么是过拟合？", bDoc: "n5", shouldMatch: true },
+	{ label: "近义反义（该低）", a: "什么是过拟合？", b: "什么是欠拟合？", bDoc: "n6", shouldMatch: false },
+	{ label: "同主题不同问（该低）", a: "什么是过拟合？", b: "正则化强度怎么调？", bDoc: "n8", shouldMatch: false },
+	{ label: "完全无关（该低）", a: "什么是过拟合？", b: "成绩什么时候公布？", bDoc: "faq", shouldMatch: false },
 ];
 
 export const SCENARIOS: ReadonlyArray<LabScenario> = [

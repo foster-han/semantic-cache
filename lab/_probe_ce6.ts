@@ -17,6 +17,7 @@
  */
 import { AutoModelForSequenceClassification, AutoTokenizer } from "@huggingface/transformers";
 import { compose, DOCS } from "./Corpus.ts";
+import { createGenerator } from "./Generators.ts";
 
 const MODELS = [
 	["bge", "bge-reranker-base", "Xenova/bge-reranker-base"],
@@ -69,11 +70,34 @@ const DIFF: ReadonlyArray<Pair> = [
 const PAIRS: ReadonlyArray<Pair> = [...SAME, ...DIFF];
 const byId = new Map(DOCS.map(d => [d.id, d]));
 
-/** 缓存里那条答案的代理：用真实 compose 拼 top-1 文档 */
-function answerOf(docId: string): string {
+/**
+ * 缓存里那条答案 —— **必须由当前生成端产出**。
+ *
+ * Q↔A 形态下 candidate 就是这段文本，所以 θq 跟着生成端走：
+ * stub 的答案几乎是语料原文照抄，真 LLM 的答案改写、压缩、综合过，
+ * 重排器给的分数因此不在一个量程上。`GEN=deepseek` 切到真生成。
+ *
+ * 键按 (docId, 提问) 缓存 —— 同一篇文档在不同对子里可能被不同的问题问到。
+ */
+const generator = createGenerator();
+const answerCache = new Map<string, string>();
+
+async function answerOf(docId: string, askedWith: string): Promise<string> {
 	const doc = byId.get(docId);
 	if (!doc) throw new Error(`语料里没有文档 ${docId}`);
-	return compose([{ title: doc.title, text: doc.text, version: doc.version }]);
+	if (generator.kind === "stub") {
+		return compose([{ title: doc.title, text: doc.text, version: doc.version }]);
+	}
+	const key = `${docId}\u0000${askedWith}`;
+	const hit = answerCache.get(key);
+	if (hit !== undefined) return hit;
+	const payload = await generator.generate(
+		{ matchText: askedWith, retrievalText: askedWith, context: {} },
+		[{ id: doc.id, text: doc.text, score: 1 }],
+	);
+	const text = payload.kind === "answer" ? payload.answer : "";
+	answerCache.set(key, text);
+	return text;
 }
 
 function softmax(xs: ReadonlyArray<number>): Array<number> {
@@ -115,7 +139,7 @@ function bestThreshold(scores: ReadonlyArray<number>): { theta: number; fn: numb
 const collected = new Map<string, ReadonlyArray<number>>();
 
 for (const [key, label, id] of MODELS) {
-	process.stdout.write(`\n${"=".repeat(74)}\n=== ${label}\n${"=".repeat(74)}\n`);
+	process.stdout.write(`\n${"=".repeat(74)}\n=== ${label}　（生成端 ${generator.kind}）\n${"=".repeat(74)}\n`);
 	const tok = await AutoTokenizer.from_pretrained(id);
 	const model = await AutoModelForSequenceClassification.from_pretrained(id);
 	const labels = Object.values((model.config as { id2label?: Record<string, string> }).id2label ?? {});
@@ -130,11 +154,13 @@ for (const [key, label, id] of MODELS) {
 	}
 
 	for (const [form, cand] of [
-		["QQ", (p: Pair) => p.b],
-		["QA", (p: Pair) => answerOf(p.docB)],
+		// candidate 是「缓存里那条条目」的哪一部分。条目本身是 b 这一侧：
+		// QQ 取它存的问题，QA 取它存的答案（答案由 b 这个问题生成）。
+		["QQ", async (p: Pair) => p.b],
+		["QA", (p: Pair) => answerOf(p.docB, p.b)],
 	] as const) {
 		const scores: Array<number> = [];
-		for (const p of PAIRS) scores.push(await score(p.a, cand(p)));
+		for (const p of PAIRS) scores.push(await score(p.a, await cand(p)));
 		collected.set(`${key}-${form}`, scores);
 
 		const pos = scores.filter((_, i) => PAIRS[i].shouldReuse);

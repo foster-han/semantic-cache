@@ -9,7 +9,7 @@
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
 import { createSemanticCache } from "../src/SemanticCache.ts";
 import type { GateSwitches, Refine, ScopeResolver } from "../src/types/Pipeline.ts";
-import type { PairEncoder, Reranker, RetrievalEncoder } from "../src/types/Encoders.ts";
+import type { PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "../src/types/Encoders.ts";
 import type { Chunk, Retriever, SourceVersionResolver } from "../src/types/Retrieval.ts";
 import type { CacheStore, InspectableCacheStore } from "../src/types/CacheStore.ts";
 
@@ -82,6 +82,11 @@ export interface HarnessConfig {
 	readonly retrieve?: (retrievalText: string, context: Readonly<Record<string, string>>) => Array<Chunk>;
 	readonly rerank?: Readonly<Record<string, number>>;
 	readonly rerankFloor?: number;
+	/**
+	 * ④ 拿旧问题还是旧答案当 candidate。默认 `"question"` —— 现有测试的
+	 * `rerank` 表都是按问题文本建的键，默认换成 answer 会让它们全部查不到表。
+	 */
+	readonly rerankTarget?: RerankTarget;
 	readonly recallFloor?: number;
 	readonly support?: { readonly high: number; readonly low: number };
 	readonly gates?: Partial<GateSwitches>;
@@ -125,7 +130,7 @@ export function harness(config: HarnessConfig = {}) {
 				? undefined
 				: {
 						scorer: fakeReranker(config.rerank, counts),
-						thresholds: { floor: config.rerankFloor ?? 0.5 },
+						thresholds: { floor: config.rerankFloor ?? 0.5, target: config.rerankTarget ?? "question" },
 						calibratedOn: "测试用假件",
 				  },
 		store,

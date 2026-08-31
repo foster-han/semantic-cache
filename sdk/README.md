@@ -18,9 +18,11 @@ const calibratedOn = "2026-08 生产日志 400 条人工标注，⑥ 用 top-1 �
 
 const cache = createSemanticCache({
   // 每个打分器和**为它标定的**阈值捆在一起 —— 换打分器就拿不到旧阈值
-  recall:  { scorer: pairEncoder,      thresholds: { floor: 0.62 },            calibratedOn },
-  rerank:  { scorer: reranker,         thresholds: { floor: 0.79 },            calibratedOn },
-  support: { scorer: retrievalEncoder, thresholds: { high: 0.92, low: 0.90 },  calibratedOn },
+  recall:  { scorer: pairEncoder,      thresholds: { floor: 0.62 },           calibratedOn },
+  // ④ 的 target 决定拿旧问题还是旧答案跟新问题比 —— 两者尺度不同，θq 不通用。
+  // "answer" 是 query→passage，段落重排器（bge-reranker 一类）适用
+  rerank:  { scorer: reranker,         thresholds: { floor: 0.35, target: "answer" }, calibratedOn },
+  support: { scorer: retrievalEncoder, thresholds: { high: 0.92, low: 0.90 }, calibratedOn },
 
   store: createMemoryCacheStore(),          // 或 createPgVectorCacheStore({ sql: pool, dimensions })
   retriever: yourExistingRagRetriever,      // 你自己的检索，库不实现

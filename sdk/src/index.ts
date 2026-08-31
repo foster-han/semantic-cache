@@ -15,7 +15,7 @@ export {
 export type { DiscriminationReport, ProbePair } from "./DiscriminationCheck.ts";
 export { compare, evaluate, sourceIdsOf } from "./Evaluation.ts";
 export type { ComparisonReport, EvaluationHooks, EvaluationReport, Scenario, ScenarioOutcome } from "./Evaluation.ts";
-export type { EncoderRole, PairEncoder, Reranker, RetrievalEncoder } from "./types/Encoders.ts";
+export type { EncoderRole, PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "./types/Encoders.ts";
 export type { Calibrated, RecallStage, RerankStage, SupportStage } from "./types/Calibration.ts";
 export type { CacheEntry, CacheStore, Candidate, InspectableCacheStore } from "./types/CacheStore.ts";
 export type { RedisExecutor } from "./types/RedisExecutor.ts";

@@ -11,6 +11,7 @@ import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
 import { createSemanticCache } from "../src/SemanticCache.ts";
 import { cosine, hashKey, normalizeKey } from "../src/VectorMath.ts";
 import type { RecallStage, RerankStage, SupportStage } from "../src/types/Calibration.ts";
+import type { RerankTarget } from "../src/types/Encoders.ts";
 import { harness } from "./Fakes.ts";
 
 test("recallLimit 必须大于 1 —— 只召回一条时 ④ 没有候选可排", () => {
@@ -34,6 +35,18 @@ test("④ 的闸值只查有限数，不查 [-1,1] —— 重排器的尺度不�
 	assert.throws(() => harness({ rerank: {}, rerankFloor: Number.POSITIVE_INFINITY }), /rerank\.thresholds\.floor/u);
 	// 重排器可能给 logit，5.2 是合法闸值；套 [-1,1] 才是又一次尺度混用
 	assert.doesNotThrow(() => harness({ rerank: {}, rerankFloor: 5.2 }));
+});
+
+test("④ 的 target 必须是 question 或 answer —— 拼错了会静默落到另一个尺度", () => {
+	/**
+	 * 类型上它是联合类型，但 JS 调用方绕得过去。一个拼错的 target 若被当成
+	 * 「不是 answer 就是 question」，就等于拿问↔答标定的 θq 去卡问↔问的分数 ——
+	 * 同一个 bge-reranker-base 上那是 0.3494 与 0.1228 的差别，而且不报错。
+	 */
+	const bad = "Answer" as unknown as RerankTarget;
+	assert.throws(() => harness({ rerank: {}, rerankTarget: bad }), /rerank\.thresholds\.target/u);
+	assert.doesNotThrow(() => harness({ rerank: {}, rerankTarget: "answer" }));
+	assert.doesNotThrow(() => harness({ rerank: {}, rerankTarget: "question" }));
 });
 
 test("calibratedOn 是必填且不能是空串 —— 阈值离开标定语境就没有意义", () => {
@@ -60,7 +73,7 @@ function buildWith(blank: { recall?: string; support?: string; rerank?: string }
 	};
 	const rerank: RerankStage = {
 		scorer: { async score() { return 1; } },
-		thresholds: { floor: 0.5 },
+		thresholds: { floor: 0.5, target: "question" },
 		calibratedOn: blank.rerank ?? "本次标定语境",
 	};
 	createSemanticCache({

@@ -1,4 +1,4 @@
-import type { PairEncoder, Reranker, RetrievalEncoder } from "./Encoders.ts";
+import type { PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "./Encoders.ts";
 
 /**
  * 一个打分器和**为它标定的**阈值绑在一起。
@@ -32,8 +32,17 @@ export type RecallStage = Calibrated<PairEncoder, { readonly floor: number }>;
  * **不提供就是没有这道闸**，不会退化成"拿这个闸值去卡召回余弦" ——
  * 那条退化路径正是尺度混用的来源，所以直接删掉了。想收紧问题侧，
  * 提高 `RecallStage` 的 floor（那才是余弦尺度）。
+ *
+ * **`target` 住在 thresholds 里，而不是另开一个字段。** 它不是阈值，但它决定
+ * 分数尺度：同一个 `bge-reranker-base`，问↔问的最优闸值是 0.1228，问↔答是
+ * 0.3494。换形态不重标 θq 和换模型不重标 θq 是同一个错，所以类型上让它们
+ * 共用一个对象 —— 改形态就必须给出新的 floor，拿不到旧的。
+ *
+ * 没有默认值：`"question"` 看着像自然的默认，但它恰好是让唯一可得的那类模型
+ * （query→passage 训练的重排器）任务错配的那一支。默认一个会静默失效的值，
+ * 等于把这套类型设计的意义抵消掉。
  */
-export type RerankStage = Calibrated<Reranker, { readonly floor: number }>;
+export type RerankStage = Calibrated<Reranker, { readonly floor: number; readonly target: RerankTarget }>;
 
 /**
  * ⑥ 回答校验：答案向量与 **top-1** 检索片段的余弦尺度。

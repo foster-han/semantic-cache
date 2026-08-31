@@ -163,6 +163,17 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	if (rerank && !Number.isFinite(rerank.thresholds.floor)) {
 		throw new Error(`rerank.thresholds.floor 必须是有限数，收到 ${String(rerank.thresholds.floor)}。`);
 	}
+	/**
+	 * `target` 决定 ④ 拿什么当 candidate，因而决定分数尺度。类型上它是联合类型，
+	 * 但 JS 调用方绕得过去 —— 而一个拼错的 target 会静默落到「不是 answer 就当
+	 * question」那一支，拿问↔答标定的 θq 去卡问↔问的分数。所以运行期也查一次。
+	 */
+	if (rerank && rerank.thresholds.target !== "question" && rerank.thresholds.target !== "answer") {
+		throw new Error(
+			`rerank.thresholds.target 必须是 "question" 或 "answer"，收到 ${JSON.stringify(rerank.thresholds.target)}。` +
+				"它决定 ④ 把旧问题还是旧答案递给重排器 —— 两者尺度不同，θq 不通用。",
+		);
+	}
 	assertCalibratedOn("recall", recall.calibratedOn);
 	assertCalibratedOn("support", support.calibratedOn);
 	if (rerank) assertCalibratedOn("rerank", rerank.calibratedOn);
@@ -250,24 +261,61 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		/* ④ 精排。没有 RerankStage 就是没有这道闸 —— 不做任何尺度混用的退化。 */
 		let best = candidates[0].entry;
 		if (rerank) {
-			const scored: Array<{ entry: CacheEntry; score: number }> = [];
-			for (const c of candidates) {
-				scored.push({ entry: c.entry, score: await rerank.scorer.score(prompt.matchText, c.entry.matchText) });
-			}
-			scored.sort((a, b) => b.score - a.score);
-			best = scored[0].entry;
-			const questionScore = scored[0].score;
-			if (questionScore < rerank.thresholds.floor) {
+			const target = rerank.thresholds.target;
+			/**
+			 * `target: "answer"` 下 plan 条目**没有可比的 candidate**：`entry.answer`
+			 * 对它们是空串。三种处置里只有一种不撒谎：
+			 *
+			 *   - 拿空串去打分 → 必然低分，plan 条目被 ④ 全部拦掉，且不报错
+			 *   - 回落到 `matchText` → 拿问↔答标定的 θq 去卡问↔问的分数，尺度混用
+			 *   - **这道闸对它们不适用** ← 选用
+			 *
+			 * 和 ⑤⑥ 对 plan 不适用是同一个道理，DESIGN 里已经立了这个先例。
+			 * 不适用不等于淘汰：它们保持 ③ 的余弦名次继续往下走。
+			 */
+			const rerankable = target === "answer" ? candidates.filter(c => c.entry.kind === "answer") : [...candidates];
+			const skipped = candidates.length - rerankable.length;
+
+			if (rerankable.length === 0) {
 				trace.push({
 					gate: 4,
 					name: "精排",
-					verdict: "exit",
-					detail: `分数 ${questionScore.toFixed(4)} 低于闸值 ${rerank.thresholds.floor}（标定于：${rerank.calibratedOn}）`,
+					verdict: "off",
+					detail:
+						`target = "answer"，但 ${candidates.length} 条候选全是 plan 条目（没有答案文本可比）—— ` +
+						"这道闸对 plan 不适用，按 ③ 的余弦名次取 top-1",
+				});
+			} else {
+				const scored: Array<{ entry: CacheEntry; score: number }> = [];
+				for (const c of rerankable) {
+					const candidateText = target === "answer" ? c.entry.answer : c.entry.matchText;
+					scored.push({ entry: c.entry, score: await rerank.scorer.score(prompt.matchText, candidateText) });
+				}
+				scored.sort((a, b) => b.score - a.score);
+				best = scored[0].entry;
+				const questionScore = scored[0].score;
+				const scaleNote = `${target === "answer" ? "问↔答" : "问↔问"}尺度`;
+				const skipNote = skipped === 0 ? "" : `，另有 ${skipped} 条 plan 条目不适用本闸`;
+				if (questionScore < rerank.thresholds.floor) {
+					trace.push({
+						gate: 4,
+						name: "精排",
+						verdict: "exit",
+						detail:
+							`分数 ${questionScore.toFixed(4)} 低于闸值 ${rerank.thresholds.floor}（${scaleNote}` +
+							`，标定于：${rerank.calibratedOn}）${skipNote}`,
+						score: questionScore,
+					});
+					return miss(4, null, null);
+				}
+				trace.push({
+					gate: 4,
+					name: "精排",
+					verdict: "pass",
+					detail: `过闸（${scaleNote}）${skipNote}`,
 					score: questionScore,
 				});
-				return miss(4, null, null);
 			}
-			trace.push({ gate: 4, name: "精排", verdict: "pass", detail: "过闸", score: questionScore });
 		} else {
 			trace.push({
 				gate: 4,
