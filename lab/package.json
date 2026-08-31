@@ -19,6 +19,7 @@
 		"store-conformance:redis": "SEMCACHE_REDIS=${SEMCACHE_REDIS:-redis://localhost:6379/2} SEMCACHE_NS=${SEMCACHE_NS:-semcache_conformance} node --experimental-strip-types scripts/storeConformance.ts"
 	},
 	"dependencies": {
+		"@anthropic-ai/sdk": "^0.122.0",
 		"@huggingface/transformers": "^3.0.0",
 		"pg": "^8.23.0",
 		"redis": "^6.2.1"

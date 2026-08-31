@@ -637,6 +637,29 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	}
 
 	/**
+	 * 替换一条旧条目：**先写新的，写成了才删旧的。**
+	 *
+	 * 反过来（先删后写）看着更直觉，但那把「替换」变成了「先删掉，然后试着写一条」：
+	 * 生成抛错、写入抛错、产物没有资料依据 —— 任何一种都让旧条目白白消失。实测过一次：
+	 * 中带条目 + 一次生成失败 = 净丢一条本来还能用的缓存，而这正是「一次故障不改变
+	 * 缓存状态」那条不变式要防的事（⑥ 判不了时不驱逐、无依据的答案不写入，是同一条的另两半）。
+	 *
+	 * 顺序反过来之后，同 (scope, matchHash) 的两条会共存几毫秒 —— 这是安全的：
+	 * `getByHash` 的契约就是取最新的那条，读到的一定是替换后的那一条。
+	 */
+	async function replaceEntry(
+		supersededId: string,
+		prompt: CachePrompt,
+		payload: CachedPayload,
+		writeOptions: WriteOptions | undefined,
+		ticket: WriteTicket,
+	): Promise<CacheEntry> {
+		const replacement = await write(prompt, payload, { ...writeOptions, ticket });
+		await options.store.evict(supersededId);
+		return replacement;
+	}
+
+	/**
 	 * 合流键。
 	 *
 	 * **`retrievalText` 必须在键里。** 上游做了匿名化时，两个学生问同一句话会得到
@@ -690,6 +713,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		}
 
 		/* 中带：有 refine 就短生成并写回替换，没有就退化成完整生成 */
+		let superseded: string | null = null;
 		if (found.outcome === "mid" && found.entryId) {
 			if (options.refine && found.payload?.kind === "answer") {
 				const refined = await options.refine(found.payload.answer, prompt, found.chunks ?? []);
@@ -707,8 +731,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				}
 				// 微调的产物要写回替换旧条目。不写回的话，下次同样的问题又落进中带、
 				// 又微调一次 —— 短生成的钱一直在花，而每次算出的更好答案都被丢掉。
-				await options.store.evict(found.entryId);
-				const replacement = await write(prompt, refined, { ...writeOptions, ticket: await found.prepareWrite() });
+				const replacement = await replaceEntry(found.entryId, prompt, refined, writeOptions, await found.prepareWrite());
 				trace.push({ gate: 6, name: "中带处理", verdict: "pass", detail: `微调后写回：${found.entryId} → ${replacement.id}` });
 				return {
 					payload: refined,
@@ -720,14 +743,26 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 					trace,
 				};
 			}
-			trace.push({ gate: 6, name: "中带处理", verdict: "exit", detail: "未提供 refine，中带退化为完整生成" });
-			await options.store.evict(found.entryId);
+			trace.push({
+				gate: 6,
+				name: "中带处理",
+				verdict: "exit",
+				detail: `未提供 refine，中带退化为完整生成；旧条目 ${found.entryId} 留到新答案写成之后再删`,
+			});
+			superseded = found.entryId;
 		}
 
 		const chunks = found.chunks ?? (await options.retriever.retrieve(prompt.retrievalText, prompt.context));
 		const produced = await generate(prompt, chunks);
 		if (!cacheable(produced)) {
-			trace.push({ gate: 6, name: "写入", verdict: "exit", detail: "答案没有任何资料依据，本次不写入缓存" });
+			trace.push({
+				gate: 6,
+				name: "写入",
+				verdict: "exit",
+				detail: superseded
+					? "答案没有任何资料依据，本次不写入缓存 —— 中带的旧条目因此保留"
+					: "答案没有任何资料依据，本次不写入缓存",
+			});
 			return {
 				payload: produced,
 				outcome: "generated",
@@ -738,7 +773,10 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				trace,
 			};
 		}
-		const stored = await write(prompt, produced, { ...writeOptions, ticket: await found.prepareWrite() });
+		const stored =
+			superseded === null
+				? await write(prompt, produced, { ...writeOptions, ticket: await found.prepareWrite() })
+				: await replaceEntry(superseded, prompt, produced, writeOptions, await found.prepareWrite());
 		return {
 			payload: produced,
 			outcome: "generated",
