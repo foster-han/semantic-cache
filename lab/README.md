@@ -34,7 +34,7 @@ MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm s
 | `MODE` | `local` | `local` 真模型（ONNX，本地跑）/ `stub` 字符 Jaccard 的哈希投影 |
 | `PAIR_MODEL` | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | ③ 缓存匹配（问题↔问题） |
 | `RETR_MODEL` | `Xenova/multilingual-e5-small` | 检索 + ⑥ 的答案侧编码 |
-| `CE_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | ④ 精排。**默认这个是故意留的坏例子**，见下 |
+| `CE_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | ④ 精排。**默认这个在中文上全盲**（18 对真实对子 margin −0.0003）。想跑 ④ 的真实精度：`CE_MODEL=Xenova/bge-reranker-base`（margin +0.7801），换完必须重标 θq。候选实测见 [FINDINGS](../FINDINGS.md) |
 
 ### ② 语料
 
