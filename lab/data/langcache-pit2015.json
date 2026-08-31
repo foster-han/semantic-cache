@@ -1,0 +1,4010 @@
+{
+	"source": "redis/langcache-sentencepairs-v1 · pit2015 · test",
+	"balanced": false,
+	"positiveRate": 0.1875,
+	"note": "保留原始正例率 —— precision 无偏。这才是这个 config 真实的分布",
+	"sampling": "顺序全取",
+	"scanned": 800,
+	"pairs": [
+		{
+			"sentence1": "All the home alones watching 8 mile",
+			"sentence2": "8 mile is on thats my movie",
+			"label": 0
+		},
+		{
+			"sentence1": "All the home alones watching 8 mile",
+			"sentence2": "The last rap battle in 8 Mile nevr gets old ahah",
+			"label": 0
+		},
+		{
+			"sentence1": "All the home alones watching 8 mile",
+			"sentence2": "The rap battle at the end of 8 mile gets me so hype",
+			"label": 0
+		},
+		{
+			"sentence1": "The Ending to 8 Mile is my fav part of the whole movie",
+			"sentence2": "Rabbit on 8 mile out of place but determined to make it",
+			"label": 0
+		},
+		{
+			"sentence1": "The Ending to 8 Mile is my fav part of the whole movie",
+			"sentence2": "See 8 Mile is always on but it s the tv version so it s gay",
+			"label": 0
+		},
+		{
+			"sentence1": "The Ending to 8 Mile is my fav part of the whole movie",
+			"sentence2": "Those last 3 battles in 8 Mile are THE shit",
+			"label": 1
+		},
+		{
+			"sentence1": "0 and 8 mile on at the same time",
+			"sentence2": "It s just rap lyrics from the movie 8 mile",
+			"label": 0
+		},
+		{
+			"sentence1": "0 and 8 mile on at the same time",
+			"sentence2": "I will never get tired of 8 Mile",
+			"label": 0
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "Watching 8 Mile for the 76283936154th time",
+			"label": 0
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "My favorite movie ever is 8 mile",
+			"label": 0
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "In 8 Mile in a scene the background music is Sweet Home Alabama",
+			"label": 0
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "8 mile is on havent seen this movie in the longest",
+			"label": 1
+		},
+		{
+			"sentence1": "The last rap battle in 8 mile though",
+			"sentence2": "But why were people watching the heat play when 8 mile is on",
+			"label": 0
+		},
+		{
+			"sentence1": "The last rap battle in 8 mile though",
+			"sentence2": "I think everyone is watching 8 mile Rn",
+			"label": 0
+		},
+		{
+			"sentence1": "8 mile is just a classic",
+			"sentence2": "the ending of 8 mile is prolly the best part of the whole movie",
+			"label": 0
+		},
+		{
+			"sentence1": "8 mile is just a classic",
+			"sentence2": "After watching 8 mile I feel like such a thug",
+			"label": 0
+		},
+		{
+			"sentence1": "8 mile is just a classic",
+			"sentence2": "8 mile that movie I love eminem in this movie",
+			"label": 1
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "Listened to the final rap battle from 8 mile and now Im watching the whole movie",
+			"label": 0
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "8 mile has been that movie",
+			"label": 0
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "I really did miss my part on 8 Mile",
+			"label": 0
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "Lose Yourself is the perfect song to end 8 mile on",
+			"label": 0
+		},
+		{
+			"sentence1": "Well at least 8 Mile is on",
+			"sentence2": "This is my favorite scene of 8 mile",
+			"label": 0
+		},
+		{
+			"sentence1": "8 mile is on friday made",
+			"sentence2": "I missed the best part of 8 mile",
+			"label": 0
+		},
+		{
+			"sentence1": "8 mile is on friday made",
+			"sentence2": "8 mile is such an awesome movie",
+			"label": 0
+		},
+		{
+			"sentence1": "Oh shit niggy 8 mile is on",
+			"sentence2": "Eminem s rap in the final battle of 8 Mile gets me pumped every time",
+			"label": 0
+		},
+		{
+			"sentence1": "Oh shit niggy 8 mile is on",
+			"sentence2": "My favorite part of 8 mile is about to come up",
+			"label": 0
+		},
+		{
+			"sentence1": "Oh shit niggy 8 mile is on",
+			"sentence2": "While yall argue about the game 8 mile is on MTV",
+			"label": 1
+		},
+		{
+			"sentence1": "Ok good the end of 8 Mile is on",
+			"sentence2": "The end of 8 Mile makes me so happy",
+			"label": 1
+		},
+		{
+			"sentence1": "Ok good the end of 8 Mile is on",
+			"sentence2": "The last 3 rap battles in 8 mile always get me hyped af",
+			"label": 1
+		},
+		{
+			"sentence1": "Ok good the end of 8 Mile is on",
+			"sentence2": "I always get the movies 8 mile and green mile mixed up",
+			"label": 0
+		},
+		{
+			"sentence1": "Ok good the end of 8 Mile is on",
+			"sentence2": "All the home alones watching 8 mile",
+			"label": 0
+		},
+		{
+			"sentence1": "Let s go see after earth",
+			"sentence2": "Did After Earth already come out",
+			"label": 0
+		},
+		{
+			"sentence1": "Let s go see after earth",
+			"sentence2": "I need to go see After Earth The purge ans Man Of Steel",
+			"label": 0
+		},
+		{
+			"sentence1": "Let s go see after earth",
+			"sentence2": "idk I think we might go see after earth later if we do you wana go",
+			"label": 1
+		},
+		{
+			"sentence1": "Anyone trying to see After Earth sometime soon",
+			"sentence2": "Me and my son went to see After Earth last night",
+			"label": 0
+		},
+		{
+			"sentence1": "Anyone trying to see After Earth sometime soon",
+			"sentence2": "I wanna go see After Earth officialjaden",
+			"label": 0
+		},
+		{
+			"sentence1": "Anyone trying to see After Earth sometime soon",
+			"sentence2": "I wanna come watch after Earth with you",
+			"label": 0
+		},
+		{
+			"sentence1": "who wants to see after earth with me todayyyy",
+			"sentence2": "I could of told Will Smith that After Earth was going 2 crash",
+			"label": 0
+		},
+		{
+			"sentence1": "who wants to see after earth with me todayyyy",
+			"sentence2": "I knew After Earth would tank",
+			"label": 0
+		},
+		{
+			"sentence1": "who wants to see after earth with me todayyyy",
+			"sentence2": "I wanna go see After Earth or Epic",
+			"label": 0
+		},
+		{
+			"sentence1": "who wants to see after earth with me todayyyy",
+			"sentence2": "After Earth finishes with 27 million",
+			"label": 0
+		},
+		{
+			"sentence1": "who wants to see after earth with me todayyyy",
+			"sentence2": "even if After Earth is a good movie",
+			"label": 0
+		},
+		{
+			"sentence1": "I see the After Earth reviews are not positive",
+			"sentence2": "Ether to see after earth or fast 6",
+			"label": 0
+		},
+		{
+			"sentence1": "I see the After Earth reviews are not positive",
+			"sentence2": "Wow AFTER EARTH really bombed huh",
+			"label": 0
+		},
+		{
+			"sentence1": "I see the After Earth reviews are not positive",
+			"sentence2": "I need to watch after earth tho",
+			"label": 0
+		},
+		{
+			"sentence1": "I just want to go see after earth",
+			"sentence2": "Im taking my little brother to go see After Earth today",
+			"label": 0
+		},
+		{
+			"sentence1": "i need to watch after earth asap",
+			"sentence2": "At the theater with the little about do watch After Earth",
+			"label": 0
+		},
+		{
+			"sentence1": "i need to watch after earth asap",
+			"sentence2": "Someone needs to come see after earth with me",
+			"label": 1
+		},
+		{
+			"sentence1": "i need to watch after earth asap",
+			"sentence2": "someone come watch after earth will me June 7th",
+			"label": 0
+		},
+		{
+			"sentence1": "i need to watch after earth asap",
+			"sentence2": "After Earth is a great ass movie",
+			"label": 0
+		},
+		{
+			"sentence1": "Heading out to see After Earth in a bit",
+			"sentence2": "Goin to see after earth with the fam",
+			"label": 1
+		},
+		{
+			"sentence1": "Heading out to see After Earth in a bit",
+			"sentence2": "will smith s speech in after earth is so relevant",
+			"label": 0
+		},
+		{
+			"sentence1": "Heading out to see After Earth in a bit",
+			"sentence2": "Just got done eating chinese with the fam now ganna go see after earth",
+			"label": 1
+		},
+		{
+			"sentence1": "Going to see after earth but",
+			"sentence2": "After earth is out and I havent seen it yet",
+			"label": 0
+		},
+		{
+			"sentence1": "Going to see after earth but",
+			"sentence2": "wanted to watch After Earth today",
+			"label": 0
+		},
+		{
+			"sentence1": "Who wants to take me to see After Earth",
+			"sentence2": "Finally in the theaters to see after earth",
+			"label": 0
+		},
+		{
+			"sentence1": "Who wants to take me to see After Earth",
+			"sentence2": "the hangover 3 and after earth are both really good",
+			"label": 0
+		},
+		{
+			"sentence1": "I wanna see the movie after earth",
+			"sentence2": "I kinda wanna see After Earth as well",
+			"label": 1
+		},
+		{
+			"sentence1": "I wanna see the movie after earth",
+			"sentence2": "NOW YOU SEE ME and AFTER EARTH Cant Outpace FAST FURIOUS 6",
+			"label": 0
+		},
+		{
+			"sentence1": "I wanna see the movie after earth",
+			"sentence2": "After Earth 039 trumped by 039 Now You See Me 039 as 039 Fast",
+			"label": 0
+		},
+		{
+			"sentence1": "the US and belgium are tied at half",
+			"sentence2": "Come on Romelu get some goals for Belgium",
+			"label": 0
+		},
+		{
+			"sentence1": "the US and belgium are tied at half",
+			"sentence2": "Mirallas with a soft and cool finish off the rebound to put Belgium up 10",
+			"label": 0
+		},
+		{
+			"sentence1": "Dude Belgium is freakin staked",
+			"sentence2": "US vs Belgium or the wings",
+			"label": 0
+		},
+		{
+			"sentence1": "Dude Belgium is freakin staked",
+			"sentence2": "Belgium almost take the lead in the 27th min",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium s gonna rape by the USA",
+			"sentence2": "What kind of formation Belgium playing there",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium s gonna rape by the USA",
+			"sentence2": "At half US 1 Belgium 1 Indians 5",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium s gonna rape by the USA",
+			"sentence2": "Who s in goal for Belgium for the USMNT friendly",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium vs USA you watching",
+			"sentence2": "Vernaelen always gets injured for Belgium",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium vs USA you watching",
+			"sentence2": "Im not even watching the game but i see Belgium scored already",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium vs USA you watching",
+			"sentence2": "6th minute Belgium with the score",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium vs USA you watching",
+			"sentence2": "Belgium in a friendly instead",
+			"label": 0
+		},
+		{
+			"sentence1": "Watching the USMNT vs the talented Belgium team",
+			"sentence2": "The Belgium GK wasnt trying to concede another goal",
+			"label": 0
+		},
+		{
+			"sentence1": "Watching the USMNT vs the talented Belgium team",
+			"sentence2": "that being said US 21 Belgium",
+			"label": 0
+		},
+		{
+			"sentence1": "Watching the USMNT vs the talented Belgium team",
+			"sentence2": "At half US 1 Belgium 1 Indians 5",
+			"label": 0
+		},
+		{
+			"sentence1": "yeah Belgium is definitely good",
+			"sentence2": "what s up with the nonHD main camera at the USBelgium soccer game",
+			"label": 0
+		},
+		{
+			"sentence1": "yeah Belgium is definitely good",
+			"sentence2": "Belgium vs USA you watching",
+			"label": 0
+		},
+		{
+			"sentence1": "yeah Belgium is definitely good",
+			"sentence2": "USA not looking good early in their friendly with Belgium",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium has a great team",
+			"sentence2": "Predicting a 31 for Belgium",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium has a great team",
+			"sentence2": "a little late to the USABelgium game",
+			"label": 0
+		},
+		{
+			"sentence1": "Belgium has a great team",
+			"sentence2": "USA is taking a tough blow from the Belgium national team right now",
+			"label": 0
+		},
+		{
+			"sentence1": "I love everyone on the Belgium squad",
+			"sentence2": "Belgium is playing 4 centerbacks and fellani and they concede on a set piece",
+			"label": 0
+		},
+		{
+			"sentence1": "I love everyone on the Belgium squad",
+			"sentence2": "In other news this Belgium squad taking on USMNT is STACKED",
+			"label": 1
+		},
+		{
+			"sentence1": "I love everyone on the Belgium squad",
+			"sentence2": "It s Belgium we got this",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez is still a massive prick",
+			"sentence2": "Mourinho to city Benitez to stay at Chelsea",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez is still a massive prick",
+			"sentence2": "Chelsea FC wouldnt get rid of Benitez now",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez he s too good for you",
+			"sentence2": "I hope Chelsea fans are thoroughly embarrassed now with the way they treated Benitez",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez he s too good for you",
+			"sentence2": "Thank you for your tactics Benitez",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez he s too good for you",
+			"sentence2": "Got alot of time for rafa Benitez",
+			"label": 0
+		},
+		{
+			"sentence1": "Benitez is a sick manager",
+			"sentence2": "Rafa Benitez EuropeanGenius and they didnt want him",
+			"label": 0
+		},
+		{
+			"sentence1": "Benitez is a sick manager",
+			"sentence2": "Well done to Rafa Benitez a dignified man",
+			"label": 0
+		},
+		{
+			"sentence1": "congratulations to petr ech and rafa benitez",
+			"sentence2": "Rafa Benitez a free agent",
+			"label": 0
+		},
+		{
+			"sentence1": "congratulations to petr ech and rafa benitez",
+			"sentence2": "Credit where credits due to Rafa Benitez",
+			"label": 1
+		},
+		{
+			"sentence1": "God forbid lyknx Rafa Benitez",
+			"sentence2": "How can chelsea fans still hate benitez",
+			"label": 0
+		},
+		{
+			"sentence1": "Thank you very much Rafa Benitez",
+			"sentence2": "Congratulation chelsea for winning the europa league most especially Rafa Benitez and Torres",
+			"label": 0
+		},
+		{
+			"sentence1": "Thank you very much Rafa Benitez",
+			"sentence2": "Why do liverpool fans love benitez so much",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez I must thank you",
+			"sentence2": "I am so happy for RAFA BENITEZ VictorMoses and Mikel",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez I must thank you",
+			"sentence2": "Pleased for Benitez hasnt deserved the stick he s got",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez I must thank you",
+			"sentence2": "Once a red always a blue rafa Benitez we want you",
+			"label": 0
+		},
+		{
+			"sentence1": "THANK YOU SO MUCH RAFA BENITEZ",
+			"sentence2": "Benitez is alright tho man fuck chelsea fans they suck asshole",
+			"label": 0
+		},
+		{
+			"sentence1": "THANK YOU SO MUCH RAFA BENITEZ",
+			"sentence2": "Credit where credits due to Rafa Benitez",
+			"label": 1
+		},
+		{
+			"sentence1": "THANK YOU SO MUCH RAFA BENITEZ",
+			"sentence2": "Cant see Chelsea players lifting Benitez high",
+			"label": 0
+		},
+		{
+			"sentence1": "Rafa Benitez deserves a hell of a thank you",
+			"sentence2": "Any praise for Benitez from my Chelsea followers lol",
+			"label": 1
+		},
+		{
+			"sentence1": "I dont understand the hatred for Rafa Benitez",
+			"sentence2": "Top 4 and a trophy and still they dont give any respect for Benitez",
+			"label": 1
+		},
+		{
+			"sentence1": "Big 12SEC announce basketball challenge",
+			"sentence2": "Bill Self to the Big 12",
+			"label": 0
+		},
+		{
+			"sentence1": "Big 12SEC announce basketball challenge",
+			"sentence2": "The Big 12 just got a whole lot more interesting",
+			"label": 0
+		},
+		{
+			"sentence1": "Big 12SEC announce basketball challenge",
+			"sentence2": "Just when you thought Bill Self wasnt going to own the Big 12 for another year",
+			"label": 0
+		},
+		{
+			"sentence1": "Big 12SEC announce basketball challenge",
+			"sentence2": "Oklahoma in Houston also among the 10 SECBig 12 matchups",
+			"label": 0
+		},
+		{
+			"sentence1": "Kansas just won the Big 12 championship again",
+			"sentence2": "Did kU win the Big 12 Quidditch Championship",
+			"label": 1
+		},
+		{
+			"sentence1": "Kansas just won the Big 12 championship again",
+			"sentence2": "He can fuck up the Big 12 all he wants",
+			"label": 0
+		},
+		{
+			"sentence1": "Kansas just won the Big 12 championship again",
+			"sentence2": "So what if the Big 12 had 14 teams",
+			"label": 0
+		},
+		{
+			"sentence1": "Sorry to the rest of the big 12",
+			"sentence2": "And Kansas once again will win the Big 12",
+			"label": 0
+		},
+		{
+			"sentence1": "The big 12 is about to be so stacked next year",
+			"sentence2": "How many of those who were handing the Big 12 to Okla",
+			"label": 0
+		},
+		{
+			"sentence1": "The big 12 is about to be so stacked next year",
+			"sentence2": "well I think Kansas will not win the Big 12 next season in mens basketball",
+			"label": 0
+		},
+		{
+			"sentence1": "will prolly win the Big 12",
+			"sentence2": "UKBig 12 challenge officially announced today",
+			"label": 0
+		},
+		{
+			"sentence1": "will prolly win the Big 12",
+			"sentence2": "21 in Houston as part of Big 12SEC Challenge",
+			"label": 0
+		},
+		{
+			"sentence1": "will prolly win the Big 12",
+			"sentence2": "No reason Kansas should lose a game in the big 12",
+			"label": 0
+		},
+		{
+			"sentence1": "will prolly win the Big 12",
+			"sentence2": "The whole Big 12 but Okiestate in particular just lost their minds",
+			"label": 0
+		},
+		{
+			"sentence1": "Sorry to the rest of the big 12",
+			"sentence2": "Texas Tech will play at Alabama in the SECBig 12 Basketball Challenge on Nov",
+			"label": 0
+		},
+		{
+			"sentence1": "UK part of the Big 12SEC Challenge",
+			"sentence2": "There is NOOOO competition in Big 12 basketball",
+			"label": 0
+		},
+		{
+			"sentence1": "well the big 12 just got decided",
+			"sentence2": "to win the big 12 in all three major sports in the same year",
+			"label": 0
+		},
+		{
+			"sentence1": "well the big 12 just got decided",
+			"sentence2": "SECBig 12 Challenge in hoops has been announced to begin in 201314",
+			"label": 0
+		},
+		{
+			"sentence1": "well the big 12 just got decided",
+			"sentence2": "So Wiggins Is Settling For Playing In The Garbage Ass Big 12",
+			"label": 0
+		},
+		{
+			"sentence1": "Just wish he wasnt in the Big 12",
+			"sentence2": "Big 12 is gonna be exciting",
+			"label": 0
+		},
+		{
+			"sentence1": "Just wish he wasnt in the Big 12",
+			"sentence2": "the BIG 12 goes through LAWRENCE",
+			"label": 0
+		},
+		{
+			"sentence1": "hannahbush were in Reigate",
+			"sentence2": "I just found out Marilyn Monroe has a full bush",
+			"label": 0
+		},
+		{
+			"sentence1": "hannahbush were in Reigate",
+			"sentence2": "Classic redhead with a natural bush",
+			"label": 0
+		},
+		{
+			"sentence1": "hannahbush were in Reigate",
+			"sentence2": "Hahah I heard your dumbass woke up in a bush",
+			"label": 0
+		},
+		{
+			"sentence1": "I dont have time for beating around the bush",
+			"sentence2": "Honey has a brush with her non existent bush",
+			"label": 0
+		},
+		{
+			"sentence1": "Ctfu the man in the bush",
+			"sentence2": "How the hell could Obama kill more than Bush did in Iraq",
+			"label": 0
+		},
+		{
+			"sentence1": "Ctfu the man in the bush",
+			"sentence2": "george bush is never a truther",
+			"label": 0
+		},
+		{
+			"sentence1": "Ctfu the man in the bush",
+			"sentence2": "Im a fan of Clintons Pretty much despise Bush",
+			"label": 0
+		},
+		{
+			"sentence1": "He is worse than Bush",
+			"sentence2": "It was under Bush it is now",
+			"label": 0
+		},
+		{
+			"sentence1": "He is worse than Bush",
+			"sentence2": "Did Obama and the Dems trust the Bush Government",
+			"label": 0
+		},
+		{
+			"sentence1": "He is worse than Bush",
+			"sentence2": "that the Libs are going to say its Bush s fault and Im a racist",
+			"label": 0
+		},
+		{
+			"sentence1": "Then time to trim the rose bush",
+			"sentence2": "I dint like it under Bush either Obama has radically expanded it",
+			"label": 0
+		},
+		{
+			"sentence1": "I want the Bush days back",
+			"sentence2": "Dont beat around the bush just say it",
+			"label": 0
+		},
+		{
+			"sentence1": "I want the Bush days back",
+			"sentence2": "fell in a spiky bush and I have a prickly thing in my finger",
+			"label": 0
+		},
+		{
+			"sentence1": "I want the Bush days back",
+			"sentence2": "i once walked into a bush outside school and literally apologised to it",
+			"label": 0
+		},
+		{
+			"sentence1": "I want the Bush days back",
+			"sentence2": "Bush wiretapped without warrants Obama had them",
+			"label": 0
+		},
+		{
+			"sentence1": "Footbridge over the River Bush",
+			"sentence2": "started under bush and Im sure you were cool with it then",
+			"label": 0
+		},
+		{
+			"sentence1": "Footbridge over the River Bush",
+			"sentence2": "The new Bush tour merchandise is now available",
+			"label": 0
+		},
+		{
+			"sentence1": "Footbridge over the River Bush",
+			"sentence2": "we live near a bush reserve",
+			"label": 0
+		},
+		{
+			"sentence1": "I did for Bush as well",
+			"sentence2": "in my actual bush in a bush in Bushey",
+			"label": 0
+		},
+		{
+			"sentence1": "I did for Bush as well",
+			"sentence2": "it started way before Bush Jr",
+			"label": 0
+		},
+		{
+			"sentence1": "Darling stop beating around the bush",
+			"sentence2": "They called Bush hitler too",
+			"label": 0
+		},
+		{
+			"sentence1": "FUCK THE GOVERNMENT FUCK THE OBAMA ADMINISTRATION FUCK BUSH FUCK BUSH SR",
+			"sentence2": "Why cant everyone just tell it how it is instead of beating around the bush",
+			"label": 0
+		},
+		{
+			"sentence1": "FUCK THE GOVERNMENT FUCK THE OBAMA ADMINISTRATION FUCK BUSH FUCK BUSH SR",
+			"sentence2": "And his legs can have hair but no bush",
+			"label": 0
+		},
+		{
+			"sentence1": "Yeah CHALMERS that s a foul",
+			"sentence2": "Allen Bosh Chalmers James at Wade",
+			"label": 0
+		},
+		{
+			"sentence1": "Yeah CHALMERS that s a foul",
+			"sentence2": "Chalmers makes me mad low key",
+			"label": 0
+		},
+		{
+			"sentence1": "Yeah CHALMERS that s a foul",
+			"sentence2": "Chalmers steady chasing on defense",
+			"label": 0
+		},
+		{
+			"sentence1": "Yeah CHALMERS that s a foul",
+			"sentence2": "I like Cole s onball defense better than Chalmers",
+			"label": 0
+		},
+		{
+			"sentence1": "And now chalmers with the scoop layup",
+			"sentence2": "Anybody see David West Elbow the hell out of Chalmers bad shoulder",
+			"label": 0
+		},
+		{
+			"sentence1": "Mario Chalmers pissin me off",
+			"sentence2": "MARIO CHALMERS JUST THREW IT TO HIS COACH HAHAHA",
+			"label": 0
+		},
+		{
+			"sentence1": "Mario Chalmers pissin me off",
+			"sentence2": "Spo aint in the game chalmers",
+			"label": 0
+		},
+		{
+			"sentence1": "Mario Chalmers pissin me off",
+			"sentence2": "Mario Chalmers needs to get punched in the face",
+			"label": 1
+		},
+		{
+			"sentence1": "Mario Chalmers pissin me off",
+			"sentence2": "Chalmers throws it out of bounds",
+			"label": 0
+		},
+		{
+			"sentence1": "Chalmers just walked with the ball",
+			"sentence2": "Uhm Chalmers didnt just travel",
+			"label": 1
+		},
+		{
+			"sentence1": "Mario Chalmers looks like Mario",
+			"sentence2": "Then Chalmers fucks up again lmao",
+			"label": 0
+		},
+		{
+			"sentence1": "Mario Chalmers looks like Mario",
+			"sentence2": "Lucky ass shxt by Chalmers",
+			"label": 0
+		},
+		{
+			"sentence1": "I hate Mario Chalmersdont know why",
+			"sentence2": "idc idc chalmers be making me mad",
+			"label": 1
+		},
+		{
+			"sentence1": "I hate Mario Chalmersdont know why",
+			"sentence2": "Why is Mario Chalmers starting",
+			"label": 0
+		},
+		{
+			"sentence1": "CHALMERS IS THE TURNOVER KING",
+			"sentence2": "Didnt everyone love Mario Chalmers last year",
+			"label": 0
+		},
+		{
+			"sentence1": "CHALMERS IS THE TURNOVER KING",
+			"sentence2": "Mario chalmers might as well go to the locker room and put on a pacer jersey",
+			"label": 0
+		},
+		{
+			"sentence1": "Chalmers is always complaining to the refs",
+			"sentence2": "LMFAOOO who tf you throwing to Chalmers",
+			"label": 0
+		},
+		{
+			"sentence1": "Chalmers is always complaining to the refs",
+			"sentence2": "James with the block and then wade to James James to chalmers for the finish",
+			"label": 0
+		},
+		{
+			"sentence1": "Chalmers is always complaining to the refs",
+			"sentence2": "This is like the 27th time chalmers fucked up",
+			"label": 0
+		},
+		{
+			"sentence1": "Chalmers is always complaining to the refs",
+			"sentence2": "Chalmers would lock you down bubs",
+			"label": 0
+		},
+		{
+			"sentence1": "Chalmers is always complaining to the refs",
+			"sentence2": "Mario Chalmers is easily my worst favorite player in the NBA",
+			"label": 0
+		},
+		{
+			"sentence1": "The fuck Chalmers is doing",
+			"sentence2": "The fuck Chalmers is doing",
+			"label": 1
+		},
+		{
+			"sentence1": "The fuck Chalmers is doing",
+			"sentence2": "It s so hard to root for Chalmers",
+			"label": 0
+		},
+		{
+			"sentence1": "The fuck Chalmers is doing",
+			"sentence2": "Do I watch the game or Chalmers face",
+			"label": 0
+		},
+		{
+			"sentence1": "The fuck Chalmers is doing",
+			"sentence2": "Uhm Chalmers didnt just travel",
+			"label": 0
+		},
+		{
+			"sentence1": "Chara get in that box",
+			"sentence2": "Chara is dirtier than a Fresno adult film star",
+			"label": 1
+		},
+		{
+			"sentence1": "Chara is just a big goon",
+			"sentence2": "wheres the call on chara",
+			"label": 0
+		},
+		{
+			"sentence1": "Orr should beat the shit out of chara",
+			"sentence2": "What s better than seeing Chara getting dropped by Orr",
+			"label": 1
+		},
+		{
+			"sentence1": "watching chara go down is the best feeling",
+			"sentence2": "Chara s playing with hate in heart",
+			"label": 0
+		},
+		{
+			"sentence1": "Orr vs Chara is like a Jack Russell vs a Wolfhound",
+			"sentence2": "Chara is 7 feet tall basically a Titan",
+			"label": 0
+		},
+		{
+			"sentence1": "Orr vs Chara is like a Jack Russell vs a Wolfhound",
+			"sentence2": "Chara is the most overrated player in the league",
+			"label": 0
+		},
+		{
+			"sentence1": "Orr vs Chara is like a Jack Russell vs a Wolfhound",
+			"sentence2": "Chara move your feet along the boards",
+			"label": 0
+		},
+		{
+			"sentence1": "Orr vs Chara is like a Jack Russell vs a Wolfhound",
+			"sentence2": "FINALLY CHARA IS GIVEN A PENALTY",
+			"label": 0
+		},
+		{
+			"sentence1": "Chara is 69 Holy shit",
+			"sentence2": "Orr wants a piece of chara I swear",
+			"label": 0
+		},
+		{
+			"sentence1": "Chara is 69 Holy shit",
+			"sentence2": "Okay who else saw that beauty hit to chara by orr",
+			"label": 0
+		},
+		{
+			"sentence1": "Chara is 69 Holy shit",
+			"sentence2": "When anyone on the leafs knock down Chara I laugh so hard",
+			"label": 0
+		},
+		{
+			"sentence1": "Chara is 69 Holy shit",
+			"sentence2": "Amazing how bad Chara looks when the speed of the game picks up",
+			"label": 0
+		},
+		{
+			"sentence1": "Colton Orr lowers the boom on Chara",
+			"sentence2": "Why is chara playing like a bitch",
+			"label": 0
+		},
+		{
+			"sentence1": "Colton Orr lowers the boom on Chara",
+			"sentence2": "BOOOOOMM down went chara again",
+			"label": 0
+		},
+		{
+			"sentence1": "Colton Orr lowers the boom on Chara",
+			"sentence2": "Zideno Chara is a brick wall on skates",
+			"label": 0
+		},
+		{
+			"sentence1": "Orr with a big hit on Chara",
+			"sentence2": "Chara penalty on the play",
+			"label": 0
+		},
+		{
+			"sentence1": "Orr with a big hit on Chara",
+			"sentence2": "Chara called for a high stick on the play too",
+			"label": 0
+		},
+		{
+			"sentence1": "Orr with a big hit on Chara",
+			"sentence2": "I keep waiting for the chara vs orr fight",
+			"label": 1
+		},
+		{
+			"sentence1": "Chara is a disgrace to the NHL",
+			"sentence2": "Chara is a crash dummy in this game",
+			"label": 0
+		},
+		{
+			"sentence1": "Chara is a disgrace to the NHL",
+			"sentence2": "Chara is just a big goon",
+			"label": 1
+		},
+		{
+			"sentence1": "Chara is a disgrace to the NHL",
+			"sentence2": "When chara gets checked and hits the ground I just get happy idk why",
+			"label": 0
+		},
+		{
+			"sentence1": "but orr keeps pushing chara",
+			"sentence2": "Imma blame Chara for Lupul missing that one",
+			"label": 0
+		},
+		{
+			"sentence1": "but orr keeps pushing chara",
+			"sentence2": "Why is Chara allowed to take down people without the puck",
+			"label": 0
+		},
+		{
+			"sentence1": "except Im in Chicago at the moment",
+			"sentence2": "When do you plan to be at 600 W Chicago next",
+			"label": 0
+		},
+		{
+			"sentence1": "except Im in Chicago at the moment",
+			"sentence2": "Big game 7 here in Chicago tonight",
+			"label": 0
+		},
+		{
+			"sentence1": "except Im in Chicago at the moment",
+			"sentence2": "I checked in at Chicago Park District",
+			"label": 0
+		},
+		{
+			"sentence1": "Anyone wanting to go to the JT concert 722 in Chicago",
+			"sentence2": "Nice new Guideshop in Chicago",
+			"label": 0
+		},
+		{
+			"sentence1": "Anyone wanting to go to the JT concert 722 in Chicago",
+			"sentence2": "The North side of Chicago is happy",
+			"label": 0
+		},
+		{
+			"sentence1": "Anyone wanting to go to the JT concert 722 in Chicago",
+			"sentence2": "just watched season finale of chicago fire and cried",
+			"label": 0
+		},
+		{
+			"sentence1": "See you in Chicago Dierks",
+			"sentence2": "I really wanna do the color run in Chicago lol",
+			"label": 0
+		},
+		{
+			"sentence1": "See you in Chicago Dierks",
+			"sentence2": "The ungeekedeliteschicago Daily is out",
+			"label": 0
+		},
+		{
+			"sentence1": "See you in Chicago Dierks",
+			"sentence2": "I am watching Chicago Fire A Hell of a Ride",
+			"label": 0
+		},
+		{
+			"sentence1": "See you in Chicago Dierks",
+			"sentence2": "panoramic shot of noKXL and stop deportations rallies at Obama fundraiser in Chicago",
+			"label": 0
+		},
+		{
+			"sentence1": "Im just saying game 7 in Chicago",
+			"sentence2": "blogher is in chicago this year",
+			"label": 0
+		},
+		{
+			"sentence1": "Im just saying game 7 in Chicago",
+			"sentence2": "Wings in a must win in Chicago",
+			"label": 0
+		},
+		{
+			"sentence1": "Im just saying game 7 in Chicago",
+			"sentence2": "Id definitely be happy to help but I wont be back in Chicago until Sunday",
+			"label": 0
+		},
+		{
+			"sentence1": "Game 7 in Chicago tonight",
+			"sentence2": "By Micheline Maynard Contributor Chicago has",
+			"label": 0
+		},
+		{
+			"sentence1": "Game 7 in Chicago tonight",
+			"sentence2": "bro you in chicago widdit yet",
+			"label": 0
+		},
+		{
+			"sentence1": "Game 7 in Chicago tonight",
+			"sentence2": "is L still looking for a copy of Chicago",
+			"label": 0
+		},
+		{
+			"sentence1": "youre in Chicago and were here to say nokxl",
+			"sentence2": "hope you and Hunter made it to Chicago this time",
+			"label": 0
+		},
+		{
+			"sentence1": "youre in Chicago and were here to say nokxl",
+			"sentence2": "Flying to chicago on the 14th",
+			"label": 0
+		},
+		{
+			"sentence1": "Good week to be a Northsiderrr in Chicago",
+			"sentence2": "go to north coast in chicago its way cheaper and the same weekend",
+			"label": 0
+		},
+		{
+			"sentence1": "Good week to be a Northsiderrr in Chicago",
+			"sentence2": "Leaving early tomorrow morning to go to the Hospital in Chicago",
+			"label": 0
+		},
+		{
+			"sentence1": "Ahh Obama s in Chicago",
+			"sentence2": "I live in South Ontario but have great friends in Chicago",
+			"label": 0
+		},
+		{
+			"sentence1": "Ahh Obama s in Chicago",
+			"sentence2": "did u really quit your job to go to edc chicago",
+			"label": 0
+		},
+		{
+			"sentence1": "Ahh Obama s in Chicago",
+			"sentence2": "youre in Chicago and were here to say nokxl",
+			"label": 0
+		},
+		{
+			"sentence1": "Ahh Obama s in Chicago",
+			"sentence2": "Night in Chicago with my ladies",
+			"label": 0
+		},
+		{
+			"sentence1": "I cannot WAIT to go to Chicago",
+			"sentence2": "Chicago is saying this todayEven nonhockey fans",
+			"label": 0
+		},
+		{
+			"sentence1": "I cannot WAIT to go to Chicago",
+			"sentence2": "It was a day of impulse buys in Chicago",
+			"label": 0
+		},
+		{
+			"sentence1": "youre in Chicago and were here to say nokxl",
+			"sentence2": "Just bought a ticket to Chicago for 2350 round trip",
+			"label": 0
+		},
+		{
+			"sentence1": "youre in Chicago and were here to say nokxl",
+			"sentence2": "If Chicago does I can officially turn off the TV for the season",
+			"label": 0
+		},
+		{
+			"sentence1": "Yes yo CHRIS DAVIS IS BATS",
+			"sentence2": "Would you want to watch Chris Davis in the home run derby",
+			"label": 0
+		},
+		{
+			"sentence1": "Yes yo CHRIS DAVIS IS BATS",
+			"sentence2": "And Chris Davis homer s again",
+			"label": 0
+		},
+		{
+			"sentence1": "Yes yo CHRIS DAVIS IS BATS",
+			"sentence2": "Is that Chris Davis out there",
+			"label": 0
+		},
+		{
+			"sentence1": "Yes yo CHRIS DAVIS IS BATS",
+			"sentence2": "people actually keep pitching to Chris Davis",
+			"label": 0
+		},
+		{
+			"sentence1": "Go Os Chris Davis is a hunk",
+			"sentence2": "Chris Davis launches a tworun homer to add a few insurance runs",
+			"label": 0
+		},
+		{
+			"sentence1": "Go Os Chris Davis is a hunk",
+			"sentence2": "Chris Davis is on pace for 58 HR and 153 RBI this season",
+			"label": 0
+		},
+		{
+			"sentence1": "Wow Chris Davis is only 27",
+			"sentence2": "Chris Davis actually reminds me of Hamilton at the plate",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis rules the Yard tonight",
+			"sentence2": "So um Chris Davis you guys",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis rules the Yard tonight",
+			"sentence2": "So happy Chris Davis is on my fantasy team",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis rules the Yard tonight",
+			"sentence2": "No other words but shut the front door Chris Davis is my not so secret crush",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is way to nice",
+			"sentence2": "Is Chris Davis a top 5 hitter in baseball right now",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is way to nice",
+			"sentence2": "I cant lie Chris Davis is a babe",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is way to nice",
+			"sentence2": "WHAT THE HELL DOES CHRIS DAVIS EAT FOR BREAKFAST",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is on the roids BIG TIME",
+			"sentence2": "Ayo smh Chris Davis TEACH ME",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is on the roids BIG TIME",
+			"sentence2": "When is the Chris Davis ped suspension coming",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is on the roids BIG TIME",
+			"sentence2": "Chris Davis is on pace for about 56 HRs",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is on the roids BIG TIME",
+			"sentence2": "Im borderline gay for Chris Davis",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is on the roids BIG TIME",
+			"sentence2": "Wow is Chris Davis seriously leading the MLB in Home runs this year",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is on the roids BIG TIME",
+			"sentence2": "Does anyone have a smoother HR swing than Chris Davis",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is on the roids BIG TIME",
+			"sentence2": "WTF otro tablazo de Chris Davis",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is putting the team on his back",
+			"sentence2": "Get to see Chris Davis tomorrow",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is putting the team on his back",
+			"sentence2": "My god Chris Davis is an animal",
+			"label": 0
+		},
+		{
+			"sentence1": "Chris Davis is putting the team on his back",
+			"sentence2": "Chris Davis is so fucking good",
+			"label": 1
+		},
+		{
+			"sentence1": "Chris Davis is putting the team on his back",
+			"sentence2": "Chris Davis doing what he does",
+			"label": 1
+		},
+		{
+			"sentence1": "Chris Davis is putting the team on his back",
+			"sentence2": "Wow is Chris Davis seriously leading the MLB in Home runs this year",
+			"label": 1
+		},
+		{
+			"sentence1": "Chris Davis is putting the team on his back",
+			"sentence2": "why is chris davis such a babe",
+			"label": 0
+		},
+		{
+			"sentence1": "chris davis is 44 with two bombs",
+			"sentence2": "Chris Davis of the Orioles is better than you at hitting",
+			"label": 0
+		},
+		{
+			"sentence1": "chris davis is 44 with two bombs",
+			"sentence2": "Chris Davis has 2 home runs tonight",
+			"label": 1
+		},
+		{
+			"sentence1": "Wait Chris Davis is coming to Catonsville",
+			"sentence2": "Chris Davis is an absolute animal",
+			"label": 0
+		},
+		{
+			"sentence1": "Wait Chris Davis is coming to Catonsville",
+			"sentence2": "CHRIS DAVIS HITS TWO HOMERS AND IS GOING TO BE AT MY SCHOOL TOMORROW",
+			"label": 1
+		},
+		{
+			"sentence1": "Diddy Drops A New Flavor Of CIROC",
+			"sentence2": "ALERT ALERT ALERT ITS A NEW CIROC OUT",
+			"label": 1
+		},
+		{
+			"sentence1": "Diddy Drops A New Flavor Of CIROC",
+			"sentence2": "I dont understand Amaretto Ciroc",
+			"label": 0
+		},
+		{
+			"sentence1": "New Ciroc Amaretto I NEED THAT",
+			"sentence2": "There is a new Ciroc flavor amaretto",
+			"label": 1
+		},
+		{
+			"sentence1": "New Ciroc Amaretto I NEED THAT",
+			"sentence2": "My thoughts exactly on this Ciroc flavored amaretto",
+			"label": 0
+		},
+		{
+			"sentence1": "New Ciroc Amaretto I NEED THAT",
+			"sentence2": "Oh shit I gotta try that new ciroc flavor",
+			"label": 1
+		},
+		{
+			"sentence1": "New Ciroc Amaretto I NEED THAT",
+			"sentence2": "New Ciroc flavor on the market gotta try that shit",
+			"label": 1
+		},
+		{
+			"sentence1": "it s a Ciroc new flavor",
+			"sentence2": "I love Ciroc and I love Amaretto",
+			"label": 0
+		},
+		{
+			"sentence1": "it s a Ciroc new flavor",
+			"sentence2": "Ciroc is shit vodka anyway",
+			"label": 0
+		},
+		{
+			"sentence1": "it s a Ciroc new flavor",
+			"sentence2": "I think its going to be a ciroc night",
+			"label": 0
+		},
+		{
+			"sentence1": "it s a Ciroc new flavor",
+			"sentence2": "Ciroc got a new flavor comin out",
+			"label": 1
+		},
+		{
+			"sentence1": "That s the new Ciroc flavor",
+			"sentence2": "Need a little taste of that new Ciroc",
+			"label": 0
+		},
+		{
+			"sentence1": "That s the new Ciroc flavor",
+			"sentence2": "that amaretto ciroc is a thing",
+			"label": 0
+		},
+		{
+			"sentence1": "it s a new ciroc flavor",
+			"sentence2": "what was wrong with that Ciroc tho",
+			"label": 0
+		},
+		{
+			"sentence1": "it s a new ciroc flavor",
+			"sentence2": "That new Ciroc flavor gon set the streets on fire",
+			"label": 0
+		},
+		{
+			"sentence1": "The new Ciroc flavor has arrived",
+			"sentence2": "Diddy Got A New Ciroc Called Amaretto Smfh",
+			"label": 1
+		},
+		{
+			"sentence1": "The new Ciroc flavor has arrived",
+			"sentence2": "I dont drink but amaretto ciroc is interesting",
+			"label": 1
+		},
+		{
+			"sentence1": "The new Ciroc flavor has arrived",
+			"sentence2": "Lol word NickLoMax New ciroc flavor drop on a 90 degree day",
+			"label": 0
+		},
+		{
+			"sentence1": "The new Ciroc flavor has arrived",
+			"sentence2": "Ciroc got a new flavor comin out",
+			"label": 1
+		},
+		{
+			"sentence1": "They have a new Amaretto Ciroc",
+			"sentence2": "if that is really a new Ciroc flavor then I am DEFINITELY trying it",
+			"label": 0
+		},
+		{
+			"sentence1": "New Amaretto Ciroc coming out",
+			"sentence2": "They have a new flavor of ciroc",
+			"label": 1
+		},
+		{
+			"sentence1": "New Amaretto Ciroc coming out",
+			"sentence2": "you the spokesperson for Ciroc b",
+			"label": 0
+		},
+		{
+			"sentence1": "New Amaretto Ciroc coming out",
+			"sentence2": "Im waiting on the grape koolaid ciroc",
+			"label": 0
+		},
+		{
+			"sentence1": "I like that berry ciroc",
+			"sentence2": "New flavor of ciroc coming doe",
+			"label": 0
+		},
+		{
+			"sentence1": "I like that berry ciroc",
+			"sentence2": "but yall so damn hype bout the new ciroc",
+			"label": 0
+		},
+		{
+			"sentence1": "They making a new ciroc",
+			"sentence2": "No Ciroc just announced their new flavor Amaretto",
+			"label": 1
+		},
+		{
+			"sentence1": "They making a new ciroc",
+			"sentence2": "we need to try the new Ciroc",
+			"label": 1
+		},
+		{
+			"sentence1": "They making a new ciroc",
+			"sentence2": "New Ciroc flavor qmangxxx when we testin it out",
+			"label": 0
+		},
+		{
+			"sentence1": "The level of competition across Europe is astounding",
+			"sentence2": "If only England was in Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "Ask yourself this is America in Europe",
+			"sentence2": "All Europe watch this show right now",
+			"label": 0
+		},
+		{
+			"sentence1": "Ask yourself this is America in Europe",
+			"sentence2": "Sure in Greece the alcohol is free when the rest of Europe pays it",
+			"label": 0
+		},
+		{
+			"sentence1": "Ask yourself this is America in Europe",
+			"sentence2": "Christ how do they breed these things in Eastern Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "toshfromthebill is Azerbaijan in Europe",
+			"sentence2": "Firstly youre not in Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "toshfromthebill is Azerbaijan in Europe",
+			"sentence2": "Is that legal in Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "toshfromthebill is Azerbaijan in Europe",
+			"sentence2": "If Eurovision is vision of Europe were fucked",
+			"label": 0
+		},
+		{
+			"sentence1": "Ask yourself this is America in Europe",
+			"sentence2": "Doubt theyll be the same for the rest of Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "Ask yourself this is America in Europe",
+			"sentence2": "everyone else in Europe chips in to pay for it",
+			"label": 0
+		},
+		{
+			"sentence1": "Is South Korea in Europe",
+			"sentence2": "I love how many of you Europeans are acknowledging new countries that are in Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "Is South Korea in Europe",
+			"sentence2": "oh okay Im actually from Europe but Im not watching it",
+			"label": 0
+		},
+		{
+			"sentence1": "Please Europe vote forAzerbaijan in Eurovision2013",
+			"sentence2": "Could someone please tell eastern europe the Shakira dream is over",
+			"label": 0
+		},
+		{
+			"sentence1": "it is a song contest between all the countries in Europe",
+			"sentence2": "Well I still live in Europe too but you know",
+			"label": 0
+		},
+		{
+			"sentence1": "Restoring hope in MILF s for all of Europe",
+			"sentence2": "ARGENTINA ARE NOT IN EUROPE",
+			"label": 0
+		},
+		{
+			"sentence1": "Restoring hope in MILF s for all of Europe",
+			"sentence2": "Why are the girls in Europe so pretty fml",
+			"label": 0
+		},
+		{
+			"sentence1": "That s what were watching in Europe",
+			"sentence2": "If only England was in Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "That s what were watching in Europe",
+			"sentence2": "And the winner is dvntownsend because this is my new regime Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "That s what were watching in Europe",
+			"sentence2": "someone told me it s a song contest for Europe",
+			"label": 0
+		},
+		{
+			"sentence1": "Family Guy is fucking weird lol",
+			"sentence2": "Family guy on black women in hindsight is so funny",
+			"label": 0
+		},
+		{
+			"sentence1": "I wish family guy was on right now",
+			"sentence2": "The episode of Quagmire and Meg together as a couple on Family Guy",
+			"label": 0
+		},
+		{
+			"sentence1": "I wish family guy was on right now",
+			"sentence2": "If anyone s watching family guy this episode is so gay SeeWhatIDidTheir lol",
+			"label": 0
+		},
+		{
+			"sentence1": "Family guy is KILLING it tonight",
+			"sentence2": "Eating My Ultimate Bacon Cheeseburger Watching Family Guy",
+			"label": 0
+		},
+		{
+			"sentence1": "Family guy is KILLING it tonight",
+			"sentence2": "This gotta be the funniest episode of family guy",
+			"label": 1
+		},
+		{
+			"sentence1": "Family guy is KILLING it tonight",
+			"sentence2": "I have to fall asleep watching family guy I just have to",
+			"label": 0
+		},
+		{
+			"sentence1": "family guy is trending in the US",
+			"sentence2": "Family Guy never fails at making me laugh",
+			"label": 0
+		},
+		{
+			"sentence1": "family guy is trending in the US",
+			"sentence2": "I swear Fuck Family Guy for being that funny tonight",
+			"label": 0
+		},
+		{
+			"sentence1": "family guy is trending in the US",
+			"sentence2": "Yeah I refuse to give Family Guy credit for anything original",
+			"label": 0
+		},
+		{
+			"sentence1": "family guy is trending in the US",
+			"sentence2": "Family guy is so racist or maybe they just point out the racism in America",
+			"label": 0
+		},
+		{
+			"sentence1": "This episode of family guy is FREAKING ME OUT",
+			"sentence2": "Family Guy said that New Orleans is the party capital of America",
+			"label": 0
+		},
+		{
+			"sentence1": "This episode of family guy is FREAKING ME OUT",
+			"sentence2": "Lmao my dad texted me singing the prom night dumpster baby song from family guy",
+			"label": 0
+		},
+		{
+			"sentence1": "This episode of family guy is FREAKING ME OUT",
+			"sentence2": "It was just on my tv lol I was watching family guy Paaigeenicolee",
+			"label": 0
+		},
+		{
+			"sentence1": "The creator of family guy is a genius",
+			"sentence2": "I love Family Guy but I cant stand the theme song",
+			"label": 0
+		},
+		{
+			"sentence1": "The creator of family guy is a genius",
+			"sentence2": "oomf has me hooked on watching family guy",
+			"label": 0
+		},
+		{
+			"sentence1": "I havent seen this episode of family guy",
+			"sentence2": "Family guy funnier but American dad is more consistently funny",
+			"label": 0
+		},
+		{
+			"sentence1": "Family guy is really a reality show",
+			"sentence2": "Family guy is such a funny show",
+			"label": 0
+		},
+		{
+			"sentence1": "Family guy is really a reality show",
+			"sentence2": "all i watch is family guy",
+			"label": 0
+		},
+		{
+			"sentence1": "I see everybody watching family guy tonight",
+			"sentence2": "I havent watched Family Guy in forever",
+			"label": 0
+		},
+		{
+			"sentence1": "Omg Family Guy is killing me right now",
+			"sentence2": "OMG we were quoting family guy",
+			"label": 0
+		},
+		{
+			"sentence1": "Omg Family Guy is killing me right now",
+			"sentence2": "Family Guy hasnt been funny for a long time",
+			"label": 0
+		},
+		{
+			"sentence1": "Have to be home to watch game 7 tonight",
+			"sentence2": "If youre not planning to watch game 7 of the Blackhawks vs",
+			"label": 0
+		},
+		{
+			"sentence1": "Come watch the Blackhawks in game 7 tonight",
+			"sentence2": "I wish I had friends to watch game 7 with",
+			"label": 0
+		},
+		{
+			"sentence1": "Come watch the Blackhawks in game 7 tonight",
+			"sentence2": "Who s pumped for this game 7",
+			"label": 0
+		},
+		{
+			"sentence1": "Cable is out and Game 7 for the Hawks",
+			"sentence2": "Another big game 7 tonight in the NHL",
+			"label": 0
+		},
+		{
+			"sentence1": "Cable is out and Game 7 for the Hawks",
+			"sentence2": "hes Here to watch the chicago blackhawks win game 7 Hi Rahm",
+			"label": 0
+		},
+		{
+			"sentence1": "Cable is out and Game 7 for the Hawks",
+			"sentence2": "To be fair they took it to game 7",
+			"label": 0
+		},
+		{
+			"sentence1": "Smoked a chicken on the grill for game 7",
+			"sentence2": "Abbreviated evening show tonight following Game 7",
+			"label": 0
+		},
+		{
+			"sentence1": "Smoked a chicken on the grill for game 7",
+			"sentence2": "I have nearly an hour until game 7 for the red wings Blackhawks",
+			"label": 0
+		},
+		{
+			"sentence1": "Smoked a chicken on the grill for game 7",
+			"sentence2": "Got more money on Game 7",
+			"label": 0
+		},
+		{
+			"sentence1": "Game 7 in a few minutes",
+			"sentence2": "You got this shit in the bag love the game 7 dramatic finish",
+			"label": 0
+		},
+		{
+			"sentence1": "Game 7 in a few minutes",
+			"sentence2": "this is going to be an extremely intense game 7 tonight",
+			"label": 0
+		},
+		{
+			"sentence1": "well tonight is game 7 for the Blackhawks",
+			"sentence2": "God does not want me to watch Game 7",
+			"label": 0
+		},
+		{
+			"sentence1": "well tonight is game 7 for the Blackhawks",
+			"sentence2": "Game 7 how much FUN is this",
+			"label": 0
+		},
+		{
+			"sentence1": "game 7 in a few hours",
+			"sentence2": "Open Post Game 7 Detroit vs",
+			"label": 0
+		},
+		{
+			"sentence1": "game 7 in a few hours",
+			"sentence2": "Going to try taping Game 7 and watching it after softball",
+			"label": 0
+		},
+		{
+			"sentence1": "game 7 in a few hours",
+			"sentence2": "hawks game 7 in the chi",
+			"label": 0
+		},
+		{
+			"sentence1": "game 7 in a few hours",
+			"sentence2": "Game 7 should be a good one",
+			"label": 0
+		},
+		{
+			"sentence1": "game 7 in a few hours",
+			"sentence2": "2nd Game 7 in two nights",
+			"label": 0
+		},
+		{
+			"sentence1": "Getting ready to watch the Hawks WIN Game 7",
+			"sentence2": "Its game 7 between the hawks and wings",
+			"label": 0
+		},
+		{
+			"sentence1": "Blackhawks Red Wings in a game 7",
+			"sentence2": "Thoughts on today s game 7",
+			"label": 0
+		},
+		{
+			"sentence1": "Blackhawks Red Wings in a game 7",
+			"sentence2": "Cable is out and Game 7 for the Hawks",
+			"label": 0
+		},
+		{
+			"sentence1": "Blackhawks Red Wings in a game 7",
+			"sentence2": "HAWKSWINGS with SOUND Game 7 at 8",
+			"label": 0
+		},
+		{
+			"sentence1": "Blackhawks Red Wings in a game 7",
+			"sentence2": "Put it there after the Kadri goal in game 7",
+			"label": 0
+		},
+		{
+			"sentence1": "Blackhawks better win game 7 tonight",
+			"sentence2": "What channel is this game 7 on",
+			"label": 0
+		},
+		{
+			"sentence1": "Blackhawks better win game 7 tonight",
+			"sentence2": "I need a xanax and a drink to calm my game 7 nerves",
+			"label": 0
+		},
+		{
+			"sentence1": "how the hell is GOP paying for my food",
+			"sentence2": "She was rightly exasperated by the GOP bullies long out to besmirch her name",
+			"label": 0
+		},
+		{
+			"sentence1": "how the hell is GOP paying for my food",
+			"sentence2": "Obama must have figured a way to blame Bush or GOP for IRS scandal",
+			"label": 0
+		},
+		{
+			"sentence1": "how the hell is GOP paying for my food",
+			"sentence2": "Remember all the gop senators she had all their private info",
+			"label": 0
+		},
+		{
+			"sentence1": "how the hell is GOP paying for my food",
+			"sentence2": "Will the Benghazi and IRS Probes Do More Damage to Obama or the GOP",
+			"label": 0
+		},
+		{
+			"sentence1": "helps restore the GOP brand name",
+			"sentence2": "The GOP really wants Democrats to screw up like they do but it never happens",
+			"label": 0
+		},
+		{
+			"sentence1": "helps restore the GOP brand name",
+			"sentence2": "GOP needs to listen to young people across the country",
+			"label": 0
+		},
+		{
+			"sentence1": "Now that the GOP is out of ideas impeach Obama",
+			"sentence2": "It sounded better than being GOP",
+			"label": 0
+		},
+		{
+			"sentence1": "Now that the GOP is out of ideas impeach Obama",
+			"sentence2": "Now GOP want to drop Benghazi FlipFlop to IRS NonIssue",
+			"label": 0
+		},
+		{
+			"sentence1": "I dont associate with the GOP I am libertarian",
+			"sentence2": "All this and still the GOP will be extinct in 10 years",
+			"label": 0
+		},
+		{
+			"sentence1": "I dont associate with the GOP I am libertarian",
+			"sentence2": "41 of GOP think Benghazi is the biggest scandal in history",
+			"label": 0
+		},
+		{
+			"sentence1": "I dont associate with the GOP I am libertarian",
+			"sentence2": "McCain tries to bully GOP to his rhino ways",
+			"label": 0
+		},
+		{
+			"sentence1": "I dont associate with the GOP I am libertarian",
+			"sentence2": "Who is else is in danger because of GOP s cuts",
+			"label": 0
+		},
+		{
+			"sentence1": "where are the jobs GOP",
+			"sentence2": "The GOP said the same thing about the TVA Social Security NASA Medicare",
+			"label": 0
+		},
+		{
+			"sentence1": "where are the jobs GOP",
+			"sentence2": "Why is it GOP s job",
+			"label": 0
+		},
+		{
+			"sentence1": "where are the jobs GOP",
+			"sentence2": "Limmer GOP now speaking and Sen",
+			"label": 0
+		},
+		{
+			"sentence1": "where are the jobs GOP",
+			"sentence2": "What more did GOP want",
+			"label": 0
+		},
+		{
+			"sentence1": "where are the jobs GOP",
+			"sentence2": "Sarah Palin would have a narrow edge in the GOP primary to challenge Sen",
+			"label": 0
+		},
+		{
+			"sentence1": "Why is it GOP s job",
+			"sentence2": "247 attacks against POTUS and HE is baiting the GOP",
+			"label": 0
+		},
+		{
+			"sentence1": "scandal is a wrapped political gift for the GOP",
+			"sentence2": "Im GOP and am working to reelect the GOP candidates in my county",
+			"label": 0
+		},
+		{
+			"sentence1": "scandal is a wrapped political gift for the GOP",
+			"sentence2": "Let IRS walk which is of GOP controlled House of Reps",
+			"label": 0
+		},
+		{
+			"sentence1": "According to O the GOP is old and on its way out",
+			"sentence2": "yeah of course the GOP would have tea party groups investigated",
+			"label": 0
+		},
+		{
+			"sentence1": "According to O the GOP is old and on its way out",
+			"sentence2": "IRS scandal is a true gift to GOP for 2014",
+			"label": 0
+		},
+		{
+			"sentence1": "According to O the GOP is old and on its way out",
+			"sentence2": "charges for ALL GOP CONGRESSPERSONS",
+			"label": 0
+		},
+		{
+			"sentence1": "Cubs Pitcher Travis Wood hits a grand slam off the whitesux",
+			"sentence2": "Peavy gives up a Grand Slam to Travis Wood",
+			"label": 1
+		},
+		{
+			"sentence1": "pitcher Travis Wood hits a grand slam today",
+			"sentence2": "A pitcher hit a grand slam wtf",
+			"label": 1
+		},
+		{
+			"sentence1": "pitcher Travis Wood hits a grand slam today",
+			"sentence2": "Travis wood with a grand slam to put the Cubs up 61",
+			"label": 1
+		},
+		{
+			"sentence1": "pitcher Travis Wood hits a grand slam today",
+			"sentence2": "Travis Wood Chicago Cubs pitcher just hit a grand slam off Peavy haha",
+			"label": 1
+		},
+		{
+			"sentence1": "pitcher Travis Wood hits a grand slam today",
+			"sentence2": "Today Travis Wood hits a grand slam",
+			"label": 1
+		},
+		{
+			"sentence1": "pitcher Travis Wood hits a grand slam today",
+			"sentence2": "Wonder when the last time is that a pitcher hit a grand slam",
+			"label": 0
+		},
+		{
+			"sentence1": "Pitcher Travis Wood of the Cubs just hit a grand slam",
+			"sentence2": "Travis wood hit a grand slam lol he s also a pitcher lol",
+			"label": 1
+		},
+		{
+			"sentence1": "Pitcher Travis Wood of the Cubs just hit a grand slam",
+			"sentence2": "Elvis didnt hit a grand slam SMH",
+			"label": 0
+		},
+		{
+			"sentence1": "Pitcher Travis Wood of the Cubs just hit a grand slam",
+			"sentence2": "You just let up a grand slam to the pitcher",
+			"label": 0
+		},
+		{
+			"sentence1": "Pitcher Travis Wood of the Cubs just hit a grand slam",
+			"sentence2": "A grand slam was hit by a pitcher",
+			"label": 1
+		},
+		{
+			"sentence1": "Today Travis Wood hits a grand slam",
+			"sentence2": "TRAVIS WOOD GRAND SLAM HELL YEA",
+			"label": 1
+		},
+		{
+			"sentence1": "Today Travis Wood hits a grand slam",
+			"sentence2": "throwing a gem and hitting a grand slam",
+			"label": 0
+		},
+		{
+			"sentence1": "Today Travis Wood hits a grand slam",
+			"sentence2": "The White Sox just gave up a Grand Slam to a pitcher",
+			"label": 1
+		},
+		{
+			"sentence1": "So Travis Wood just hit a grand slam",
+			"sentence2": "Jake Peavy you just let the opposing pitcher hit a Grand Slam",
+			"label": 1
+		},
+		{
+			"sentence1": "So Travis Wood just hit a grand slam",
+			"sentence2": "Kids he is a pitcher plays for the cubs and hit a grand slam",
+			"label": 1
+		},
+		{
+			"sentence1": "So Travis Wood just hit a grand slam",
+			"sentence2": "Cubs pitcher Travis Wood hit a grand slam today",
+			"label": 1
+		},
+		{
+			"sentence1": "So Travis Wood just hit a grand slam",
+			"sentence2": "GRAND SLAM from the cubs pitcher",
+			"label": 1
+		},
+		{
+			"sentence1": "So Travis Wood just hit a grand slam",
+			"sentence2": "Travis Wood with a grand slam helping himself out with runs",
+			"label": 1
+		},
+		{
+			"sentence1": "Travis wood with a fucking grand slam",
+			"sentence2": "TRAVIS WOOD HITTIN A GRAND SLAM",
+			"label": 1
+		},
+		{
+			"sentence1": "A grand slam hit by a pitcher",
+			"sentence2": "Just let a pitcher hit a grand slam",
+			"label": 1
+		},
+		{
+			"sentence1": "A grand slam hit by a pitcher",
+			"sentence2": "Jake Peavy gave up a grand slam to Travis Wood",
+			"label": 1
+		},
+		{
+			"sentence1": "A grand slam hit by a pitcher",
+			"sentence2": "How do you give up a grand slam to a pitcher",
+			"label": 1
+		},
+		{
+			"sentence1": "Travis Wood just crushed a grand slam",
+			"sentence2": "Travis Wood just hit a grand slam off of Jake Peavy",
+			"label": 1
+		},
+		{
+			"sentence1": "Travis Wood just crushed a grand slam",
+			"sentence2": "pitcher who plays for the Cubs hit a grand slam",
+			"label": 1
+		},
+		{
+			"sentence1": "Have a happy Memorial Day weekend too",
+			"sentence2": "We wanted to wish everyone a safe and happy Memorial Day weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Have and safe happy Memorial Day weekend everyone",
+			"sentence2": "To all our friends at Whatsit Productions Films enjoy a safe happy Memorial Day weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Have and safe happy Memorial Day weekend everyone",
+			"sentence2": "Happy Memorial Day weekend from the CSI Library",
+			"label": 1
+		},
+		{
+			"sentence1": "Wishing you all a safe happy Memorial Day weekend",
+			"sentence2": "Wishing our Villanova family a safe and happy Memorial Day weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day Weekend 2013 to all",
+			"sentence2": "Yall have a safe and fun Happy Memorial Day Weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day Weekend 2013 to all",
+			"sentence2": "We are wishing all our donors a Happy Memorial Day Weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day Weekend 2013 to all",
+			"sentence2": "Happy Memorial Day to our clients and friends",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day Weekend 2013 to all",
+			"sentence2": "A very happy Memorial Day weekend to all of you",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day weekend to our passengers",
+			"sentence2": "Coming to you from DC happy Memorial Day Weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day weekend to our passengers",
+			"sentence2": "wishing u a happy Memorial Day weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Have a wonderful weekend and Happy Memorial Day",
+			"sentence2": "Happy Memorial Day Weekend to all our brothers and friends",
+			"label": 1
+		},
+		{
+			"sentence1": "Have a wonderful weekend and Happy Memorial Day",
+			"sentence2": "We wish everyone a Happy Memorial Day",
+			"label": 1
+		},
+		{
+			"sentence1": "Have a wonderful weekend and Happy Memorial Day",
+			"sentence2": "Have a safe and happy Memorial Day weekend from all us at the Holiday Inn Torrance",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day everyone have a safe and happy weekend",
+			"sentence2": "Wishing everyone a very Safe and Happy Memorial Day weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "MHP wishes you a safe and happy Memorial Day weekend",
+			"sentence2": "From all of us at Business Financial Services have a safe and happy Memorial Day weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "MHP wishes you a safe and happy Memorial Day weekend",
+			"sentence2": "We hope that everyone has a very safe and happy Memorial Day Weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day Weekend one and all",
+			"sentence2": "Hope all my American friends and colleagues have a safe and happy Memorial Day weekend",
+			"label": 1
+		},
+		{
+			"sentence1": "Happy Memorial Day Weekend one and all",
+			"sentence2": "Have A Safe and Happy Memorial Day Weekend From NoNoSquito Bands",
+			"label": 1
+		},
+		{
+			"sentence1": "This app is for google chat on iOS",
+			"sentence2": "new google maps looks similar to ios app",
+			"label": 0
+		},
+		{
+			"sentence1": "This app is for google chat on iOS",
+			"sentence2": "Google Hangouts unifies messaging and video call notifications for android ios and web",
+			"label": 0
+		},
+		{
+			"sentence1": "BBM coming to iOSAndroid",
+			"sentence2": "Hangouts Googles New Unified Messaging Service For Web Android and iOS Devices",
+			"label": 0
+		},
+		{
+			"sentence1": "BBM coming to iOSAndroid",
+			"sentence2": "BlackBerry bringing BBM to iOS and Android apparently",
+			"label": 1
+		},
+		{
+			"sentence1": "BBM coming to iOSAndroid",
+			"sentence2": "Download Google Hangouts Unified Messaging App For Android iOS And Chrome Desktop Web Browser",
+			"label": 0
+		},
+		{
+			"sentence1": "BBM coming to iOSAndroid",
+			"sentence2": "Google Hangouts is now available for iOS",
+			"label": 0
+		},
+		{
+			"sentence1": "We launched Google Maps For iOS",
+			"sentence2": "Google launches API for Android and iOS game save data",
+			"label": 0
+		},
+		{
+			"sentence1": "We launched Google Maps For iOS",
+			"sentence2": "meanwhile google maps balik lagi ke iOS",
+			"label": 1
+		},
+		{
+			"sentence1": "Hangout app out on iOS prior to Android",
+			"sentence2": "BBM is now in android and iOS",
+			"label": 0
+		},
+		{
+			"sentence1": "Hangout app out on iOS prior to Android",
+			"sentence2": "ShowScoop launches a Yelp for live music app for iOS",
+			"label": 0
+		},
+		{
+			"sentence1": "Google Maps update coming to Android and iOS GoogleIO",
+			"sentence2": "meanwhile google maps balik lagi ke iOS",
+			"label": 1
+		},
+		{
+			"sentence1": "Hangouts for iOS is a nice app",
+			"sentence2": "Why doesnt the Google app for iOS start in Now",
+			"label": 0
+		},
+		{
+			"sentence1": "Hangouts for iOS is a nice app",
+			"sentence2": "I realize that Hangouts is available on ios",
+			"label": 0
+		},
+		{
+			"sentence1": "Hangouts for iOS is a nice app",
+			"sentence2": "New Google Maps for Android looks pretty much exactly like the current iOS one",
+			"label": 0
+		},
+		{
+			"sentence1": "Hangouts for iOS is a nice app",
+			"sentence2": "Theyre previewing the new Google Maps for iOS now at Google IO",
+			"label": 0
+		},
+		{
+			"sentence1": "Hangouts for iOS is a nice app",
+			"sentence2": "Google hangouts for iOS is out",
+			"label": 1
+		},
+		{
+			"sentence1": "Android caught up to iOS",
+			"sentence2": "Why doesnt the Google app for iOS start in Now",
+			"label": 0
+		},
+		{
+			"sentence1": "for android and IOS will be free",
+			"sentence2": "BlackBerry Messenger Soon To Be Made Available On Android And iOS Devices",
+			"label": 0
+		},
+		{
+			"sentence1": "for android and IOS will be free",
+			"sentence2": "Android is better than iOS",
+			"label": 0
+		},
+		{
+			"sentence1": "for android and IOS will be free",
+			"sentence2": "And let s not forget they called Google Maps for iOS",
+			"label": 0
+		},
+		{
+			"sentence1": "for android and IOS will be free",
+			"sentence2": "Download the dedicated Google Hangouts iOS app",
+			"label": 0
+		},
+		{
+			"sentence1": "Google to add Offers to Maps for Android and iOS",
+			"sentence2": "Come to iOS and Android this Summer",
+			"label": 0
+		},
+		{
+			"sentence1": "Google to add Offers to Maps for Android and iOS",
+			"sentence2": "BlackBerry announces BBM coming to iOS and Android later this summer",
+			"label": 0
+		},
+		{
+			"sentence1": "The new Google Hangouts App is now available on iOS",
+			"sentence2": "Any chance the AllAccess music comes to iOS",
+			"label": 0
+		},
+		{
+			"sentence1": "The new Google Hangouts App is now available on iOS",
+			"sentence2": "Ok we cant wait to have Bbm on andriod and iOS",
+			"label": 0
+		},
+		{
+			"sentence1": "But youre not in Japan",
+			"sentence2": "The girl next to me in science doesnt know where japan is",
+			"label": 0
+		},
+		{
+			"sentence1": "omg what time is it in Japan",
+			"sentence2": "I send a pizza right now to japan if you show us the video",
+			"label": 0
+		},
+		{
+			"sentence1": "omg what time is it in Japan",
+			"sentence2": "When they come to Japan",
+			"label": 0
+		},
+		{
+			"sentence1": "I will get to Japan",
+			"sentence2": "but soon they will fly to japan",
+			"label": 0
+		},
+		{
+			"sentence1": "I will get to Japan",
+			"sentence2": "Japan suspends wheat imports after Ore",
+			"label": 0
+		},
+		{
+			"sentence1": "I will get to Japan",
+			"sentence2": "Did you know most streets in Japan do not have names",
+			"label": 0
+		},
+		{
+			"sentence1": "Why does he have to be in Japan",
+			"sentence2": "Some crazy shit must be happening in Japan at the moment",
+			"label": 0
+		},
+		{
+			"sentence1": "Why does he have to be in Japan",
+			"sentence2": "to live i think okinawa japan bc idk the people are so nice and",
+			"label": 0
+		},
+		{
+			"sentence1": "Why does he have to be in Japan",
+			"sentence2": "How s Japan treating ya",
+			"label": 0
+		},
+		{
+			"sentence1": "wait it s already Friday in Japan",
+			"sentence2": "UK or Japan or Korea or",
+			"label": 0
+		},
+		{
+			"sentence1": "wait it s already Friday in Japan",
+			"sentence2": "They arrived in Japan yesterday",
+			"label": 0
+		},
+		{
+			"sentence1": "Have you good Time in Japan",
+			"sentence2": "see thats how we eat them in Japan",
+			"label": 0
+		},
+		{
+			"sentence1": "Have you good Time in Japan",
+			"sentence2": "If youre cool youd try to get me out to Japan in every way possible",
+			"label": 0
+		},
+		{
+			"sentence1": "have a nice day in JAPAN",
+			"sentence2": "it s now illegal to be overweight in Japan",
+			"label": 0
+		},
+		{
+			"sentence1": "have a nice day in JAPAN",
+			"sentence2": "leaves New Japan he s going to WWE",
+			"label": 0
+		},
+		{
+			"sentence1": "have a nice day in JAPAN",
+			"sentence2": "Hope all is well in Japan",
+			"label": 0
+		},
+		{
+			"sentence1": "AustinMahone are you still in Japan",
+			"sentence2": "If Im blessed to wrestle in Japan again",
+			"label": 0
+		},
+		{
+			"sentence1": "AustinMahone are you still in Japan",
+			"sentence2": "i got it in japan",
+			"label": 0
+		},
+		{
+			"sentence1": "AustinMahone are you still in Japan",
+			"sentence2": "In a scene out of Japan or even",
+			"label": 0
+		},
+		{
+			"sentence1": "AustinMahone are you still in Japan",
+			"sentence2": "Remember that youre speaking in a japan point of view",
+			"label": 0
+		},
+		{
+			"sentence1": "Skiing in Japan that s unnecessary",
+			"sentence2": "Hope all is well in Japan",
+			"label": 0
+		},
+		{
+			"sentence1": "Skiing in Japan that s unnecessary",
+			"sentence2": "AND HE HAS DONATED TO JAPAN WHEN THEY WHERE IN NEED",
+			"label": 0
+		},
+		{
+			"sentence1": "Skiing in Japan that s unnecessary",
+			"sentence2": "haha but how s japan",
+			"label": 0
+		},
+		{
+			"sentence1": "Skiing in Japan that s unnecessary",
+			"sentence2": "A wattermelon in japan is like 50",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason Kidd and Grant Hill came in the league the same year",
+			"sentence2": "It s fitting Jason Kidd and Grant Hill retire together",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason Kidd and Grant Hill came in the league the same year",
+			"sentence2": "Atleast Jason Kidd retired with a ring",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason Kidd and Grant Hill came in the league the same year",
+			"sentence2": "Jason Kidd is retiring from the NBA and everyone s acting like he s so old",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason Kidd and Grant Hill came in the league the same year",
+			"sentence2": "Jason Kidd and Grant Hill where 1995 CoRookies Of The Year",
+			"label": 1
+		},
+		{
+			"sentence1": "Damn Jason Kidd and Grant Hill retiring together",
+			"sentence2": "Jason Kidd got his ring with the Dallas Mavericks",
+			"label": 0
+		},
+		{
+			"sentence1": "Damn Jason Kidd and Grant Hill retiring together",
+			"sentence2": "Grant hill and Jason Kidd are getting a lotta for their careers for retiring",
+			"label": 0
+		},
+		{
+			"sentence1": "Damn Jason Kidd and Grant Hill retiring together",
+			"sentence2": "I know Jason Kidd retired and ish",
+			"label": 0
+		},
+		{
+			"sentence1": "Yes Jason Kidd Grant Hill both retired",
+			"sentence2": "Should the Nets retire Jason Kidd s number",
+			"label": 0
+		},
+		{
+			"sentence1": "Yes Jason Kidd Grant Hill both retired",
+			"sentence2": "When guys like Grant Hill and Jason Kidd are hanging it up",
+			"label": 1
+		},
+		{
+			"sentence1": "Yes Jason Kidd Grant Hill both retired",
+			"sentence2": "had no idea Jason Kidd and Grant Hill were even still playing in the NBA",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason Kidd Jason Kidd has retired from the NBA",
+			"sentence2": "Jason Kidd retired as one of the best point guards in history",
+			"label": 1
+		},
+		{
+			"sentence1": "Jason Kidd Jason Kidd has retired from the NBA",
+			"sentence2": "Jason Kidd top five point guards of all time",
+			"label": 0
+		},
+		{
+			"sentence1": "GG Jason Kidd and Grant Hill",
+			"sentence2": "The tweet sounded like Im happy that Jason Kidd retired",
+			"label": 0
+		},
+		{
+			"sentence1": "The NBA will miss Jason Kidd and Grant Hill",
+			"sentence2": "Non other than the GREAT Jason Kidd",
+			"label": 0
+		},
+		{
+			"sentence1": "The NBA will miss Jason Kidd and Grant Hill",
+			"sentence2": "comJason Kidd retires from the NBACBS NewsNEW",
+			"label": 0
+		},
+		{
+			"sentence1": "The NBA will miss Jason Kidd and Grant Hill",
+			"sentence2": "Congrats to bay legend Jason Kidd on an amazing career",
+			"label": 0
+		},
+		{
+			"sentence1": "The NBA will miss Jason Kidd and Grant Hill",
+			"sentence2": "Nice job Supreme Court and Jason Kidd",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason Kidd and grant hill retire from nba",
+			"sentence2": "Im so happy Jason Kidd has retired",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason Kidd and grant hill retire from nba",
+			"sentence2": "Crazy how Jason Kidd finally retiring",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason kidd is not a legend",
+			"sentence2": "Jason Kidd and Grant Hill retires together",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason kidd is not a legend",
+			"sentence2": "Dang first Grant Hill then Jason Kidd",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason kidd is not a legend",
+			"sentence2": "Jason Kidd There s a difference between playing and competing",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason kidd is not a legend",
+			"sentence2": "Congrats to bay legend Jason Kidd on an amazing career",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason kidd is not a legend",
+			"sentence2": "Without Jason Kidd NBA would NOT be the same",
+			"label": 0
+		},
+		{
+			"sentence1": "Jason Kidd Grant Hill officially retiring",
+			"sentence2": "Im just in shock over Jason Kidd retiring",
+			"label": 1
+		},
+		{
+			"sentence1": "Jason Kidd Grant Hill officially retiring",
+			"sentence2": "It was fun watching Jason Kidd over the years",
+			"label": 0
+		},
+		{
+			"sentence1": "GG Jason Kidd and Grant Hill",
+			"sentence2": "Jason Kidd us retiring after 19 years on the court",
+			"label": 0
+		},
+		{
+			"sentence1": "GG Jason Kidd and Grant Hill",
+			"sentence2": "Jason Kidd Grant Hill retiring are just another indication that the 90 s NBA is gone",
+			"label": 0
+		},
+		{
+			"sentence1": "GG Jason Kidd and Grant Hill",
+			"sentence2": "Jason Kidd really my dawg though",
+			"label": 0
+		},
+		{
+			"sentence1": "Is Lydia a classy hoe",
+			"sentence2": "DID YOU KNOW THAT Lydia IS TRENDING WW",
+			"label": 0
+		},
+		{
+			"sentence1": "Is Lydia a classy hoe",
+			"sentence2": "Lydia is just too much for us all to handle huh",
+			"label": 0
+		},
+		{
+			"sentence1": "What s Lydia personality like",
+			"sentence2": "NICKIMINAJ is Lydia a bad bitch or just a dorky assistant",
+			"label": 0
+		},
+		{
+			"sentence1": "What s Lydia personality like",
+			"sentence2": "Cuz Lydia was on twitter",
+			"label": 0
+		},
+		{
+			"sentence1": "What s Lydia personality like",
+			"sentence2": "Aint nobody gonna play Lydia tho",
+			"label": 0
+		},
+		{
+			"sentence1": "What s Lydia personality like",
+			"sentence2": "Lydia is such a cool name",
+			"label": 0
+		},
+		{
+			"sentence1": "What s Lydia personality like",
+			"sentence2": "Nicki Doesnt Look Like a Lydia lol",
+			"label": 0
+		},
+		{
+			"sentence1": "What s Lydia personality like",
+			"sentence2": "Ok is Lydia a freak or what",
+			"label": 0
+		},
+		{
+			"sentence1": "The BOSS BITCH Lydia is in the House",
+			"sentence2": "So why is Lydia on her 3rd marriage in the movie",
+			"label": 0
+		},
+		{
+			"sentence1": "The BOSS BITCH Lydia is in the House",
+			"sentence2": "Lydia is very opinionated and on her third marriage",
+			"label": 0
+		},
+		{
+			"sentence1": "Lydia is now trending WW",
+			"sentence2": "Miss JemimaPuddle n Lydiais loads",
+			"label": 0
+		},
+		{
+			"sentence1": "Lydia is now trending WW",
+			"sentence2": "Lydia is a cute as fuck name tho",
+			"label": 0
+		},
+		{
+			"sentence1": "What is Lydia s personality like",
+			"sentence2": "I think Lydia is actually cute classy",
+			"label": 0
+		},
+		{
+			"sentence1": "What is Lydia s personality like",
+			"sentence2": "The fact that we got Lydia to trend is just",
+			"label": 0
+		},
+		{
+			"sentence1": "What is Lydia s personality like",
+			"sentence2": "i knew some little girl name Lydia her fast ass",
+			"label": 0
+		},
+		{
+			"sentence1": "Lydia Seems Like A Classy Name",
+			"sentence2": "But I agree lydia the beat is good",
+			"label": 0
+		},
+		{
+			"sentence1": "Lydia Seems Like A Classy Name",
+			"sentence2": "You dont look like a Lydia tho",
+			"label": 0
+		},
+		{
+			"sentence1": "Can I taste you Lydia",
+			"sentence2": "MYYYYYYYYYY QUEEEEEEN Describe a little about LYDIADescribe a little about LYDIA",
+			"label": 0
+		},
+		{
+			"sentence1": "The name Lydia sounds Spanish",
+			"sentence2": "Lydia and I send the creepiest snap chat videos to eachother",
+			"label": 0
+		},
+		{
+			"sentence1": "Lydia is a GROOOOOOOWN woman",
+			"sentence2": "Bring back James and Lydia",
+			"label": 0
+		},
+		{
+			"sentence1": "Lydia is a GROOOOOOOWN woman",
+			"sentence2": "lydia is already famous shit",
+			"label": 0
+		},
+		{
+			"sentence1": "Lydia is a GROOOOOOOWN woman",
+			"sentence2": "Lydia is trending WW I cant",
+			"label": 0
+		},
+		{
+			"sentence1": "Lydia is a GROOOOOOOWN woman",
+			"sentence2": "Lydia is messing with my feelings so bad",
+			"label": 0
+		},
+		{
+			"sentence1": "I Hope Lydia Is Not The Other Woman",
+			"sentence2": "I wonder does Lydia have kids",
+			"label": 0
+		},
+		{
+			"sentence1": "I Hope Lydia Is Not The Other Woman",
+			"sentence2": "Lydia is such a cool name",
+			"label": 0
+		},
+		{
+			"sentence1": "I Hope Lydia Is Not The Other Woman",
+			"sentence2": "You got Lydia trending WORLDWIDE though Nic",
+			"label": 0
+		},
+		{
+			"sentence1": "I want the new MacBook Air 2013 model too",
+			"sentence2": "Really was hoping for a new apple MacBook Air 11 with Retina display",
+			"label": 0
+		},
+		{
+			"sentence1": "Checking up the new prices for Macbook Air",
+			"sentence2": "Welp I think I finally want a Macbook Air",
+			"label": 0
+		},
+		{
+			"sentence1": "Checking up the new prices for Macbook Air",
+			"sentence2": "The battery life on the MacBook Air tho",
+			"label": 0
+		},
+		{
+			"sentence1": "Pricing of the new Haswellbased MacBook Air",
+			"sentence2": "Should I buy one of those shiny new macbook air",
+			"label": 0
+		},
+		{
+			"sentence1": "Pricing of the new Haswellbased MacBook Air",
+			"sentence2": "But I do want the new MacBook Air",
+			"label": 0
+		},
+		{
+			"sentence1": "Pricing of the new Haswellbased MacBook Air",
+			"sentence2": "new Macbook Air uses Haswell Safari doesn t suck as",
+			"label": 0
+		},
+		{
+			"sentence1": "Pricing of the new Haswellbased MacBook Air",
+			"sentence2": "There s new macbook air but not for macbook pro",
+			"label": 0
+		},
+		{
+			"sentence1": "Apple Launches the all new MacBook Air",
+			"sentence2": "Ok the new Macbook Air has the haswell processors",
+			"label": 0
+		},
+		{
+			"sentence1": "Apple Launches the all new MacBook Air",
+			"sentence2": "The livestream quit on me just after the intro of the new MacBook Air",
+			"label": 0
+		},
+		{
+			"sentence1": "Apple Launches the all new MacBook Air",
+			"sentence2": "Also a new MacBook Air and Pro announced",
+			"label": 1
+		},
+		{
+			"sentence1": "New MacBook Air no new MacBook Pro",
+			"sentence2": "MacBook Air is the way to go",
+			"label": 0
+		},
+		{
+			"sentence1": "New MacBook Air no new MacBook Pro",
+			"sentence2": "The MacBook Air still doesnt have a disk drive",
+			"label": 0
+		},
+		{
+			"sentence1": "New MacBook Air no new MacBook Pro",
+			"sentence2": "Like when can you get your hands on a new Macbook Air 13 with Haswell",
+			"label": 0
+		},
+		{
+			"sentence1": "Apple introduced a new MacBook Air today",
+			"sentence2": "like iPhone iPad and Macbook Air",
+			"label": 0
+		},
+		{
+			"sentence1": "Apple unveils new Macbook Airs and a Mac Pro",
+			"sentence2": "i was pumped for the new macbook air",
+			"label": 0
+		},
+		{
+			"sentence1": "Apple unveils new Macbook Airs and a Mac Pro",
+			"sentence2": "No new Macbook Pros but there is a new Macbook Air",
+			"label": 0
+		},
+		{
+			"sentence1": "just new software for now and a new MacBook Air and Mac Pro",
+			"sentence2": "Im only reading about the Macbook Air update",
+			"label": 0
+		},
+		{
+			"sentence1": "just new software for now and a new MacBook Air and Mac Pro",
+			"sentence2": "Cant wait to get iOS 7 and possibly a MacBook Air",
+			"label": 0
+		},
+		{
+			"sentence1": "just new software for now and a new MacBook Air and Mac Pro",
+			"sentence2": "Unimpressed with iOS7 but do I ever want a new Mac Pro and MacBook Air",
+			"label": 0
+		},
+		{
+			"sentence1": "Can I have the new MacBook Air now please",
+			"sentence2": "New Macbook Air s Announced should be available within the next two weeks",
+			"label": 0
+		},
+		{
+			"sentence1": "Can I have the new MacBook Air now please",
+			"sentence2": "Is it bad that I want that new MacBook Air too",
+			"label": 1
+		},
+		{
+			"sentence1": "The Marlins defeated the Mets 43 in 20 innings",
+			"sentence2": "21 Marlins in the 20th inning",
+			"label": 0
+		},
+		{
+			"sentence1": "The Marlins defeated the Mets 43 in 20 innings",
+			"sentence2": "The FISH AKA The MARLINS Within 20 Innings",
+			"label": 0
+		},
+		{
+			"sentence1": "The Marlins defeated the Mets 43 in 20 innings",
+			"sentence2": "The yankees cant beat a team that cant beat the marlins",
+			"label": 0
+		},
+		{
+			"sentence1": "The Marlins defeated the Mets 43 in 20 innings",
+			"sentence2": "Marlins over Mets 21 in 20 innings",
+			"label": 1
+		},
+		{
+			"sentence1": "The Marlins defeated the Mets 43 in 20 innings",
+			"sentence2": "20 innings of the Mets Vs Marlins is torture",
+			"label": 1
+		},
+		{
+			"sentence1": "the mets and the marlins went 20 innings",
+			"sentence2": "21 MArlins win in the 20th",
+			"label": 0
+		},
+		{
+			"sentence1": "the mets and the marlins went 20 innings",
+			"sentence2": "Losing to the marlins in the 20th inning",
+			"label": 0
+		},
+		{
+			"sentence1": "The Mets and Marlins playing 20 innings",
+			"sentence2": "20 innings and they lose to the Marlins",
+			"label": 0
+		},
+		{
+			"sentence1": "The Mets and Marlins playing 20 innings",
+			"sentence2": "Wtf the Marlins played 20 innings today",
+			"label": 1
+		},
+		{
+			"sentence1": "Holy shit the Mets and Marlins played 20 innings",
+			"sentence2": "mets marlins 20th innings 20 innings ever be the mets the 20th jakemillermusic mets monsters",
+			"label": 0
+		},
+		{
+			"sentence1": "Holy shit the Mets and Marlins played 20 innings",
+			"sentence2": "Took 20 innings for the Marlins to beat the Mets 21",
+			"label": 1
+		},
+		{
+			"sentence1": "Holy shit the Mets and Marlins played 20 innings",
+			"sentence2": "LOL the Mets lost to the Marlins in 20 innings",
+			"label": 1
+		},
+		{
+			"sentence1": "Holy shit the Mets and Marlins played 20 innings",
+			"sentence2": "Mets and Marlins had a 20 inning game",
+			"label": 1
+		},
+		{
+			"sentence1": "Holy shit the Mets and Marlins played 20 innings",
+			"sentence2": "Marlins have won 17 7 of those are against the Mets",
+			"label": 0
+		},
+		{
+			"sentence1": "Marlins and the Mets had a 20 inning game",
+			"sentence2": "The Marlins just beat the Mets 21 in the 20th inning",
+			"label": 1
+		},
+		{
+			"sentence1": "And the Mets and Marlins go 20",
+			"sentence2": "marlins beat the mets 21 and it only took twenty innings",
+			"label": 1
+		},
+		{
+			"sentence1": "And the Mets and Marlins go 20",
+			"sentence2": "Mets and Marlins had a 20 inning game",
+			"label": 1
+		},
+		{
+			"sentence1": "And the Mets and Marlins go 20",
+			"sentence2": "Miami Marlins beat the NY Mets 21 in 20 innings",
+			"label": 1
+		},
+		{
+			"sentence1": "And the Mets and Marlins go 20",
+			"sentence2": "18 innings of jays then the last 2 of 20 of mets marlins",
+			"label": 0
+		},
+		{
+			"sentence1": "Somebody took the Marlins to 20 innings",
+			"sentence2": "Anyone who stayed 20 innings for the marlins",
+			"label": 0
+		},
+		{
+			"sentence1": "the mets and the marlins went 20 innings",
+			"sentence2": "The Mets just lost to the Marlins in 20 Innings",
+			"label": 0
+		},
+		{
+			"sentence1": "The Marlins just won 21 in 20 innings 20 INNINGS",
+			"sentence2": "20 innings play between the mets n marlins",
+			"label": 0
+		},
+		{
+			"sentence1": "The Marlins just won 21 in 20 innings 20 INNINGS",
+			"sentence2": "The Marlins just beat the Mets 21 in 20 innings",
+			"label": 1
+		},
+		{
+			"sentence1": "The Marlins just won 21 in 20 innings 20 INNINGS",
+			"sentence2": "The Miami Marlins vs NY Mets game went to twenty innings",
+			"label": 0
+		},
+		{
+			"sentence1": "The Marlins just won 21 in 20 innings 20 INNINGS",
+			"sentence2": "Mets really played 20 inning against the marlins",
+			"label": 0
+		},
+		{
+			"sentence1": "Damn the MetsMarlins game went 20 innings",
+			"sentence2": "Dont the Mets and Marlins also have to play a double header tomorrow",
+			"label": 0
+		},
+		{
+			"sentence1": "Damn the MetsMarlins game went 20 innings",
+			"sentence2": "The Marlins a little less apparently",
+			"label": 0
+		},
+		{
+			"sentence1": "Mets arent going to the World Series",
+			"sentence2": "Actually excited to watch the mets game tonight",
+			"label": 0
+		},
+		{
+			"sentence1": "Mets arent going to the World Series",
+			"sentence2": "The NY Mets edged up the NY Yankees 21 to kick off the Su",
+			"label": 0
+		},
+		{
+			"sentence1": "Mets arent going to the World Series",
+			"sentence2": "the Yankees lose to the Mets AND give up 1st place to the Red Sox",
+			"label": 0
+		},
+		{
+			"sentence1": "what channel is the mets game on",
+			"sentence2": "The Mets simply dont get it sometimes",
+			"label": 0
+		},
+		{
+			"sentence1": "what channel is the mets game on",
+			"sentence2": "The Mets have asked Mariano Rivera to throw the ceremonial first pitch",
+			"label": 0
+		},
+		{
+			"sentence1": "Classy gesture by the Mets for Mariano",
+			"sentence2": "The mets would look terrible if they shunned them",
+			"label": 0
+		},
+		{
+			"sentence1": "Classy gesture by the Mets for Mariano",
+			"sentence2": "real class shown by The Mets Mo Rivera is a legend",
+			"label": 1
+		},
+		{
+			"sentence1": "Classy gesture by the Mets for Mariano",
+			"sentence2": "Pretty classy for the Mets to ask Mo Rivera to throw the first pitch",
+			"label": 1
+		},
+		{
+			"sentence1": "Solid tailgate for the YankeesMets game",
+			"sentence2": "The Mets have asked Mariano Rivera to throw tonight s ceremonial first pitch",
+			"label": 0
+		},
+		{
+			"sentence1": "Solid tailgate for the YankeesMets game",
+			"sentence2": "Time for the Mets to Destroy the Yanks Tonight",
+			"label": 0
+		},
+		{
+			"sentence1": "Solid tailgate for the YankeesMets game",
+			"sentence2": "And I couldnt remember the Mets last decent 2nd round pick",
+			"label": 0
+		},
+		{
+			"sentence1": "Hope the Mets and Yankees still play tonight",
+			"sentence2": "Mets ask Mariano Rivera to throw out the first pitch in tonight s NYMNYY game",
+			"label": 0
+		},
+		{
+			"sentence1": "Hope the Mets and Yankees still play tonight",
+			"sentence2": "That s the Mets for you",
+			"label": 0
+		},
+		{
+			"sentence1": "Hope the Mets and Yankees still play tonight",
+			"sentence2": "Terrible job by the Mets on letting Rivera throw out the first pitch",
+			"label": 0
+		},
+		{
+			"sentence1": "he is more than that to the Mets",
+			"sentence2": "Mets are in route for the sweep",
+			"label": 0
+		},
+		{
+			"sentence1": "great sportsmanship on the Mets behalf",
+			"sentence2": "But it s not the Mets job to honor him",
+			"label": 0
+		},
+		{
+			"sentence1": "great sportsmanship on the Mets behalf",
+			"sentence2": "Here s hoping the Mets play this clip 100 times tonight",
+			"label": 0
+		},
+		{
+			"sentence1": "great sportsmanship on the Mets behalf",
+			"sentence2": "Mets have asked Rivera to throw out the first pitch",
+			"label": 0
+		},
+		{
+			"sentence1": "great sportsmanship on the Mets behalf",
+			"sentence2": "Mariano throwing out the first pitch at yanksmets",
+			"label": 0
+		},
+		{
+			"sentence1": "The Mets are 10 games under",
+			"sentence2": "Still gonna get the blue Mets and maybe a Dodgers",
+			"label": 0
+		},
+		{
+			"sentence1": "The Mets are 10 games under",
+			"sentence2": "After HarveyDay the Yanks Mets give it a go at the Stadium",
+			"label": 0
+		},
+		{
+			"sentence1": "The Mets are 10 games under",
+			"sentence2": "Mets have asked Mariano Rivera to throw tonight s first pitch at Citi Field",
+			"label": 0
+		},
+		{
+			"sentence1": "The Mets are 10 games under",
+			"sentence2": "the mets asking Mo Rivera to throw out the first pitch",
+			"label": 0
+		},
+		{
+			"sentence1": "The Mets have asked Mariano Rivera to throw the ceremonial first pitch",
+			"sentence2": "The MetsKuroda just unsure if either gets a W",
+			"label": 0
+		},
+		{
+			"sentence1": "Classy move by the Mets organization",
+			"sentence2": "Real classy of the Mets for all the tributes to Mo",
+			"label": 1
+		},
+		{
+			"sentence1": "ME TOO NIALL I NEED DIE",
+			"sentence2": "NIALL JUST HIT THE FOLLOW BUTTON",
+			"label": 0
+		},
+		{
+			"sentence1": "Hi Niall I love you so much",
+			"sentence2": "HEY NIALL PLEASE FOLLOW ME AND MY FREIND ItsNuggetMalik I LOVE YOUS",
+			"label": 0
+		},
+		{
+			"sentence1": "Can you following back me Niall",
+			"sentence2": "make that white button blue for me please Niall",
+			"label": 1
+		},
+		{
+			"sentence1": "GOOD MORNING I LOVE YOU MORE THAN YOU LOVE FOOD NIALL FOLLOW ME",
+			"sentence2": "please Niall follow me I would be so happy",
+			"label": 1
+		},
+		{
+			"sentence1": "NIALL I LOVE YOU FOLLOW ME PLEASE",
+			"sentence2": "Niall I just want you to notice me",
+			"label": 0
+		},
+		{
+			"sentence1": "NIALL I LOVE YOU FOLLOW ME PLEASE",
+			"sentence2": "what you up to today Niall",
+			"label": 0
+		},
+		{
+			"sentence1": "NIALL I LOVE YOU FOLLOW ME PLEASE",
+			"sentence2": "Niall If your online and see this",
+			"label": 0
+		},
+		{
+			"sentence1": "NIALL I LOVE YOU FOLLOW ME PLEASE",
+			"sentence2": "Why doesnt niall follow me he loves me I know he does",
+			"label": 0
+		},
+		{
+			"sentence1": "NIALL I LOVE YOU FOLLOW ME PLEASE",
+			"sentence2": "I think Niall fell asleep again",
+			"label": 0
+		},
+		{
+			"sentence1": "Niall I just want you to notice me",
+			"sentence2": "i hate mornings too Niall",
+			"label": 0
+		},
+		{
+			"sentence1": "Niall I just want you to notice me",
+			"sentence2": "ow Niall I couldnt have see you in the Netherlands my hearts was broken",
+			"label": 0
+		},
+		{
+			"sentence1": "Niall I just want you to notice me",
+			"sentence2": "Im meeting Harry Louis Liam Zayn and Niall",
+			"label": 0
+		},
+		{
+			"sentence1": "Niall I just want you to notice me",
+			"sentence2": "after all this time i still dont have a niall follow",
+			"label": 0
+		},
+		{
+			"sentence1": "Niall I just want you to notice me",
+			"sentence2": "I love morning why you hate it niall",
+			"label": 0
+		},
+		{
+			"sentence1": "Niall I just want you to notice me",
+			"sentence2": "NiallOfficial are you tired niall",
+			"label": 0
+		},
+		{
+			"sentence1": "NIALL YOU SHOULD FOLLOW US",
+			"sentence2": "Niall I hate time zones so much",
+			"label": 0
+		},
+		{
+			"sentence1": "NIALL YOU SHOULD FOLLOW US",
+			"sentence2": "i dont know michael but im have a feeling niall will",
+			"label": 0
+		},
+		{
+			"sentence1": "NIALL YOU SHOULD FOLLOW US",
+			"sentence2": "I hope Niall follow you",
+			"label": 0
+		},
+		{
+			"sentence1": "NIALL YOU SHOULD FOLLOW US",
+			"sentence2": "I know you probably wont see this Niall but I love you so much",
+			"label": 0
+		},
+		{
+			"sentence1": "I love morning why you hate it niall",
+			"sentence2": "NIALL PLEASE FOLLOW ME IM ABOUT TO GIVE UP",
+			"label": 0
+		},
+		{
+			"sentence1": "Niall I just want you to notice me",
+			"sentence2": "NIALL PLEASE FOLLOW ME AND KHLARICA",
+			"label": 0
+		},
+		{
+			"sentence1": "The POTUS stay getting heckled",
+			"sentence2": "CAN WE DETAIN THE HECKLER SO POTUS CAN FINISH THIS CONFERENCE",
+			"label": 1
+		},
+		{
+			"sentence1": "The POTUS stay getting heckled",
+			"sentence2": "Youre not listening to POTUS",
+			"label": 0
+		},
+		{
+			"sentence1": "The POTUS stay getting heckled",
+			"sentence2": "Do you think POTUS read your book",
+			"label": 0
+		},
+		{
+			"sentence1": "The POTUS stay getting heckled",
+			"sentence2": "What a LET DOWN shifting from our POTUS to The Cycle",
+			"label": 0
+		},
+		{
+			"sentence1": "POTUS mispronounced the terrorists last name",
+			"sentence2": "who exactly do you think you are to question the FurorI mean POTUS",
+			"label": 0
+		},
+		{
+			"sentence1": "POTUS mispronounced the terrorists last name",
+			"sentence2": "They cant explain POTUS speech so revert to disaster porn",
+			"label": 0
+		},
+		{
+			"sentence1": "how can anyone heckle the POTUS",
+			"sentence2": "Who s the crazy lady heckling POTUS",
+			"label": 1
+		},
+		{
+			"sentence1": "I love twitter during the POTUS speeches",
+			"sentence2": "I swear what a POTUS BEST IN MY LIFETIME",
+			"label": 0
+		},
+		{
+			"sentence1": "I love twitter during the POTUS speeches",
+			"sentence2": "interrupts POTUS speech and is eventually escorted out",
+			"label": 0
+		},
+		{
+			"sentence1": "I think potus is on drugs",
+			"sentence2": "POTUS is the one who is effective",
+			"label": 0
+		},
+		{
+			"sentence1": "Who in the HELL is the woman interrupting the POTUS",
+			"sentence2": "Allowing her to emphasize what POTUS wants to do",
+			"label": 0
+		},
+		{
+			"sentence1": "Who in the HELL is the woman interrupting the POTUS",
+			"sentence2": "POTUS to engage Congress on a new AUMF",
+			"label": 0
+		},
+		{
+			"sentence1": "He is the POTUS Let the man speak",
+			"sentence2": "Who is the RUDE woman who continued to interrupt POTUS",
+			"label": 0
+		},
+		{
+			"sentence1": "Youre not the POTUS problem",
+			"sentence2": "POTUS now talking about closing Gitmo",
+			"label": 0
+		},
+		{
+			"sentence1": "Youre not the POTUS problem",
+			"sentence2": "POTUS to engage Congress on a new AUMF",
+			"label": 0
+		},
+		{
+			"sentence1": "what the hell is potus talking about",
+			"sentence2": "Millions of people across the US have questions they want to ask POTUS",
+			"label": 0
+		},
+		{
+			"sentence1": "what the hell is potus talking about",
+			"sentence2": "Meanwhile the POTUS calm as ever",
+			"label": 0
+		},
+		{
+			"sentence1": "It never does when the subject is POTUS",
+			"sentence2": "interrupting POTUS at a presser is not cool",
+			"label": 0
+		},
+		{
+			"sentence1": "It never does when the subject is POTUS",
+			"sentence2": "the moment when the POTUS needed to show his black half and smackabitch was today",
+			"label": 0
+		},
+		{
+			"sentence1": "It never does when the subject is POTUS",
+			"sentence2": "Mad because of blatent disrespect for POTUS",
+			"label": 0
+		},
+		{
+			"sentence1": "It never does when the subject is POTUS",
+			"sentence2": "How is the lady that keeps interrupting POTUS still in the room",
+			"label": 0
+		},
+		{
+			"sentence1": "13 May 2013 Roberto Mancini sacked as Man City Manager",
+			"sentence2": "hey breaking news roberto mancini sacked by man city",
+			"label": 1
+		},
+		{
+			"sentence1": "13 May 2013 Roberto Mancini sacked as Man City Manager",
+			"sentence2": "I like Roberto Mancini as a manager",
+			"label": 0
+		},
+		{
+			"sentence1": "13 May 2013 Roberto Mancini sacked as Man City Manager",
+			"sentence2": "Roberto Mancini just got sacked after that shit season",
+			"label": 1
+		},
+		{
+			"sentence1": "13 May 2013 Roberto Mancini sacked as Man City Manager",
+			"sentence2": "The sacking of Roberto Mancini is fucking ridiculous",
+			"label": 0
+		},
+		{
+			"sentence1": "City is so sad Roberto Mancini got sacked",
+			"sentence2": "Man City announces the sacking of Roberto Mancini",
+			"label": 0
+		},
+		{
+			"sentence1": "City is so sad Roberto Mancini got sacked",
+			"sentence2": "Fucking pathetic the way Roberto Mancini has been sacked great manager in my opinion",
+			"label": 1
+		},
+		{
+			"sentence1": "Manchester City have sacked manager Roberto Mancini after the club s ambitious",
+			"sentence2": "So Man City has sacked manager Roberto Mancini",
+			"label": 1
+		},
+		{
+			"sentence1": "Manchester City have sacked manager Roberto Mancini after the club s ambitious",
+			"sentence2": "Manchester City reveal their reasons behind the dismissal of manager Roberto Mancini",
+			"label": 0
+		},
+		{
+			"sentence1": "The Manchester City manager Roberto Mancini has been sacked after his team failed",
+			"sentence2": "Roberto Mancini has been sacked as Manchester City manager after threeandahalf years at the club",
+			"label": 1
+		},
+		{
+			"sentence1": "The Manchester City manager Roberto Mancini has been sacked after his team failed",
+			"sentence2": "Manchester City confirm Roberto Mancini has been sacked",
+			"label": 1
+		},
+		{
+			"sentence1": "The Manchester City manager Roberto Mancini has been sacked after his team failed",
+			"sentence2": "Manchester City have sacked Roberto Mancini can this day get any better",
+			"label": 1
+		},
+		{
+			"sentence1": "So Roberto Mancini has been officially sacked as Man City s manager",
+			"sentence2": "UK football manager Roberto Mancini sacked by Manchester City",
+			"label": 1
+		},
+		{
+			"sentence1": "So Roberto Mancini has been officially sacked as Man City s manager",
+			"sentence2": "Roberto Mancini wins the Premier League with Man City for the first time since 68",
+			"label": 0
+		},
+		{
+			"sentence1": "So Roberto Mancini has been officially sacked as Man City s manager",
+			"sentence2": "Roberto Mancini has been sacked officially",
+			"label": 1
+		},
+		{
+			"sentence1": "So Roberto Mancini has been officially sacked as Man City s manager",
+			"sentence2": "MCFC have sacked manager Roberto Mancini",
+			"label": 1
+		},
+		{
+			"sentence1": "Man city coach roberto mancini has been sacked",
+			"sentence2": "Man City say Roberto Mancini sacked after targets",
+			"label": 1
+		},
+		{
+			"sentence1": "Man city coach roberto mancini has been sacked",
+			"sentence2": "Roberto Mancini is now officially gone at MCFC",
+			"label": 1
+		},
+		{
+			"sentence1": "Manchester City statement on the sacking of Roberto Mancini",
+			"sentence2": "Man city coach roberto mancini has been sacked",
+			"label": 1
+		},
+		{
+			"sentence1": "Manchester City statement on the sacking of Roberto Mancini",
+			"sentence2": "Manchester City has fired manager Roberto Mancini after conceding the",
+			"label": 1
+		},
+		{
+			"sentence1": "Manchester City statement on the sacking of Roberto Mancini",
+			"sentence2": "Roberto Mancini is no longer coach of Manchester City",
+			"label": 1
+		},
+		{
+			"sentence1": "Manchester City statement on the sacking of Roberto Mancini",
+			"sentence2": "Manchester United celebrating trust those noisy neighbours Manchester City to sack Roberto Mancini",
+			"label": 0
+		},
+		{
+			"sentence1": "Manchester City statement on the sacking of Roberto Mancini",
+			"sentence2": "Man City win the League for the first time in 44 years under Roberto Mancini",
+			"label": 0
+		},
+		{
+			"sentence1": "Roberto Mancini has been sacked by Manchester City with the Blues saying",
+			"sentence2": "Roberto Mancini has been sacked by Man City haha brilliant",
+			"label": 1
+		},
+		{
+			"sentence1": "Roberto Mancini has been sacked by Manchester City with the Blues saying",
+			"sentence2": "Roberto Mancini is looking for a job",
+			"label": 0
+		},
+		{
+			"sentence1": "Roberto Mancini has been sacked by Manchester City with the Blues saying",
+			"sentence2": "Roberto Mancini gets the boot from Man City",
+			"label": 1
+		},
+		{
+			"sentence1": "I WAS going to San Diego tomorrow",
+			"sentence2": "Hey move to San Diego and date me k",
+			"label": 0
+		},
+		{
+			"sentence1": "I WAS going to San Diego tomorrow",
+			"sentence2": "It takes eleven years to become San Diego native",
+			"label": 0
+		},
+		{
+			"sentence1": "I WAS going to San Diego tomorrow",
+			"sentence2": "Rock N Roll Marathon this weekend in San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "In San Diego to tape the Rick Amato Show in the morning",
+			"sentence2": "We made it to San Diego just in time",
+			"label": 0
+		},
+		{
+			"sentence1": "Party bus to San Diego tomorrow",
+			"sentence2": "The San Diego Experiences Daily is out",
+			"label": 0
+		},
+		{
+			"sentence1": "Party bus to San Diego tomorrow",
+			"sentence2": "San Diego California is so lucky to have this sweet boy in August",
+			"label": 0
+		},
+		{
+			"sentence1": "Party bus to San Diego tomorrow",
+			"sentence2": "Thank you to 92130 Magazine for the article on ACTSan Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "Im going to MCRD San Diego in 1 month",
+			"sentence2": "is selling a 2002 Ford F150 in San Diego CA with a Standard Ad",
+			"label": 0
+		},
+		{
+			"sentence1": "Im going to MCRD San Diego in 1 month",
+			"sentence2": "Quick have you been to San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "My 2 little cousins in San Diego",
+			"sentence2": "Just passed the exit for San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "My 2 little cousins in San Diego",
+			"sentence2": "can i just leave to san diego already for the summer",
+			"label": 0
+		},
+		{
+			"sentence1": "Finally IMPACTWRESTLING is coming to San Diego",
+			"sentence2": "San Diego can be a little sketch in some parts so be careful",
+			"label": 0
+		},
+		{
+			"sentence1": "Finally IMPACTWRESTLING is coming to San Diego",
+			"sentence2": "Shout out to this kid treykell representing San Diego s SDA this weekend at the PangosAllAmericanCamp",
+			"label": 0
+		},
+		{
+			"sentence1": "In San Diego to tape the Rick Amato Show in the morning",
+			"sentence2": "I forgot San Diego even had a MLB team",
+			"label": 0
+		},
+		{
+			"sentence1": "In San Diego to tape the Rick Amato Show in the morning",
+			"sentence2": "the drummer lives in San Diego yes",
+			"label": 0
+		},
+		{
+			"sentence1": "In San Diego to tape the Rick Amato Show in the morning",
+			"sentence2": "Can aauthorsmusic please come to San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "In San Diego to tape the Rick Amato Show in the morning",
+			"sentence2": "Finally IMPACTWRESTLING is coming to San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "In San Diego to tape the Rick Amato Show in the morning",
+			"sentence2": "hi Austin are you looking forward to coming to san diego",
+			"label": 0
+		},
+		{
+			"sentence1": "Were supposed to be in San Diego in August",
+			"sentence2": "Ill DM you my itineraryIm going to adamlambert s concert in San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "Were supposed to be in San Diego in August",
+			"sentence2": "San Diego for the Fourth of July",
+			"label": 0
+		},
+		{
+			"sentence1": "Were supposed to be in San Diego in August",
+			"sentence2": "The Man of the year Logic301 murdered San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "Were supposed to be in San Diego in August",
+			"sentence2": "Look forward to seeing you San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "Going to San Diego comic con",
+			"sentence2": "1littleliongirl have fun in San Diego",
+			"label": 0
+		},
+		{
+			"sentence1": "Going to San Diego comic con",
+			"sentence2": "Learning about the 1997 San Diego mass suicide",
+			"label": 0
+		},
+		{
+			"sentence1": "Going to San Diego comic con",
+			"sentence2": "Wine StealsProper in San Diego has closed",
+			"label": 0
+		},
+		{
+			"sentence1": "sarah Palin at the IndyMia game",
+			"sentence2": "Sarah Palin is rooting for Indiana",
+			"label": 0
+		},
+		{
+			"sentence1": "sarah Palin at the IndyMia game",
+			"sentence2": "Sarah Palin is at the game are you pumped",
+			"label": 0
+		},
+		{
+			"sentence1": "sarah Palin at the IndyMia game",
+			"sentence2": "Sarah Palin has no idea that she s at a basketball game",
+			"label": 0
+		},
+		{
+			"sentence1": "sarah Palin at the IndyMia game",
+			"sentence2": "Why is Sarah Palin cheering for the Pacers",
+			"label": 0
+		},
+		{
+			"sentence1": "sarah Palin at the IndyMia game",
+			"sentence2": "Sarah Palin is at the PacersHeat game tonight but is reportedly cheering on the Mavericks",
+			"label": 0
+		},
+		{
+			"sentence1": "sarah Palin at the IndyMia game",
+			"sentence2": "Sarah Palin getting a lot of boos on the jumbotron",
+			"label": 0
+		},
+		{
+			"sentence1": "Sarah Palin at the game TF",
+			"sentence2": "What the heck is Sarah Palin doing at the game",
+			"label": 1
+		},
+		{
+			"sentence1": "Great Sarah Palin is at the Pacers game jinx on Indiana",
+			"sentence2": "Sarah Palin is rooting for Indiana",
+			"label": 1
+		},
+		{
+			"sentence1": "Great Sarah Palin is at the Pacers game jinx on Indiana",
+			"sentence2": "LAWD Sarah Palin is at the Heat vs Pacers game",
+			"label": 1
+		},
+		{
+			"sentence1": "Great Sarah Palin is at the Pacers game jinx on Indiana",
+			"sentence2": "They booed the hell out Sarah Palin",
+			"label": 0
+		},
+		{
+			"sentence1": "Great Sarah Palin is at the Pacers game jinx on Indiana",
+			"sentence2": "I want to sit next to Sarah Palin",
+			"label": 0
+		},
+		{
+			"sentence1": "Great Sarah Palin is at the Pacers game jinx on Indiana",
+			"sentence2": "Sarah Palin at the Pacers game lol she still a",
+			"label": 1
+		},
+		{
+			"sentence1": "Great Sarah Palin is at the Pacers game jinx on Indiana",
+			"sentence2": "I see that Sarah Palin is present for the PacersHeat game",
+			"label": 1
+		},
+		{
+			"sentence1": "Apparently Sarah Palin is at the Pacer s game",
+			"sentence2": "Sarah Palin showed up to the Heat game in hopes that Glen Rice still plays",
+			"label": 1
+		},
+		{
+			"sentence1": "Apparently Sarah Palin is at the Pacer s game",
+			"sentence2": "Sarah Palin looking moderately attractive at the Heat vs Pacers game",
+			"label": 1
+		},
+		{
+			"sentence1": "Sarah Palin is at the game looking sexy",
+			"sentence2": "Sarah Palin is at the game and Im not",
+			"label": 1
+		},
+		{
+			"sentence1": "Sarah Palin is at the game looking sexy",
+			"sentence2": "Well Sarah Palin is at the game so now my head hurts",
+			"label": 0
+		},
+		{
+			"sentence1": "Sarah Palin is at the game looking sexy",
+			"sentence2": "Sarah Palin s sitting court side at the Heat game right now",
+			"label": 1
+		},
+		{
+			"sentence1": "Sarah Palin is at the game looking sexy",
+			"sentence2": "watching the game with my dad they showed Sarah Palin and we collectively made a face",
+			"label": 0
+		},
+		{
+			"sentence1": "I wonder if Sarah Palin is at the game",
+			"sentence2": "SARAH PALIN JUST GOT BOOED ON THE CELEB CAM",
+			"label": 0
+		},
+		{
+			"sentence1": "I wonder if Sarah Palin is at the game",
+			"sentence2": "Sarah Palin was booed loudly in INDIANA",
+			"label": 0
+		},
+		{
+			"sentence1": "I wonder if Sarah Palin is at the game",
+			"sentence2": "Dont know if I like the pacers Sarah Palin is",
+			"label": 0
+		},
+		{
+			"sentence1": "What in the fuck is Sarah Palin doing at heatvspacers game",
+			"sentence2": "Sarah Palin at the heat game danfischer17",
+			"label": 1
+		},
+		{
+			"sentence1": "What in the fuck is Sarah Palin doing at heatvspacers game",
+			"sentence2": "Sarah Palin spotted at the pacers vs heat game",
+			"label": 1
+		},
+		{
+			"sentence1": "Sarah Palin is at the Heat v Pacers playoff game",
+			"sentence2": "Correction the worse nightmare come true was seeing Sarah Palin at the NBA Conf",
+			"label": 0
+		},
+		{
+			"sentence1": "Sarah Palin is at the Heat v Pacers playoff game",
+			"sentence2": "Sarah Palin can give me the neck thooooo",
+			"label": 0
+		},
+		{
+			"sentence1": "Sarah Palin s at the HeatPacer game",
+			"sentence2": "Why in the world is Sarah Palin at the Pacers game",
+			"label": 1
+		},
+		{
+			"sentence1": "Eww Sarah Palin is at the Pacers game",
+			"sentence2": "I wish Sarah Palin had a sextape",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rhimes is a bad sista",
+			"sentence2": "Oh Shonda you did that honey",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rhimes has to be getting paid",
+			"sentence2": "Shonda is killing me with this",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rhimes has to be getting paid",
+			"sentence2": "Lmbo Shonda Rhimes did that",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rhimes has to be getting paid",
+			"sentence2": "Shonda just fucked us raw",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rhimes has to be getting paid",
+			"sentence2": "Cuz Shonda be demonizing folks with the quickness",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda is a bad mutha",
+			"sentence2": "Cast Writers Shonda just awesome",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda is a freaking genius",
+			"sentence2": "Shonda you are a beast",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda is a freaking genius",
+			"sentence2": "THAT LADY IS AMAZING I LOVE SHONDA",
+			"label": 1
+		},
+		{
+			"sentence1": "Shonda is a freaking genius",
+			"sentence2": "Dang Shonda knows she can write",
+			"label": 1
+		},
+		{
+			"sentence1": "Shonda is a freaking genius",
+			"sentence2": "Shonda Rhimes is black woman",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rhimes is a great writer",
+			"sentence2": "Im so over Shonda her bullshit",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rhimes is a great writer",
+			"sentence2": "shonda rhimes needs to write a book",
+			"label": 1
+		},
+		{
+			"sentence1": "Shonda Rhimes is a great writer",
+			"sentence2": "All i saw was shonda this shonda that",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rimes is a genius",
+			"sentence2": "As much as I like Castle Shonda Rhimes just killed it tonight",
+			"label": 1
+		},
+		{
+			"sentence1": "Shonda Rimes is a genius",
+			"sentence2": "Shonda is a GENIUS didnt see it coming",
+			"label": 1
+		},
+		{
+			"sentence1": "Shonda Rimes is a genius",
+			"sentence2": "I swear I just want to meet Shonda Rhimes",
+			"label": 0
+		},
+		{
+			"sentence1": "wtf is going on shonda",
+			"sentence2": "So Shonda did Grey s AND Scandal",
+			"label": 0
+		},
+		{
+			"sentence1": "wtf is going on shonda",
+			"sentence2": "Shonda bank account about to catch up with Oprahs",
+			"label": 0
+		},
+		{
+			"sentence1": "wtf is going on shonda",
+			"sentence2": "Shonda Rhimes is doing the absolutely MOST",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda Rhimes is a sadist",
+			"sentence2": "The fact that Shonda Rhimes is trending right now is actually hilarious",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda is cruel like that",
+			"sentence2": "Shonda got me in a lurking mode",
+			"label": 0
+		},
+		{
+			"sentence1": "Shonda is cruel like that",
+			"sentence2": "I want to know Shonda s relationship perspectives on black men",
+			"label": 0
+		},
+		{
+			"sentence1": "SHONDA RHIMES is trending on twitter",
+			"sentence2": "What this shonda jont do",
+			"label": 0
+		},
+		{
+			"sentence1": "That sounds like a great reunion opportunity though",
+			"sentence2": "sounds great Ill do the same then",
+			"label": 0
+		},
+		{
+			"sentence1": "That sounds like a great reunion opportunity though",
+			"sentence2": "Sounds like u had a lucky escape Hun",
+			"label": 0
+		},
+		{
+			"sentence1": "That sounds like a great reunion opportunity though",
+			"sentence2": "sounds like a total kick ass series",
+			"label": 0
+		},
+		{
+			"sentence1": "That sounds like a great reunion opportunity though",
+			"sentence2": "Sounds like the basis of a novel",
+			"label": 0
+		},
+		{
+			"sentence1": "That sounds like a great reunion opportunity though",
+			"sentence2": "take the silencer out of the bikes it sounds like a phat phaty",
+			"label": 0
+		},
+		{
+			"sentence1": "this tweet sounds like me",
+			"sentence2": "Edmund Burke Sounds like he knows BJJ",
+			"label": 0
+		},
+		{
+			"sentence1": "this tweet sounds like me",
+			"sentence2": "That ish sounds dank af right about now",
+			"label": 0
+		},
+		{
+			"sentence1": "this tweet sounds like me",
+			"sentence2": "sounds like some kinda nut you find in ya ice cream",
+			"label": 0
+		},
+		{
+			"sentence1": "this tweet sounds like me",
+			"sentence2": "whatever has happened that sounds like a good idea",
+			"label": 0
+		},
+		{
+			"sentence1": "this tweet sounds like me",
+			"sentence2": "Buffalo wild wings sounds good right now",
+			"label": 0
+		},
+		{
+			"sentence1": "mann that sounds like heaven",
+			"sentence2": "Sounds like a plan batman",
+			"label": 0
+		},
+		{
+			"sentence1": "mann that sounds like heaven",
+			"sentence2": "Sounds like some experimentaion is in order",
+			"label": 0
+		},
+		{
+			"sentence1": "That oddly sounds like a reference to dogs",
+			"sentence2": "Sounds like Summer to me",
+			"label": 0
+		},
+		{
+			"sentence1": "hahaha that sounds like me",
+			"sentence2": "Sounds like a girl game",
+			"label": 0
+		},
+		{
+			"sentence1": "hahaha that sounds like me",
+			"sentence2": "That sounds totally reasonable to me",
+			"label": 0
+		},
+		{
+			"sentence1": "hahaha that sounds like me",
+			"sentence2": "Sounds like a successful day to me",
+			"label": 0
+		},
+		{
+			"sentence1": "hahaha that sounds like me",
+			"sentence2": "ewwww sounds like you got the runs",
+			"label": 0
+		},
+		{
+			"sentence1": "Wow sounds like that hurts",
+			"sentence2": "Sounds top class to me",
+			"label": 0
+		},
+		{
+			"sentence1": "Wow sounds like that hurts",
+			"sentence2": "Any ThorDarkWorld meetingsstuff sounds good to me",
+			"label": 0
+		},
+		{
+			"sentence1": "Wow sounds like that hurts",
+			"sentence2": "Ye that sounds good to me",
+			"label": 0
+		},
+		{
+			"sentence1": "Wow sounds like that hurts",
+			"sentence2": "That sounds like a question for his parents",
+			"label": 0
+		},
+		{
+			"sentence1": "Wow sounds like that hurts",
+			"sentence2": "Yeah this sounds a lot like 90s trance with some vinyl pops thrown in",
+			"label": 0
+		},
+		{
+			"sentence1": "Wow sounds like that hurts",
+			"sentence2": "Sounds like my dad in a nutshell",
+			"label": 0
+		},
+		{
+			"sentence1": "sounds like a plan mr Stevens",
+			"sentence2": "Sounds like my new bible",
+			"label": 0
+		},
+		{
+			"sentence1": "sounds like a plan girls",
+			"sentence2": "Sounds like an OZsome year to us",
+			"label": 0
+		},
+		{
+			"sentence1": "sounds like a plan girls",
+			"sentence2": "sounds like youre in for a hell of a weekend",
+			"label": 0
+		},
+		{
+			"sentence1": "sounds like a plan girls",
+			"sentence2": "And no that s not as dirty as it sounds",
+			"label": 0
+		},
+		{
+			"sentence1": "Why is Star Wars on the tv tho",
+			"sentence2": "I fucking feel bad for mother fuckers that havent seen star wars",
+			"label": 0
+		},
+		{
+			"sentence1": "Why is Star Wars on the tv tho",
+			"sentence2": "Fuckin Star Wars is on and you wanna talk on the phone",
+			"label": 1
+		},
+		{
+			"sentence1": "Why is Star Wars on the tv tho",
+			"sentence2": "Star Wars AND Princess Diaries is on",
+			"label": 1
+		},
+		{
+			"sentence1": "Why is Star Wars on the tv tho",
+			"sentence2": "Haha i wanted star wars action figures few months ago",
+			"label": 0
+		},
+		{
+			"sentence1": "when is a star wars movie not on",
+			"sentence2": "am I the only one who thinks Star Wars is dumb af",
+			"label": 0
+		},
+		{
+			"sentence1": "when is a star wars movie not on",
+			"sentence2": "Star Wars is on so I guess there s my night",
+			"label": 0
+		},
+		{
+			"sentence1": "when is a star wars movie not on",
+			"sentence2": "is it weird that i love star wars",
+			"label": 0
+		},
+		{
+			"sentence1": "when is a star wars movie not on",
+			"sentence2": "I tried to watch Star Wars and I only kept it on for like 3 seconds",
+			"label": 0
+		},
+		{
+			"sentence1": "Star Wars on the other hand",
+			"sentence2": "Star Wars will NEVER get old",
+			"label": 0
+		},
+		{
+			"sentence1": "Star Wars on the other hand",
+			"sentence2": "Anyone up for a Star Wars marathon",
+			"label": 0
+		},
+		{
+			"sentence1": "Hell yeah Star Wars is on",
+			"sentence2": "You should be the one doing the next Star Wars movies",
+			"label": 0
+		},
+		{
+			"sentence1": "Hell yeah Star Wars is on",
+			"sentence2": "And I dont know if I still have the Star Wars movies either",
+			"label": 0
+		},
+		{
+			"sentence1": "Hell yeah Star Wars is on",
+			"sentence2": "Star Wars and lord of the rings on tv",
+			"label": 1
+		},
+		{
+			"sentence1": "Star Wars Return of the Jedi is on",
+			"sentence2": "Why is my boyfriend watching Star Wars right now",
+			"label": 1
+		},
+		{
+			"sentence1": "Star Wars Return of the Jedi is on",
+			"sentence2": "My favorite Star Wars movie is on",
+			"label": 1
+		},
+		{
+			"sentence1": "I must confess I love Star Wars",
+			"sentence2": "Turn on your TV to Spike and watch Star Wars",
+			"label": 0
+		},
+		{
+			"sentence1": "I must confess I love Star Wars",
+			"sentence2": "Star Wars will NEVER get old",
+			"label": 1
+		},
+		{
+			"sentence1": "I must confess I love Star Wars",
+			"sentence2": "Star Wars Return of the Jedi on Spike",
+			"label": 0
+		},
+		{
+			"sentence1": "I must confess I love Star Wars",
+			"sentence2": "I LOVE ALL THE STAR WARS LOVE ON MY TL RIGHT NOW",
+			"label": 1
+		},
+		{
+			"sentence1": "I must confess I love Star Wars",
+			"sentence2": "Somebody watch Star Wars with me please",
+			"label": 1
+		},
+		{
+			"sentence1": "Star Wars is on at the gym",
+			"sentence2": "watching Star Wars and the emperor is really mind rapey with Luke",
+			"label": 0
+		},
+		{
+			"sentence1": "Star Wars is on at the gym",
+			"sentence2": "your making me want to go watch star wars now",
+			"label": 0
+		},
+		{
+			"sentence1": "Star Wars is on at the gym",
+			"sentence2": "and of course because I drink and like Star Wars I know nothing about football",
+			"label": 0
+		},
+		{
+			"sentence1": "Star Wars is on at the gym",
+			"sentence2": "Star Wars Return of the Jedi on Spike",
+			"label": 0
+		},
+		{
+			"sentence1": "Which Star Wars episode should I watch",
+			"sentence2": "I have so much of a life that Im at home watching Star Wars",
+			"label": 0
+		},
+		{
+			"sentence1": "Which Star Wars episode should I watch",
+			"sentence2": "My parents are watching Star Wars",
+			"label": 0
+		},
+		{
+			"sentence1": "Uhm I need to sleep but Star Wars is on",
+			"sentence2": "Wow of course we would watch Star Wars",
+			"label": 0
+		},
+		{
+			"sentence1": "Uhm I need to sleep but Star Wars is on",
+			"sentence2": "The old Star Wars movies are so much better than some of the new ones",
+			"label": 0
+		},
+		{
+			"sentence1": "Uhm I need to sleep but Star Wars is on",
+			"sentence2": "puppy Arnold Palmer and Star Wars",
+			"label": 0
+		},
+		{
+			"sentence1": "when is a star wars movie not on",
+			"sentence2": "The Phantom Menace is no one s favorite Star Wars movie",
+			"label": 0
+		},
+		{
+			"sentence1": "Why did I just eat Taco Bell",
+			"sentence2": "Taco bell comes in handy at night",
+			"label": 0
+		},
+		{
+			"sentence1": "Why did I just eat Taco Bell",
+			"sentence2": "All this taco bell talk is making me hungry",
+			"label": 0
+		},
+		{
+			"sentence1": "I see you Taco Bell I see you",
+			"sentence2": "Im at Taco Bell right now",
+			"label": 0
+		},
+		{
+			"sentence1": "I see you Taco Bell I see you",
+			"sentence2": "Taco Bell over McDonald s any day",
+			"label": 0
+		},
+		{
+			"sentence1": "Crafting and Taco Bell with the girls",
+			"sentence2": "Now Taco Bell s closed what a day Im having",
+			"label": 0
+		},
+		{
+			"sentence1": "Crafting and Taco Bell with the girls",
+			"sentence2": "I write ballads about Taco Bell",
+			"label": 0
+		},
+		{
+			"sentence1": "And that taco bell hit the spot",
+			"sentence2": "Just spent 44 dollars at Taco Bell",
+			"label": 0
+		},
+		{
+			"sentence1": "And that taco bell hit the spot",
+			"sentence2": "did all of that 17 go to those awesome Taco Bell Churros",
+			"label": 0
+		},
+		{
+			"sentence1": "I just had the best Taco Bell ever",
+			"sentence2": "I have KFC Taco Bell and Chinese food in my refrigerator",
+			"label": 0
+		},
+		{
+			"sentence1": "I just had the best Taco Bell ever",
+			"sentence2": "Went to Taco Bell once and ordered in Mexican",
+			"label": 0
+		},
+		{
+			"sentence1": "I just had the best Taco Bell ever",
+			"sentence2": "It s 1236 and they guy in the Taco Bell drive thru denied me tacos",
+			"label": 0
+		},
+		{
+			"sentence1": "I just had the best Taco Bell ever",
+			"sentence2": "A number 6 from taco Bell would be super clutch right now",
+			"label": 0
+		},
+		{
+			"sentence1": "I just had the best Taco Bell ever",
+			"sentence2": "I dont understand how people eat Taco Bell as frequently as they do",
+			"label": 0
+		},
+		{
+			"sentence1": "Mackay is buying me taco bell",
+			"sentence2": "I need to run to Taco Bell and stop playing lol",
+			"label": 0
+		}
+	]
+}

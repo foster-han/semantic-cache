@@ -213,6 +213,34 @@ compare(withGate, without).falseHitDelta;  // 这道闸的价值
 画 precision/recall 曲线定阈值，precision ≥ 95% 再放量，shadow mode 先行。
 **默认阈值只是占位，必须在你自己的数据上重标。**
 
+## 运行指标
+
+```ts
+import { createMetrics } from "@jolli.ai/semantic-cache";
+
+const metrics = createMetrics({ costPerGeneration: 0.0075 });
+const t0 = Date.now();
+const result = await cache.resolve(prompt, generate);
+metrics.record({ result, ms: Date.now() - t0, segment: prompt.context.courseId });
+
+metrics.snapshot();
+// { requests, hits, misses, hitRate, byOutcome, missedAtGate,
+//   evictions: { bySourceVersion, byAnswerCheck },
+//   latencyMs: { hit, miss }, saved, bySegment }
+```
+
+零依赖，不碰时钟/网络/存储 —— 只吃 `CacheResult`，时间和分段键由你给。
+
+对齐 Redis LangCache 看板那一组（请求/命中/未命中、命中率、延迟、token 节省、
+分段命中率），再加它给不出的一组：**未命中时被哪道闸拦下**。单阈值缓存只有
+「命中/未命中」，这里能说出是问题侧不像（③④）、资料改版（⑤）、还是旧答案不再
+被支撑（⑥）—— 三种未命中的处置完全不同。
+
+**刻意不算正命中率与正确拒绝率。** 那两个要标签（复用的那次答案到底对不对），
+线上没有这个信息。LangCache 的看板同样不给，他们用 LLM-as-a-judge 抽样补。
+想要这两个数走 `evaluate()` 的标注集，或对线上流量抽样人工判 ——
+把一个需要标签的数摆在只有计数的看板上，等于请人误读。
+
 ## 并发
 
 正常用法是被 web backend 并发调用。要点：**不会坏数据**；同一个问题的并发请求

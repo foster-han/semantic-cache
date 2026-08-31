@@ -114,6 +114,40 @@
 
 指望一个阈值同时管住三件事，只能得到一个既漏又误的中间值。
 
+### 和主流语义缓存的功能对照
+
+上面那段是抽象理由，这里是具体的：主流方案缺的到底是哪几样，以及这个库缺主流的哪几样。
+
+| | GPTCache（开源） | Redis LangCache（托管，preview） | 本库 |
+|---|---|---|---|
+| 相似度召回 + 阈值 | ✅ 默认 `similarity_threshold=0.8` | ✅ 可配距离阈值 | ✅ ③，阈值必须自己标 |
+| 精排（cross-encoder 二次判定） | 有「model-based similarity」可选 | ✅ 有微调过的 reranker | ✅ ④，且形态（问↔问／问↔答）是显式选择 |
+| **资料版本比对** | ❌ | ❌ | ✅ ⑤ |
+| **答案是否仍被检索片段支撑** | ❌ | ❌ | ✅ ⑥，算子固定 top-1 |
+| 多租户 / scope 隔离 | ❌ | ✅ users / apps / sessions + 自定义 attributes | ✅ ① `ScopeResolver` |
+| PII 边界 | ❌ | ❌ | 声明式：脱敏 × 共享 scope × answer **直接抛错** |
+| 缓存计划（plan）而非答案 | ❌ | ❌ | ✅ 两种载荷，⑤⑥ 对 plan 自动不适用 |
+| 阈值与打分器绑定、标定语境必填 | ❌ 阈值是独立配置项 | ❌ | ✅ `Calibrated<Scorer, Thresholds>` + `calibratedOn` |
+| LLM adapter（OpenAI 等 API 兼容） | ✅ | ✅ REST API | ❌ 生成由调用方传入 |
+| 向量库适配 | ✅ 九种（Milvus/FAISS/Chroma/Qdrant…） | 托管 | 三种（内存 / pgvector / Redis vectorset） |
+| 淘汰策略 | ✅ LRU / FIFO / LFU / RR | ✅ 自动淘汰 | 只有 TTL + `purgeExpired()` |
+| 多模态（图像） | ✅ | ❌ | ❌ |
+| 内置指标看板 | ❌ | ✅ | ❌（`trace` 逐闸判定，自己接） |
+
+**定位差别比功能差别更要紧。**GPTCache 与 LangCache 假设的是**纯 query→response 缓存**：
+问题像不像，是唯一要判断的事。本库假设的是**RAG 之上的缓存**，于是多出两类失效 ——
+资料改版了（⑤）、旧答案已经不被现在会检出的片段支撑了（⑥）。那两道闸不是「更严一点」，
+是在问一个前两者结构上问不出的问题：**答案和它的依据之间的关系还成不成立。**
+
+所以这张表不该读成「本库功能更多」。反过来看更准确：**它是精度层，不是基础设施层。**
+LLM adapter、九种向量库、四种淘汰策略、托管看板 —— 那些是要接进生产必须有的东西，
+这里一个都没有，而且不打算有（`CacheStore` / `Retriever` / `Generate` 都是让你把已有的接进来）。
+真要上生产，把这一层套在 GPTCache 或 LangCache 之上比替换它们更合理。
+
+同一张尺子上的实测数字见 [`FINDINGS.md`](../FINDINGS.md) 的「和主流基线的同尺度对比」。
+
+
+
 ## API 里固化的教训
 
 这些不是风格选择，是实测踩出来的，所以做成了类型层面绕不过去的形状。

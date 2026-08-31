@@ -1,0 +1,160 @@
+/**
+ * 指标累加器。
+ *
+ * 算错的指标比没有指标更糟 —— 它会让人据此调阈值。所以每个数都有一条测试，
+ * 尤其是那几个容易想当然的：requests=0 时不能是 NaN、延迟要按命中/未命中分开、
+ * 驱逐要能说出是 ⑤ 还是 ⑥ 判的。
+ */
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
+import { createMetrics } from "../src/Metrics.ts";
+import type { CacheResult, GateId, GateTrace, Outcome } from "../src/types/Pipeline.ts";
+
+function result(outcome: Outcome, exitedAt: GateId | null = null, trace: Array<GateTrace> = []): CacheResult {
+	return {
+		payload: { kind: "answer", answer: "a", sourceIds: ["n1"] },
+		outcome,
+		exitedAt,
+		entryId: outcome === "generated" ? null : "e1",
+		sourceIds: ["n1"],
+		trace,
+	};
+}
+
+const exitAt = (gate: GateId): Array<GateTrace> => [{ gate, name: "x", verdict: "exit", detail: "d" }];
+
+test("空的时候命中率是 0，不是 NaN —— 看板上一个 NaN 就会让人以为服务挂了", () => {
+	const s = createMetrics().snapshot();
+	assert.equal(s.requests, 0);
+	assert.equal(s.hitRate, 0);
+	assert.equal(s.latencyMs.hit.p50, 0);
+	assert.deepEqual(s.missedAtGate, {});
+});
+
+test("exact / reuse / refine 都算命中，generated 算未命中", () => {
+	const m = createMetrics();
+	m.record({ result: result("exact") });
+	m.record({ result: result("reuse") });
+	m.record({ result: result("refine") });
+	m.record({ result: result("generated", 3) });
+	const s = m.snapshot();
+	assert.equal(s.requests, 4);
+	assert.equal(s.hits, 3);
+	assert.equal(s.misses, 1);
+	assert.equal(s.hitRate, 0.75);
+	assert.deepEqual(s.byOutcome, { exact: 1, reuse: 1, refine: 1, generated: 1 });
+});
+
+test("未命中按闸分类 —— 三种未命中的处置完全不同，混成一个数就没用了", () => {
+	const m = createMetrics();
+	m.record({ result: result("generated", 3) });
+	m.record({ result: result("generated", 3) });
+	m.record({ result: result("generated", 6) });
+	m.record({ result: result("reuse") }); // 命中不进这个分布
+	assert.deepEqual(m.snapshot().missedAtGate, { 3: 2, 6: 1 });
+});
+
+test("驱逐能说出是 ⑤ 还是 ⑥ 判的", () => {
+	const m = createMetrics();
+	m.record({ result: result("generated", 5, exitAt(5)) });
+	m.record({ result: result("generated", 6, exitAt(6)) });
+	m.record({ result: result("generated", 6, exitAt(6)) });
+	assert.deepEqual(m.snapshot().evictions, { total: 3, bySourceVersion: 1, byAnswerCheck: 2 });
+});
+
+test("③④ 的 exit 不算驱逐 —— 那时根本没有条目被删", () => {
+	const m = createMetrics();
+	m.record({ result: result("generated", 3, exitAt(3)) });
+	m.record({ result: result("generated", 4, exitAt(4)) });
+	assert.equal(m.snapshot().evictions.total, 0);
+});
+
+test("延迟按命中/未命中分开 —— 混在一起均值会被命中的几毫秒拉平", () => {
+	const m = createMetrics();
+	for (const ms of [10, 12, 14]) m.record({ result: result("reuse"), ms });
+	for (const ms of [900, 1000, 1100]) m.record({ result: result("generated", 3), ms });
+	const s = m.snapshot();
+	assert.equal(s.latencyMs.hit.count, 3);
+	assert.equal(s.latencyMs.hit.p50, 12);
+	assert.equal(s.latencyMs.hit.max, 14);
+	assert.equal(s.latencyMs.miss.count, 3);
+	assert.equal(s.latencyMs.miss.p50, 1000);
+	assert.equal(s.latencyMs.miss.max, 1100);
+});
+
+test("不给 ms 就不进延迟统计，但仍然计入请求数", () => {
+	const m = createMetrics();
+	m.record({ result: result("reuse") });
+	const s = m.snapshot();
+	assert.equal(s.requests, 1);
+	assert.equal(s.latencyMs.hit.count, 0);
+});
+
+test("分位数用最近秩，不插值 —— 报出来的必须是真实出现过的延迟", () => {
+	const m = createMetrics();
+	for (const ms of [1, 2, 3, 4, 100]) m.record({ result: result("reuse"), ms });
+	const hit = m.snapshot().latencyMs.hit;
+	assert.equal(hit.p50, 3);
+	assert.equal(hit.p95, 100);
+});
+
+test("延迟样本有上限，超了环形覆盖 —— 长跑进程里无上限数组就是内存泄漏", () => {
+	const m = createMetrics({ latencySamples: 4 });
+	for (const ms of [1, 2, 3, 4, 5, 6]) m.record({ result: result("reuse"), ms });
+	const hit = m.snapshot().latencyMs.hit;
+	assert.equal(hit.count, 4);
+	// 覆盖掉最早的 1、2，留下 {3,4,5,6}
+	assert.equal(hit.max, 6);
+	// 4 个样本、最近秩法：p50 取排序后第 2 个 = 4（不插值，所以不是 4.5）
+	assert.equal(hit.p50, 4);
+});
+
+test("省下的生成次数 = 命中数；没给单价就不折算成钱", () => {
+	const m = createMetrics();
+	m.record({ result: result("reuse") });
+	m.record({ result: result("generated", 3) });
+	assert.deepEqual(m.snapshot().saved, { generations: 1, cost: null });
+
+	const priced = createMetrics({ costPerGeneration: 0.0075 });
+	priced.record({ result: result("exact") });
+	priced.record({ result: result("reuse") });
+	assert.equal(priced.snapshot().saved.cost, 0.015);
+});
+
+test("分段命中率按请求数降序 —— 看板要先看流量大的那一段", () => {
+	const m = createMetrics();
+	m.record({ result: result("reuse"), segment: "course:ml101" });
+	m.record({ result: result("generated", 3), segment: "course:ml101" });
+	m.record({ result: result("generated", 3), segment: "course:ml101" });
+	m.record({ result: result("reuse"), segment: "course:db300" });
+	const s = m.snapshot();
+	assert.equal(s.bySegment.length, 2);
+	assert.equal(s.bySegment[0].segment, "course:ml101");
+	assert.equal(s.bySegment[0].requests, 3);
+	assert.equal(Math.round(s.bySegment[0].hitRate * 100), 33);
+	assert.equal(s.bySegment[1].hitRate, 1);
+});
+
+test("snapshot 是拷贝 —— 拿到之后再 record 不该改动手里那份", () => {
+	const m = createMetrics();
+	m.record({ result: result("reuse") });
+	const first = m.snapshot();
+	m.record({ result: result("reuse") });
+	assert.equal(first.requests, 1);
+	assert.equal(first.byOutcome.reuse, 1);
+	assert.equal(m.snapshot().requests, 2);
+});
+
+test("reset 清空一切", () => {
+	const m = createMetrics({ costPerGeneration: 1 });
+	m.record({ result: result("reuse"), ms: 5, segment: "s" });
+	m.record({ result: result("generated", 6, exitAt(6)), ms: 500 });
+	m.reset();
+	const s = m.snapshot();
+	assert.equal(s.requests, 0);
+	assert.equal(s.hits, 0);
+	assert.equal(s.evictions.total, 0);
+	assert.equal(s.latencyMs.miss.count, 0);
+	assert.equal(s.bySegment.length, 0);
+	assert.equal(s.saved.cost, 0);
+});

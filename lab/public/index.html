@@ -225,6 +225,20 @@
 
       <div id="manualOut" style="margin-top:1.2rem"></div>
 
+      <div style="margin-top:1.6rem">
+        <label class="fld">运行指标 —— 只统计手动提问，不含对照实验与场景回放</label>
+        <p class="dnote" style="margin:.2rem 0 .7rem">
+          上排是 Redis LangCache 看板给的那一组。下排是它给不出的：<b>未命中时被哪道闸拦下</b> ——
+          问题侧不像（③④）、资料改版（⑤）、旧答案不再被支撑（⑥），三种未命中的处置完全不同。
+          <b>这里没有「正命中率」</b>：那要知道复用的答案对不对，线上没有这个信息，只能靠标注集或抽样人工判。
+        </p>
+        <div id="metricsBox"></div>
+        <div class="row" style="margin-top:.7rem">
+          <button id="metricsReset">清空指标</button>
+          <span class="mono" style="color:var(--muted)">每次提问自动刷新</span>
+        </div>
+      </div>
+
       <div class="cols" style="margin-top:1.4rem">
         <div>
           <label class="fld">缓存内容</label>
@@ -554,6 +568,79 @@ function syncGate4Toggle() {
 
 // 上一次画出来的内容。整表无条件重绘会让页面每次提问都闪一下，
 // 看起来像刷新 —— 内容没变就别动 DOM。
+const GATE_MISS_LABEL = {
+  3: "③ 向量召回：没有足够像的候选",
+  4: "④ 精排：像但判定不是同一件事",
+  5: "⑤ 资料改版：旧答案引的是上一版",
+  6: "⑥ 回答校验：旧答案不再被支撑",
+};
+
+function pctOf(x) { return `${(x * 100).toFixed(1)}%`; }
+function ms(x) { return x >= 1000 ? `${(x / 1000).toFixed(1)}s` : `${Math.round(x)}ms`; }
+
+function renderMetrics(m) {
+  if (!m || m.requests === 0) {
+    $("metricsBox").innerHTML = `<p class="empty">还没有手动提问。问一次就有数了。</p>`;
+    return;
+  }
+  const tile = (label, value, sub) =>
+    `<div style="flex:1;min-width:8.5rem;border:1px solid var(--border);border-radius:.5rem;padding:.6rem .75rem">
+       <div style="font-size:.78rem;color:var(--muted)">${label}</div>
+       <div style="font-size:1.25rem;font-weight:600;margin:.15rem 0">${value}</div>
+       <div class="mono" style="font-size:.74rem;color:var(--muted)">${sub}</div>
+     </div>`;
+
+  const saved = m.saved.cost === null ? `省下 ${m.saved.generations} 次生成` : `省下 $${m.saved.cost.toFixed(4)}`;
+  const top = [
+    tile("命中率", pctOf(m.hitRate), `${m.hits} 命中 / ${m.requests} 请求`),
+    tile("命中延迟", ms(m.latencyMs.hit.p50), m.latencyMs.hit.count ? `p95 ${ms(m.latencyMs.hit.p95)}` : "无样本"),
+    tile("未命中延迟", ms(m.latencyMs.miss.p50), m.latencyMs.miss.count ? `p95 ${ms(m.latencyMs.miss.p95)}` : "无样本"),
+    tile("省下的生成", String(m.saved.generations), saved),
+    tile("驱逐", String(m.evictions.total), `⑤ ${m.evictions.bySourceVersion} · ⑥ ${m.evictions.byAnswerCheck}`),
+  ].join("");
+
+  const outcomes = [
+    ["② 精确命中", m.byOutcome.exact],
+    ["③④ 语义复用", m.byOutcome.reuse],
+    ["中带微调复用", m.byOutcome.refine],
+    ["重新生成", m.byOutcome.generated],
+  ];
+  const maxOut = Math.max(1, ...outcomes.map(o => o[1]));
+  const bar = (label, n, total, color) =>
+    `<div style="display:grid;grid-template-columns:11rem 1fr 3.5rem;gap:.5rem;align-items:center;margin:.2rem 0">
+       <span style="font-size:.82rem">${label}</span>
+       <span style="background:var(--border);border-radius:3px;height:.65rem;position:relative">
+         <i style="position:absolute;inset:0 auto 0 0;width:${(n / total) * 100}%;background:${color};border-radius:3px"></i>
+       </span>
+       <span class="mono" style="font-size:.78rem;text-align:right">${n}</span>
+     </div>`;
+
+  const gates = Object.entries(m.missedAtGate);
+  const maxGate = Math.max(1, ...gates.map(([, n]) => n));
+
+  $("metricsBox").innerHTML = `
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap">${top}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;margin-top:1rem">
+      <div>
+        <label class="fld">判定分布</label>
+        ${outcomes.map(([l, n]) => bar(l, n, maxOut, "var(--accent)")).join("")}
+      </div>
+      <div>
+        <label class="fld">未命中时被哪道闸拦下</label>
+        ${gates.length
+          ? gates.map(([g, n]) => bar(GATE_MISS_LABEL[g] ?? `第 ${g} 道闸`, n, maxGate, "var(--bad)")).join("")
+          : `<p class="empty" style="margin:.3rem 0">还没有未命中。</p>`}
+      </div>
+    </div>
+    ${m.bySegment.length > 1
+      ? `<div style="margin-top:1rem">
+           <label class="fld">分段命中率（按 scope）</label>
+           ${m.bySegment.map(x => bar(esc(x.segment), x.hits, Math.max(1, ...m.bySegment.map(y => y.requests)), "var(--accent)")
+             .replace(/>(\d+)<\/span>\s*<\/div>$/, `>${x.hits}/${x.requests}</span></div>`)).join("")}
+         </div>`
+      : ""}`;
+}
+
 const painted = { cache: null, docs: null };
 
 function renderState(s) {
@@ -638,6 +725,7 @@ async function boot() {
     ? `${CALIB.summary}${DEF.thetaQ === null ? "" : ""}`
     : "";
 
+  renderMetrics(s.metrics);
   renderExps();
   if (GEN.kind !== "stub") {
     // 一张卡 = 两遍完整场景集 ≈ 832 次生成。真生成下要一个多小时，
@@ -678,6 +766,7 @@ async function boot() {
   $("scopeMode").value = cfg.scopeMode;
   $("scopeMode").addEventListener("change", e => { cfg.scopeMode = e.target.value; });
 
+  $("metricsReset").addEventListener("click", async () => renderMetrics(await post("/api/metrics/reset")));
   $("ask").addEventListener("click", ask);
   $("q").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
   $("bump").addEventListener("click", async () => renderState((await post("/api/bump")).state));
@@ -771,6 +860,7 @@ async function ask() {
       ${traceHtml(r)}
       ${answerHtml(r)}`;
     renderState(r.state);
+    renderMetrics(await (await fetch("/api/metrics")).json());
   } catch (e) {
     out.innerHTML = `<div class="outcome wrong">请求失败：${esc(String(e && e.message ? e.message : e))}</div>`;
   } finally {

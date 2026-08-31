@@ -13,6 +13,8 @@ export {
 	checkRetrievalEncoder,
 } from "./DiscriminationCheck.ts";
 export type { DiscriminationReport, ProbePair } from "./DiscriminationCheck.ts";
+export { createMetrics } from "./Metrics.ts";
+export type { LatencyStats, Metrics, MetricsOptions, MetricsRecording, MetricsSnapshot } from "./Metrics.ts";
 export { compare, evaluate, sourceIdsOf } from "./Evaluation.ts";
 export type { ComparisonReport, EvaluationHooks, EvaluationReport, Scenario, ScenarioOutcome } from "./Evaluation.ts";
 export type { EncoderRole, PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "./types/Encoders.ts";

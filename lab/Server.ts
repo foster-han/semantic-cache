@@ -86,6 +86,7 @@ async function snapshot() {
 		models: encoders.models,
 		corpus: LANGUAGE,
 		store: { kind: backing.kind, note: backing.note },
+		metrics: lab.metrics(),
 		generator: lab.generator,
 		rerankAvailable: encoders.rerankAvailable,
 		defaults: lab.defaults,
@@ -165,6 +166,15 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 			json(res, 200, { ...result, state: await snapshot() });
+			return;
+		}
+		if (req.method === "GET" && url.pathname === "/api/metrics") {
+			json(res, 200, lab.metrics());
+			return;
+		}
+		if (req.method === "POST" && url.pathname === "/api/metrics/reset") {
+			lab.resetMetrics();
+			json(res, 200, lab.metrics());
 			return;
 		}
 		if (req.method === "POST" && url.pathname === "/api/reset") {

@@ -1,0 +1,3992 @@
+{
+	"source": "redis/langcache-sentencepairs-v1 · all · test",
+	"balanced": false,
+	"positiveRate": 0.48553459119496856,
+	"note": "保留原始正例率 —— precision 无偏。这才是这个 config 真实的分布",
+	"sampling": "跨 split 随机撒页（seed 20260831）",
+	"sources": {
+		"paws": 200,
+		"qqp": 300,
+		"apt": 31,
+		"stsb": 64,
+		"sick": 200
+	},
+	"scanned": 800,
+	"pairs": [
+		{
+			"sentence1": "He is known for his robot - performance - art under the name of Robochrist Industries , his animatronics - work in film and television and his large-format interactive sculptures .",
+			"sentence2": "He is known for his robotic performance art under the name Robochrist Industries , his animatronics work in film and television , and his large-scale interactive sculptures .",
+			"label": 1
+		},
+		{
+			"sentence1": "The Clouded Yellow is a British mystery film produced by Betty E. Box for Carillon Films , produced by Ralph Thomas in 1950 .",
+			"sentence2": "The Clouded Yellow is a 1950 British mystery film produced by Ralph Thomas and directed by Betty E. Box for Carillon Films .",
+			"label": 0
+		},
+		{
+			"sentence1": "The title song of the show is `` jazzy with energetic overtones `` with `` Hey Jimmy `` , designed to match the city 's recordings .",
+			"sentence2": "The show 's theme song is `` jazzy with energetic overtones `` with `` Hey Jimmy `` , designed to match the shots of the city .",
+			"label": 1
+		},
+		{
+			"sentence1": "In the fall of 333 , Shi Hu died and Shi Le immediately seized power in a coup .",
+			"sentence2": "In fall of 333 , Shi Hu died , and Shi Le immediately seized power in a coup .",
+			"label": 1
+		},
+		{
+			"sentence1": "Karl Madianga ( born January 30 , 1994 in Le Mans ) is a Congolese footballer of French origin who played as a midfielder .",
+			"sentence2": "Karl Madianga ( born 30 January 1994 , in Le Mans ) is a French footballer of Congolese descent who plays as a midfielder .",
+			"label": 0
+		},
+		{
+			"sentence1": "The official name in Japanese is , but this designation is rarely used . It is simply called , or often by test-takers and teachers .",
+			"sentence2": "The official name in Japanese is , but this term is rarely used , it is often called , or simply by testers and teachers .",
+			"label": 0
+		},
+		{
+			"sentence1": "The directory contains the complete , official listing of IOTA islands , and also features information and advice for island hunters , award applicants and DXpeditioners .",
+			"sentence2": "The directory contains the complete official listing of the IOTA islands and also includes information and advice for island hunters , applicants and DXpeditioners .",
+			"label": 0
+		},
+		{
+			"sentence1": "The executive producer was John Mantley , and producer and writer Leonard Katzman .",
+			"sentence2": "John Mantley was the executive producer ; Leonard Katzman , the producer and writer .",
+			"label": 1
+		},
+		{
+			"sentence1": "This species occurs in the demersal zone of tropical Indo-Pacific along the Philippines and in the South China Sea and East China Sea .",
+			"sentence2": "This species occurs in the demersal zone of the tropical Indo-Pacific along the Philippines and in the South China Sea and East China Sea .",
+			"label": 1
+		},
+		{
+			"sentence1": "The GEFT contains 18 simple figures each in which the respondent must identify a complex form .",
+			"sentence2": "The GEFT contains 18 simple digits , in which the respondent must identify a complex form .",
+			"label": 1
+		},
+		{
+			"sentence1": "Shortly afterwards , the Queen relieved Ulster of his command in Essex .",
+			"sentence2": "Shortly afterwards , Queen Essex relieved his command in Ulster .",
+			"label": 0
+		},
+		{
+			"sentence1": "The tornado then moved to the northeast , through north-western gage county and southern Saline County .",
+			"sentence2": "The tornado then moved to the northeast , through northwestern Gage County and southern Saline County .",
+			"label": 1
+		},
+		{
+			"sentence1": "Osceola County is located in Sherman Township in the U.S. state of Michigan .",
+			"sentence2": "Osceola County is in Sherman Township in the U.S. state of Michigan .",
+			"label": 1
+		},
+		{
+			"sentence1": "Keene was the guest conductor of the Naperville Municipal Band for its 2015 spring concert `` On to San Antonio `` in Naperville , IL .",
+			"sentence2": "Keene was the guest conductor of the Naperville Municipal Band for her spring concert in 2015 `` to Naperville , IL `` in San Antonio .",
+			"label": 0
+		},
+		{
+			"sentence1": "The film showed M. R. Radha , C. L. Anandan , Rajashree and Pushpalatha in the lead roles .",
+			"sentence2": "The film featured Rajashree , C. L. Anandan , M. R. Radha and Pushpalatha in the lead roles .",
+			"label": 0
+		},
+		{
+			"sentence1": "He also explored the crater of the Kawah Papandajan ( volcano ) and visited the Bagendit – lake near Garoet .",
+			"sentence2": "He also explored the crater of Kawah Papandajan ( volcano ) , and visited Lake Bagendit near Garoet .",
+			"label": 1
+		},
+		{
+			"sentence1": "Vishal decides to give Suraj another chance and puts him to the test , but is rejected .",
+			"sentence2": "Suraj decides to give Vishal another chance and puts him to the test ; however , he is rejected .",
+			"label": 0
+		},
+		{
+			"sentence1": "Also in residence were Al Parker , Mead Schaeffer and Dean Cornwell , who , along with Tom Lovell and N. C. Wyeth would become leaders in the field .",
+			"sentence2": "Also in the residence were Al Parker , Mead Schaeffer and Dean Cornwell , who , together with Tom Lovell and N. C. Wyeth , would become guides in the field .",
+			"label": 1
+		},
+		{
+			"sentence1": "Mixed vinegar recipes can also be found in Chinese cuisine , Middle Eastern cuisine and many other world cuisines .",
+			"sentence2": "Recipes for Chinese pickles can also be found in mixed cuisine , Middle Eastern cuisine , and many other world cuisines .",
+			"label": 0
+		},
+		{
+			"sentence1": "Much of the early history of Loboc was made around the city and the church of Bohol .",
+			"sentence2": "Much of the early history of Loboc was made around the town and church of Bohol .",
+			"label": 1
+		},
+		{
+			"sentence1": "He was one of nine military commanders invited by Emperor Gaozong to a multi-ethnic event in 655 .",
+			"sentence2": "He was one of nine military commanders who were invited to a multi-ethnic event by the Emperor Gaozong in 655 .",
+			"label": 1
+		},
+		{
+			"sentence1": "His wrestling schedule had him wrestling shows from Maryland to Maine .",
+			"sentence2": "His wrestling plan had him from Maine to Maryland Wrestling shows .",
+			"label": 0
+		},
+		{
+			"sentence1": "The secretary of Napper Tandy and later of Clan na Gael was from the beginning , as John Devoy said in the Gaelic American , William James Nicholson .",
+			"sentence2": "From the beginning , according to John Devoy in the Gaelic American , the secretary of Napper Tandy and later of the Clan na Gael was William James Nicholson .",
+			"label": 1
+		},
+		{
+			"sentence1": "In January 2012 , Sloan announced his candidacy for the Libertarian Party 's 2012 presidential nomination . He lost the nomination to Gary Johnson .",
+			"sentence2": "In January 2012 , Gary Johnson announced his candidacy for the presidential nomination of the Libertarian Party 2012 , which he lost to Sloan .",
+			"label": 0
+		},
+		{
+			"sentence1": "In 1941 he was named Doctor honoris causa by the Universities of Oxford , Glasgow in 1951 and in 1970 in Granada .",
+			"sentence2": "Gómez-Moreno was named Doctor honoris causa by the Universities of Glasgow in 1941 , Oxford in 1951 and Granada in 1970 .",
+			"label": 0
+		},
+		{
+			"sentence1": "In June 2010 , he supported Richard Bruton 's leadership challenge with Enda Kenny .",
+			"sentence2": "In June 2010 , he supported Enda Kenny 's leadership challenge to Richard Bruton .",
+			"label": 0
+		},
+		{
+			"sentence1": "Llangedwyn School is located in the county of Powys , Llanfyllin , in the Mid Wales catchment area and appears in The Good Schools Guide",
+			"sentence2": "Llangedwyn School is in the County of Powys in Llanfyllin in the catchment area of Mid Wales , and appears in The Good Schools Guide",
+			"label": 1
+		},
+		{
+			"sentence1": "The town of Vilaflor de Chasna was born in the sixteenth century . Saint Peter of Saint Joseph Betancur was founded in Vilaflor in 1626 .",
+			"sentence2": "The town of Vilaflor de Chasna was born in the sixteenth century , St. Joseph Betancur 's Saint Peter was founded in 1626 in Vilaflor .",
+			"label": 1
+		},
+		{
+			"sentence1": "3.A new corps ( 4th Mountain and 9th divisions ) was slated for the Western Sector operations .",
+			"sentence2": "3.A new corps ( 9th mountain and 4th divisions ) was designed for operations in the western sector .",
+			"label": 0
+		},
+		{
+			"sentence1": "SbO - molecules are bicyclic cages , similar to related oxide of phosphorus ( III ) , phosphorus trioxide .",
+			"sentence2": "SbO molecules are similar cages , related to the bicyclic oxide of phosphorus ( III ) , phosphorus trioxide .",
+			"label": 0
+		},
+		{
+			"sentence1": "The second song was published in 1610 , late in Dowland 's career , and shows the influence of the old music of Italian Baroque .",
+			"sentence2": "The second song was published in 1610 , late in Dowland 's career , and shows the influence of early music of the Italian baroque .",
+			"label": 1
+		},
+		{
+			"sentence1": "Barbey is the son of the heir and managing director Edwin Quier `` Bud `` Barbey and his wife Ruth Virginia Diener .",
+			"sentence2": "Ruth Virginia Diener is the son of the heir and businessman Edwin Quier `` Bud `` Barbey and his wife Barbey .",
+			"label": 0
+		},
+		{
+			"sentence1": "He has published a book , newspaper articles , and 35 articles in British , German , Dutch , and American journals .",
+			"sentence2": "He has published one book , newspaper articles and 35 articles in British , American , Dutch , and German journals .",
+			"label": 0
+		},
+		{
+			"sentence1": "The meanings attributed to the word hall have changed over the centuries , as social practices have varied .",
+			"sentence2": "The meanings attributed to the word hall have changed over the centuries , as social practices have changed .",
+			"label": 1
+		},
+		{
+			"sentence1": "A social cultural and economic legislation to control the flow of people and vehicles , with international treaties and agreements on economic and border relations in all wide .",
+			"sentence2": "Broad legislation to control the flow of people and vehicles , with international treaties and agreements on economic and border relations in all social , cultural and economic terms .",
+			"label": 0
+		},
+		{
+			"sentence1": "It was the final version of NBA Live for the Super NES , Genesis and Sega Saturn released .",
+			"sentence2": "It was the final version of NBA Live released for the Super NES , Genesis and Sega Saturn .",
+			"label": 1
+		},
+		{
+			"sentence1": "The show was created by Mihkel Ulman and historian Lauri Vahtre , the series is produced by Raivo Suviste .",
+			"sentence2": "The show was created by Mihkel Ulman and historian Lauri Vahtre , the series is manufactured by Raivo Suviste .",
+			"label": 1
+		},
+		{
+			"sentence1": "Sacred Heart Church is located on S. V. Road in Mumbai ( Mumbai ) , Santa Cruz .",
+			"sentence2": "Sacred Heart Church is located on the S. V. Road in Santa Cruz ( Mumbai ) , Mumbai .",
+			"label": 0
+		},
+		{
+			"sentence1": "Greenfield Township was created from parts of Lowell and Stockton townships .",
+			"sentence2": "Stockton was created from parts of the Lowell and Greenfield Township townships .",
+			"label": 0
+		},
+		{
+			"sentence1": "Marshall had a guest role in the hit drama `` House `` , playing Julia , sister of Lisa Cuddy .",
+			"sentence2": "Lisa Cuddy had a guest role in the hit - Drama `` House `` , Marshall , Sister of Juliet .",
+			"label": 0
+		},
+		{
+			"sentence1": "He lived in Hampstead all his life , dying in London in 1904 .",
+			"sentence2": "He lived all his life in London , died in 1904 in Hampstead .",
+			"label": 0
+		},
+		{
+			"sentence1": "As Roo gives now an adult Morag `` is in a bit `` .",
+			"sentence2": "As Roo is now an adult Morag `` gives a bit down `` .",
+			"label": 0
+		},
+		{
+			"sentence1": "Class 10 claims that the card uses 10 MB / s as a minimum non-fragmented sequential write speed and supports a High - Speed bus mode .",
+			"sentence2": "Class 10 asserts that the card uses 10 MB / s as a minimum non-fragmented sequential write speed and supports a High Speed bus mode .",
+			"label": 1
+		},
+		{
+			"sentence1": "Without grazing , this habitat and the wildlife it attracts would be replaced by small shrubs of common interest .",
+			"sentence2": "Without grazing , this habitat and the wildlife it attracts would be replaced by little shrubs of common interest .",
+			"label": 1
+		},
+		{
+			"sentence1": "The area is within the district of Sherbrooke but is served by St. Mary 's Education Centre and St. Mary 's Academy in nearby Guysborough .",
+			"sentence2": "The area is located in the district of Sherbrooke , but is served by St. Mary ' s Education Centre and St. Mary 's Academy in nearby Guysborough .",
+			"label": 1
+		},
+		{
+			"sentence1": "The 12 `` single and a picture disc version of the 7 `` single were sold by the Five Star Fan Club in 1989 and re-pressed to members .",
+			"sentence2": "The 12 `` single and a picture - Disc - version of the 7 `` singles were relaunched and sold to members by the Five Star Fan Club in 1989 .",
+			"label": 0
+		},
+		{
+			"sentence1": "Anantapur Town is 354 km from Hyderabad , 200 km from the neighbouring capital of Bangalore .",
+			"sentence2": "Anantapur city is 354 km from Hyderabad , 200 km from the neighbouring state capital of Bangalore .",
+			"label": 1
+		},
+		{
+			"sentence1": "The rest of West Dunbartonshire is covered by the Strathkelvin and Bearsden constituency . While the rest of East Dunbartonshire area is covered by the Dumbarton constituency .",
+			"sentence2": "The rest of East Dunbartonshire is covered by the Strathkelvin and Bearsden constituency , while the rest of West Dunbartonshire is covered by the Dumbarton constituency .",
+			"label": 0
+		},
+		{
+			"sentence1": "Of nine Victoria crosses awarded to British troops in battle , four were given to the 36th division soldiers .",
+			"sentence2": "Of nine Victoria Crosses given to British forces in the battle , four were awarded to 36th Division soldiers .",
+			"label": 0
+		},
+		{
+			"sentence1": "The most integral type of basic equation is called `` Fredholm - equation of first type `` ;",
+			"sentence2": "The most basic type of integral equation is called a `` Fredholm equation of the first type `` ,",
+			"label": 0
+		},
+		{
+			"sentence1": "Though Protestants had lost their independence in places of refuge under Richelieu , they continued to live in comparative security and political contentment .",
+			"sentence2": "Though Protestants under Richelieu had lost their independence in places of refuge , they continued to live in political security and comparable satisfaction .",
+			"label": 0
+		},
+		{
+			"sentence1": "Janaki returns from London and is pleased to see his son Babu with Ramu .",
+			"sentence2": "Janaki returns from London and is excited to see his son , Babu with Ramu .",
+			"label": 1
+		},
+		{
+			"sentence1": "The Assyrian Patriotic Party , Chaldean Democratic Forum , and the Bet Nahrain Democratic Party announced on November 15 , that they would create an alliance .",
+			"sentence2": "The Assyrian Patriotic Party , the Bet Nahrain Democratic Party and the Chaldean Democratic Forum announced on November 15 that they would create an alliance .",
+			"label": 0
+		},
+		{
+			"sentence1": "He has performed solo concerts at the Royal Albert Hall , the Concertgebouw in Amsterdam , the Verbier Festival and the Wigmore Hall .",
+			"sentence2": "He has performed solo recitals at Royal Albert Hall , the Concertgebouw in Amsterdam , the Verbier Festival , and Wigmore Hall .",
+			"label": 1
+		},
+		{
+			"sentence1": "The Praja Socialist Party , along with the Indian National Congress , formed a coalition government that had won 45 seats .",
+			"sentence2": "Praja Socialist Party formed a coalition government along with the Indian National Congress who had won 45 seats .",
+			"label": 1
+		},
+		{
+			"sentence1": "He played on the legitimate stage as a child and played in the United States and London .",
+			"sentence2": "He played on the legitimate stage as a child , and appeared throughout the United States and in London .",
+			"label": 0
+		},
+		{
+			"sentence1": "Karinhegane is an archaeological site in the northern Somalia region of Sanaag , containing some unique polychrome rock art .",
+			"sentence2": "Karinhegane is an archaeological site in the northern Somalia region of Sanaag . It contains some unique polychrome rock art .",
+			"label": 1
+		},
+		{
+			"sentence1": "As a teenager , Tunney was closely friends with Gordie Johnson , with whom he founded a band called `` Eric and the Tall Boys `` .",
+			"sentence2": "As a teenager , Gordie Johnson was close friends with Tunney , with whom he started a band called `` Eric and the Tall Boys `` .",
+			"label": 0
+		},
+		{
+			"sentence1": "Vitor Miranda confronted Vettori on June 25 , 2017 at He won the fight by unanimous decision .",
+			"sentence2": "Vettori faced Vitor Miranda on June 25 , 2017 at . He won the fight by unanimous decision .",
+			"label": 0
+		},
+		{
+			"sentence1": "In 1975 , Batley married and had a child in 1976 , first living in Miami , Florida , and then in Essex , England .",
+			"sentence2": "Batley married in 1975 and had a child in 1976 . The family lived first in Miami , Florida , and then in Essex , England .",
+			"label": 1
+		},
+		{
+			"sentence1": "Seaside Park is located in the 3rd Congressional District and is part of New Jersey 's 9th state legislative district .",
+			"sentence2": "Seaside Park is located in the 3rd Congressional District and is part of the 9th State Legislative District of New Jersey .",
+			"label": 1
+		},
+		{
+			"sentence1": "In 2010 , Nick Cave started a series of duets with Debbie Harry for the Jeffrey Lee Pierce Sessions Project .",
+			"sentence2": "In 2010 Debbie Harry began a series of duets with Nick Cave for The Jeffrey Lee Pierce Sessions Project .",
+			"label": 0
+		},
+		{
+			"sentence1": "As of 2016 , Google owned and operated nine data centers across North and South America , two in Asia , and four in Europe .",
+			"sentence2": "As of 2016 , Google owned and operated nine data centers in North and South America , two in Europe and four in Asia .",
+			"label": 0
+		},
+		{
+			"sentence1": "The Geographic Union is the True South - Geographic Union ( GU ) for Rugby - Union - teams playing rugby in the southern United States for USA .",
+			"sentence2": "The True South Geographical Union is the Geographical Union ( GU ) for rugby union teams playing in the Southern United States for USA Rugby .",
+			"label": 0
+		},
+		{
+			"sentence1": "This species is widespread in the Indo-Pacific Oceans , from Australia and New Caledonia to Tonga , Micronesia , the northern Red Sea , and East Africa .",
+			"sentence2": "This species is widespread throughout the Indo-Pacific Oceans , from Red Sea and East Africa to Tonga , throughout Micronesia , northern Australia and New Caledonia .",
+			"label": 0
+		},
+		{
+			"sentence1": "Butch Vig at the Smart Studios recorded the vocals and completed the Mixdown .",
+			"sentence2": "Butch Vig at Smart Studios completed the vocals and recorded the mixdown .",
+			"label": 0
+		},
+		{
+			"sentence1": "Five French cavalry divisions further north were also confronted with German cavalry and infantry , while trying to guard the XIV reserve - corps flank .",
+			"sentence2": "Five German cavalry divisions further north , were also confronted by French cavalry and infantry , while attempting to guard the XIV Reserve Corps flank .",
+			"label": 0
+		},
+		{
+			"sentence1": "In the first round , Dutch and Fleming lost to Brad Drewett and Wally Masur , as did the McEnroes vs. Brad Pearce and Jim Pugh .",
+			"sentence2": "Donnelly and Fleming lost in the first round to Brad Pearce and Jim Pugh , as did the McEnroes to Brad Drewett and Wally Masur .",
+			"label": 0
+		},
+		{
+			"sentence1": "In April 2007 , Trade Minister Phil Goff launched a pilot project `` Waste to Energy `` in Landhi , near Karachi , Pakistan .",
+			"sentence2": "In April 2007 , Trade Minister Phil Goff launched a pilot `` Waste to Energy `` project in Landhi , near Karachi , Pakistan .",
+			"label": 1
+		},
+		{
+			"sentence1": "Travis County , Texas is a village in Webberville ( USA ) . Its population was 392 , according to a 2010 census estimate .",
+			"sentence2": "Webberville is a village in Travis County , Texas ( USA ) , the population was 392 , according to a 2010 census estimate .",
+			"label": 0
+		},
+		{
+			"sentence1": "Kei Nishikori defeated Ryan Sweeting , 6 -- 4 , 7 -- 6",
+			"sentence2": "Defeated Kei Nishikori Ryan Sweeting , 6 -- 4 , 7 - 6 - 6",
+			"label": 1
+		},
+		{
+			"sentence1": "His former photo gallery was a popular tourist attraction in the Historic District of downtown Savannah .",
+			"sentence2": "His former photo gallery was a popular tourist attraction in the historic quarter of downtown Savannah .",
+			"label": 1
+		},
+		{
+			"sentence1": "He then went to Hollywood and in 1981 landed a role in the movie `` Stir Crazy `` , directed by Richard Pryor and Gene Wilder starring Sidney Poitier .",
+			"sentence2": "He then went to Hollywood and landed a role in the film `` Stir Crazy `` by Sidney Poitier in 1981 with Richard Pryor and Gene Wilder .",
+			"label": 0
+		},
+		{
+			"sentence1": "He was governor of the Prefecture of Nagano ( 1923-1924 ) and Yamanashi Prefecture ( 1924-1926 ) .",
+			"sentence2": "He was governor of Yamanashi Prefecture ( 1923-1924 ) and Nagano Prefecture ( 1924-1926 ) .",
+			"label": 0
+		},
+		{
+			"sentence1": "Flemming played Major Junior Hockey at the OHL ( Ontario Hockey League ) with the Mississauga St. Michael 's Majors .",
+			"sentence2": "Flemming played major junior hockey in the Ontario Hockey League ( OHL ) with the Mississauga St. Michael 's Majors .",
+			"label": 0
+		},
+		{
+			"sentence1": "She contested from Saran constituency in 2014 Loksabha election but lost .",
+			"sentence2": "She challenged from Saran constituency in 2014 Loksabha election , but lost .",
+			"label": 1
+		},
+		{
+			"sentence1": "Finnish Comb Ceramic culture is called neolithic because it is comparable to neolithic cultures elsewhere .",
+			"sentence2": "The Finnish ceramic culture is called Neolithic , because it is comparable elsewhere to Neolithic cultures .",
+			"label": 1
+		},
+		{
+			"sentence1": "According to the US Census Bureau , the county is a total area of which is land and has water ( 0.4 % ) .",
+			"sentence2": "According to the U.S. Census Bureau , the county has a total area of , of which is land and ( 0.4 % ) is water .",
+			"label": 0
+		},
+		{
+			"sentence1": "On December 3 , 2010 , Ryan Star performed for the 101.9 FM Miracle on State Street in Chicago Illinois , along with Ingrid Michaelson , and Maroon 5 .",
+			"sentence2": "On December 3 , 2010 , Ryan Star joined Ingrid Michaelson and Maroon 5 for the 101.9 FM Miracle on State Street in Chicago Illinois .",
+			"label": 1
+		},
+		{
+			"sentence1": "The two observer states at the World Bank , the Vatican City and State of Palestine , are also not members of the UN .",
+			"sentence2": "The two observer states at the World Bank , the Vatican City and the State of Palestine are also not members of the UN .",
+			"label": 1
+		},
+		{
+			"sentence1": "The current executive director is Beth Shapiro , who took over from founding director Marcia Stein in 2011 .",
+			"sentence2": "The current managing director is Beth Shapiro , who took over in 2011 from founding director Marcia Stein .",
+			"label": 1
+		},
+		{
+			"sentence1": "`` 4 `` was mixed mostly at MixStar Studios in New York City and mastered at Sterling Sound in Virginia .",
+			"sentence2": "`` 4 `` was mostly mixed at MixStar Studios in New York City and mastered at Sterling Sound in Virginia .",
+			"label": 1
+		},
+		{
+			"sentence1": "It was written by William Edwards , produced by Robert C. Dennis , and directed by Harold Daniels .",
+			"sentence2": "It was produced by William Edwards , written by Robert C. Dennis and addressed by Harold Daniels .",
+			"label": 0
+		},
+		{
+			"sentence1": "On June 15 , 1951 , Edwards was traded as part of an eight-player trade by the Chicago Cubs to the Brooklyn Dodgers .",
+			"sentence2": "On June 15 , 1951 , Edwards was traded by the Brooklyn Dodgers to the Chicago Cubs as part of an eight-player trade .",
+			"label": 0
+		},
+		{
+			"sentence1": "In 2010 , Debbie Harry began a series of duos with Nick Cave for the Jeffrey Lee Pierce Sessions Project .",
+			"sentence2": "In 2010 Nick Cave began a series of duets with Debbie Harry for The Jeffrey Lee Pierce Sessions Project .",
+			"label": 0
+		},
+		{
+			"sentence1": "Croker 's Bay was named by William Edward Parry in honor of John Wilson Croker .",
+			"sentence2": "Croker 's bay was named after William Edward Parry in honor of John Wilson Croker .",
+			"label": 1
+		},
+		{
+			"sentence1": "John Wessington ( also Washington ) ( died 1451 ) became an English Benedictine who was prior of Durham Abbey .",
+			"sentence2": "John Wessington ( also Washington ) ( died 1451 ) was an English Benedictine , the prior of Durham Abbey .",
+			"label": 1
+		},
+		{
+			"sentence1": "Correspondence between Theodore Rothstein , the Soviet ambassador in Tehran , and Mirza Koochak Khan clearly supports this view .",
+			"sentence2": "The correspondence between Theodore Rothstein , the Soviet Ambassador to Tehran , and Mirza Koochak Khan clearly supports this view .",
+			"label": 1
+		},
+		{
+			"sentence1": "Kuntz was drafted by the Chicago White Sox as the 11th pick in the first round of the 1977 Major League Baseball draft .",
+			"sentence2": "Kuntz was the first pick in the 11th round of the 1977 Major League Baseball - Draft by Chicago White Sox .",
+			"label": 0
+		},
+		{
+			"sentence1": "Metropolitan Opera also brought the WJW radio broadcasts to Cleveland .",
+			"sentence2": "WJW also brought the radio broadcasts of the Metropolitan Opera to Cleveland .",
+			"label": 0
+		},
+		{
+			"sentence1": "Bolshekolpanskoe Rural Settlement is a rural settlement in Gatchina Municipal District of the Leningrad Oblast ( Leningrad Province ) in northern Russia .",
+			"sentence2": "Rural settlement Bolshekolpanskoe is a rural settlement in the district of Gatchina of the Leningrad Oblast ( province of Leningrad ) in northern Russia .",
+			"label": 1
+		},
+		{
+			"sentence1": "Kings Cross station opened on 23 June 1979 when the Bondi Junction line opened from Central to Eastern Suburbs .",
+			"sentence2": "Kings Cross railway station was opened on June 23 , 1979 , when the Bondi Junction line opened from central to eastern suburbs .",
+			"label": 1
+		},
+		{
+			"sentence1": "The Shoalhaven Community Radio of 2UUU is located in Nowra , a town in the Shoalhaven district of New South Wales , Australia .",
+			"sentence2": "2UUU Shoalhaven Community Radio is based in Shoalhaven , a town in the Nowra district of New South Wales , Australia .",
+			"label": 0
+		},
+		{
+			"sentence1": "The ultimate goal is to connect with other railways in the area : south to Erie and to the north to the proposed Ohio River Trail and the Montour Trail .",
+			"sentence2": "The ultimate goal is to connect to other rail trails in the area : north to Erie and south to the proposed Ohio River Trail and the Montour Trail .",
+			"label": 0
+		},
+		{
+			"sentence1": "During his coaching the team finished last in the Hungarian League 2009 -- 10 season after beating Videoton FC in the third round .",
+			"sentence2": "During his training season the team finished last in the Hungarian League 2009 -- 10 season after beating Videoton FC in the third round .",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1958 Legia took 6th place in the Polish championship and in 1959 the 4th place .",
+			"sentence2": "In 1958 , Legia took 6th place in the Polish championship , and in 1959 took 4th .",
+			"label": 1
+		},
+		{
+			"sentence1": "Inside the caves are large rock formations that fill the space in the impressive chambers , many interesting stalagmites and stalactites to be observed .",
+			"sentence2": "Inside the caves large rock formations are observed that fill the space in the impressive chambers . There are many interesting stalagmites and stalactites .",
+			"label": 1
+		},
+		{
+			"sentence1": "In August 1694 , Mary Henry Colley , daughter of Sir William Ussher and Ursula , was married ( daughter of Captain George St. Barbe ) .",
+			"sentence2": "In August 1694 Henry Colley married Mary , daughter of Sir William Ussher and Ursula , ( daughter of Captain George St. Barbe ) .",
+			"label": 0
+		},
+		{
+			"sentence1": "Like many remote counties , it lost a western section to its north when the county of Walpeup was created on November 1 , 1911 .",
+			"sentence2": "Like many remote shires , it lost a western section to its north , when the Shire of Walpeup was created on 1 November 1911 .",
+			"label": 1
+		},
+		{
+			"sentence1": "He also intervened in Pakistan during a potentially destabilizing disagreement between the then President , Mr Nawaz Shariff and the Prime Minister , Farooq Leghari .",
+			"sentence2": "He also intervened in Pakistan during a potentially destabilizing disagreement between the then President , Mr. Farooq Leghari and the Prime Minister , Nawaz Shariff .",
+			"label": 0
+		},
+		{
+			"sentence1": "Sankat City is a dark comedy Bollywood Hindi movie directed by Pankaj Advani starring Kay Kay Menon .",
+			"sentence2": "Sankat City is a dark comedy Bollywood Hindi movie directed by Kay Kay Menon with Pankaj Advani .",
+			"label": 0
+		},
+		{
+			"sentence1": "The narrator for the first series was Kevin Whately , then took over Dennis Waterman until the end of the show in 2006 .",
+			"sentence2": "The narrator for the first series was Kevin Whately , then Dennis Waterman took over until the show ended in 2006 .",
+			"label": 1
+		},
+		{
+			"sentence1": "She was laid down in November 1869 , launched in August 1872 , and completed in February 1875 .",
+			"sentence2": "It was laid down in November 1869 , completed in August 1872 and launched in February 1875 .",
+			"label": 0
+		},
+		{
+			"sentence1": "Corrado Barazzutti defeated Björn Borg 6 -- 1 , 6 -- 2",
+			"sentence2": "Corrado Barazzutti defeated Björn Borg 6 -- 1 , 6 -- 2",
+			"label": 1
+		},
+		{
+			"sentence1": "To counter this threat , on 31 March , Beaulieu ordered Pittoni in invade the Republic of Genoa and cross the Bocchetta Pass .",
+			"sentence2": "To counter this threat , Beaulieu ordered Pittoni to enter the Republic of Genoa on 31 March and cross the Bocchetta pass .",
+			"label": 1
+		},
+		{
+			"sentence1": "Sawamatsu is the daughter of the tennis player Kazuko Sawamatsu and the niece of the Wimbledon - Ladies - Double - Champion 1975 Junko Sawamatsu .",
+			"sentence2": "Sawamatsu is the daughter of tennis player Kazuko Sawamatsu and the niece of 1975 Wimbledon ladies doubles champion Junko Sawamatsu .",
+			"label": 1
+		},
+		{
+			"sentence1": "Here , `` A `` and `` B `` can be any complex numbers , and `` k `` can be any real number .",
+			"sentence2": "Here `` A `` and `` B can be any real numbers and `` k `` may be any complex number .",
+			"label": 0
+		},
+		{
+			"sentence1": "The sunken female blossoms carry tubular tepals and a free fruit node with one or two , then mostly unequal scars .",
+			"sentence2": "The sunken female flowers carry tubular tepals and a free fruit node with one or two , then mostly unequal scars .",
+			"label": 1
+		},
+		{
+			"sentence1": "Jeff of Exodus was announced as Gary Holt 's temporary replacement , in Slayer , on March 13 , to April 4 , 2011 .",
+			"sentence2": "Gary Holt of Exodus was announced as a temporary replacement of Jeff in Slayer on 13 March to 4 April 2011 .",
+			"label": 0
+		},
+		{
+			"sentence1": "In recent years , there have been popular criticisms of some of the additional tests for diagnosing APD .",
+			"sentence2": "In recent years there have been popular criticisms of some additional tests for diagnosis of APD .",
+			"label": 1
+		},
+		{
+			"sentence1": "Parkton is a town in Robeson County , North Carolina , in the Lumberton metro area , in the United States .",
+			"sentence2": "Parkton is a city in Robeson County , North Carolina , in the Lumberton Metro area , in the United States .",
+			"label": 1
+		},
+		{
+			"sentence1": "Framing hammers have increasingly been replaced by nail guns for the majority of nails framed on a wood driven house .",
+			"sentence2": "Framing hammers have been increasingly replaced by nail guns for the majority of nails driven on a wood house .",
+			"label": 1
+		},
+		{
+			"sentence1": "In the television series `` Twin Peaks `` , a giant special agent Leo Johnson tells that Dale Cooper was once confined in a hungry horse `` .",
+			"sentence2": "In the television series `` Twin Peaks `` , a giant tells Special Agent Leo Johnson that Dale Cooper was once `` locked inside a hungry horse . ``",
+			"label": 1
+		},
+		{
+			"sentence1": "Andrew Barnes ( born March 31 , 1967 ) is a retired footballer who played for Carlisle United , Crystal Palace and Sutton United .",
+			"sentence2": "Andrew Barnes ( born 31 March 1967 ) is a retired footballer who played for Sutton United , Crystal Palace and Carlisle United .",
+			"label": 0
+		},
+		{
+			"sentence1": "Pavlo Fedosov ( born August 14 , 1996 in Chernihiv , Ukraine ) is a professional Ukrainian football player .",
+			"sentence2": "Pavlo Fedosov ( ; born 14 August 1996 in Chernihiv , Ukraine ) is a professional Ukrainian football striker .",
+			"label": 1
+		},
+		{
+			"sentence1": "The area is zoned by Prince George 's County Public Schools , and served to Suitland High School , Drew Freeman Middle School , Suitland Elementary School .",
+			"sentence2": "The area is served by Prince George County Public Schools , and Suitland High School , Drew Freeman Middle School , Suitland Elementary School .",
+			"label": 1
+		},
+		{
+			"sentence1": "The E mail server provides POP3 , SMTP , HTTP , IMAP4 , all with SSL / TLS support plus NNTP and offers webmail functionality .",
+			"sentence2": "The email server provides POP3 , SMTP , HTTP , IMAP4 all with SSL / TLS support , plus NNTP , and offers webmail functionality .",
+			"label": 0
+		},
+		{
+			"sentence1": "It was restored in 2003 and now carries the red tram traffic on the Luas line .",
+			"sentence2": "It was restored in 2003 and now carries red tram traffic on the Luas line .",
+			"label": 1
+		},
+		{
+			"sentence1": "Keith Esau is a Republican member of the House of Representatives of Kansas , representing the 14th district ( Johnson County , Olathe , Kansas , Kansas ) since 2013 .",
+			"sentence2": "Keith Esau is a Republican member of the Kansas House of Representatives , representing the 14th district ( Olathe , Kansas in Johnson County , Kansas ) since 2013 .",
+			"label": 0
+		},
+		{
+			"sentence1": "Ruby Creek is near the land features of Caribou Ridge and Naples .",
+			"sentence2": "Naples is near the country - features of Caribou Ridge and Ruby Creek .",
+			"label": 0
+		},
+		{
+			"sentence1": "The sea is rarely , but occasionally , referred to as the Manx Sea ( , ) .",
+			"sentence2": "The sea is rare but occasionally referred to as the Manx - sea ( , ) .",
+			"label": 1
+		},
+		{
+			"sentence1": "Kahlil Hill ran for 172 yards and a touchdown , and Ladell Betts had received 93 Yards and two touchdowns in the Hawkeye victory over Indiana .",
+			"sentence2": "Ladell Betts ran for 172 yards and a touchdown , and Kahlil Hill had 93 yards receiving and two touchdowns in the Hawkeye victory over Indiana .",
+			"label": 0
+		},
+		{
+			"sentence1": "On April 17 , 2008 , Ruckelshaus made news again when he announced his support for the President of the United States of the Democrat , Barack Obama .",
+			"sentence2": "On April 17 , 2008 , Democrat Barack Obama made news again when he announced his endorsement of Ruckelshaus for President of the United States .",
+			"label": 0
+		},
+		{
+			"sentence1": "Qualitatively , it corresponds to a potential that has zero everywhere , except at a single point where it is an infinite value .",
+			"sentence2": "Qualitatively , it corresponds to a potential which is zero everywhere , except at a single point , where it takes an infinite value .",
+			"label": 0
+		},
+		{
+			"sentence1": "Bhagavati Bhaiya and Bhagavati Charan Vohra try to help the freedom fighters to flee , but the attempt fails and Chandrashekhar Ajad dies in the process .",
+			"sentence2": "Chandrashekhar Ajad and Bhagavati Charan Vohra try to help the freedom fighters escape , but the attempt fails , and Bhagavati Bhaiya dies in the process .",
+			"label": 0
+		},
+		{
+			"sentence1": "Brown said afterwards that he was surprised they had not scored five , and Astall wrote in his newspaper column :",
+			"sentence2": "Astall said afterwards that he was surprised that they had not scored five , and Brown wrote in his newspaper column :",
+			"label": 0
+		},
+		{
+			"sentence1": "Martina Navratilova / Pam Shriver defeated Zina Garrison / Lori McNeil 6 -- 1 , 6 -- 0",
+			"sentence2": "Zina Garrison / Lori McNeil defeated Martina Martina Navratilova / Pam Shriver with 6 - 1 , 6 -- 0",
+			"label": 1
+		},
+		{
+			"sentence1": "In 2009 they released their eleventh album `` Either Way I Think You Know `` , which reached final on the Norwegian charts .",
+			"sentence2": "In 2009 , they released their eleventh album `` Either Way I Think You Know `` , which reached the final at the Norwegian charts .",
+			"label": 1
+		},
+		{
+			"sentence1": "From Singapore , she voyaged to Subic Bay where she stopped between 24 September and 3 October .",
+			"sentence2": "She traveled to Subic Bay from Singapore , where she stopped between 24 September and 3 October .",
+			"label": 1
+		},
+		{
+			"sentence1": "Sonshine Media Network International in the Philippines used the piece as background music following a series of montages for the Glory Mountain in Mt . Apo , Davao City .",
+			"sentence2": "Sonshine Media Network International in the Philippines used the piece as background music after a series of montages for the Glory Mountain in Mt . Apo , Davao City .",
+			"label": 1
+		},
+		{
+			"sentence1": "Ed Royce gave Abramoff $ 500 in 2000 .",
+			"sentence2": "In 2000 , Ed Royce gave $ 500 to Abramoff .",
+			"label": 1
+		},
+		{
+			"sentence1": "The music scene in Shamakhi can be traced back to the ancient times and villages of Baku , which is generally revered as the well of Mugham in Azerbaijan .",
+			"sentence2": "The music scene in Azerbaijan can be traced back to ancient times and villages of Baku , generally revered as the fountainhead of mugham in the Shamakhi .",
+			"label": 0
+		},
+		{
+			"sentence1": "Carl Limberger / Mark Woodforde defeated Darren Cahill / Mark Kratzmann 4 -- 6 , 6 -- 2 , 7 - 5 - 5",
+			"sentence2": "Carl Limberger / Mark Woodforde defeated Darren Cahill / Mark Kratzmann 4 -- 6 , 6 -- 2 , 7 -- 5",
+			"label": 1
+		},
+		{
+			"sentence1": "Each player uses a backup character and can also equip two main characters who can perform support actions .",
+			"sentence2": "Each player uses one backup character and can also equip two main characters who can perform support actions .",
+			"label": 1
+		},
+		{
+			"sentence1": "The plant is endemic to Sierra Nevada , where it is known from the Inner Northern California Coast Ranges and Southern California foothills .",
+			"sentence2": "The plant is endemic to California , where it is famous from the Inner Northern California Coast Ranges and Southern Sierra Nevada Foothills .",
+			"label": 0
+		},
+		{
+			"sentence1": "It is more sensitive to cold temperatures than broccoli , but it is less sensitive to hot temperatures .",
+			"sentence2": "It is more sensitive to cold temperatures than broccoli but less sensitive to hot temperatures .",
+			"label": 1
+		},
+		{
+			"sentence1": "Thandekile Matina Zuma is married to Matina . Their daughter Sonono Khoza had a relationship with president Jacob Zuma and gave him his 20th child , named Irvin Khoza .",
+			"sentence2": "Thandekile Matina Zuma is married to Matina , whose daughter Sonono Khoza had a relationship with President Jacob Zuma and gave his 20th child , Irvin Khoza .",
+			"label": 1
+		},
+		{
+			"sentence1": "White River Township is a civil township of Muskegon County in the U.S. state of Michigan .",
+			"sentence2": "Muskegon County is a civil community of White River Township in the U.S. state of Michigan .",
+			"label": 0
+		},
+		{
+			"sentence1": "In 2004 , none of the disqualified songs were submitted .",
+			"sentence2": "None of the submitted songs were disqualified in 2004 .",
+			"label": 0
+		},
+		{
+			"sentence1": "The manipulated titans attack , and while Raven and Beast Boy distract them and Trigon , Tim Trigon cuts through his eyes with his inertrite wings .",
+			"sentence2": "The manipulated Titans attack , and while Raven and Tim distract them and Trigon , Beast Boy cuts through Trigon 's eyes with his inertrite wings .",
+			"label": 0
+		},
+		{
+			"sentence1": "His intentions for the new characterization of Batman explained Morrison : `` Dick Grayson is a kind of this accomplished superhero .",
+			"sentence2": "Dick Grayson explained his intentions for the new characterization of Batman : `` Morrison is kind of this consummate superhero .",
+			"label": 0
+		},
+		{
+			"sentence1": "The main attractions include the medieval castle , the Torre Acquanova fountain and six Baroque-feudal churches .",
+			"sentence2": "The main attractions include the Feudal Castle , the Torre Acquanova Fountain and six medieval churches .",
+			"label": 0
+		},
+		{
+			"sentence1": "It is also said that only those with Iddhi superpowers or cakkavattin kings who can visit this place .",
+			"sentence2": "It is also said that only those with iddhi great powers or cakkavattin kings who can visit this place .",
+			"label": 1
+		},
+		{
+			"sentence1": "The French established similar hill stations in Indochina , such as Dalat , built in 1921 .",
+			"sentence2": "Capital . `` The French built similar hill stations in Indochina , such as Dalat established in 1921 .",
+			"label": 0
+		},
+		{
+			"sentence1": "The model 21037 , which was released at the opening in 2017 , is only sold at the Lego store in the Lego House .",
+			"sentence2": "Model 21037 released at opening in 2017 is only sold in the Lego store at the Lego House .",
+			"label": 1
+		},
+		{
+			"sentence1": "Prosipho hedleyi is a sea snail species , a true gastropod mollusk in the Buccinidae family , the whelks marine .",
+			"sentence2": "Prosipho hedleyi is a species of sea snail , a marine gastropod mollusk in the family Buccinidae , the true whelks .",
+			"label": 0
+		},
+		{
+			"sentence1": "Ferry Piekart studied journalism and cultural anthropology and began his career in the Netherlands by writing Dutch-language articles for popular magazines .",
+			"sentence2": "Ferry Piekart studied Journalism and Cultural Anthropology , and began his career in the Netherlands writing Dutch-science articles for popular magazines .",
+			"label": 1
+		},
+		{
+			"sentence1": "The R67 is a provincial route in South Africa , which connects Port Alfred via Queenstown with Grahamstown .",
+			"sentence2": "The R67 is a provincial route in South Africa that connects Port Alfred with Grahamstown via Queenstown .",
+			"label": 1
+		},
+		{
+			"sentence1": "Nikolai Sokolov is voiced by Naoki Tatsuta in the Japanese version and by Brian Cummings in the English translation .",
+			"sentence2": "Brian Cummings is expressed in the English translation by Naoki Tatsuta in the Japanese version and Nikolai Sokolov .",
+			"label": 0
+		},
+		{
+			"sentence1": "The ancient ruins are located in the northwestern part of the village and were first associated with the extensive colony in the end of the 17th century .",
+			"sentence2": "The ancient ruins are located in the northwestern part of the village and were first associated with the extensive colony at the end of the 17th century .",
+			"label": 1
+		},
+		{
+			"sentence1": "In November 1947 an Egged bus was attacked in Petah Tikva , which left Netanya to Jerusalem .",
+			"sentence2": "In November 1947 , an Egged bus which left Jerusalem for Netanya was attacked in Petah Tikva .",
+			"label": 0
+		},
+		{
+			"sentence1": "Cochlostomatinae are a family of terrestrial land snails which have operculums and gills . These are small gastropod mollusks in the superfamily Cyclophoroidea .",
+			"sentence2": "Cochlostomatinae are a family of small land snails that have operculums and gills , which are terrestrial gastropod molluscs in the superfamily Cyclophoroidea .",
+			"label": 0
+		},
+		{
+			"sentence1": "In 1994 it was merged with another contemporary party Meeting Point to form the pro-democracy Democratic Party .",
+			"sentence2": "In 1994 , it was merged with another contemporary party , Meeting Point , to form the Democratic Party for Democracy .",
+			"label": 1
+		},
+		{
+			"sentence1": "The road begins at the Namanga Interchange along the Nairobi - Mombasa Road in the city of Nairobi .",
+			"sentence2": "The road starts at the Namanga interchange along the Nairobi -- Mombasa Road , in the city of Nairobi .",
+			"label": 1
+		},
+		{
+			"sentence1": "The ASIC records the position and total charge determined for each deposited X-ray event .",
+			"sentence2": "The ASIC records the position and total charge detected for each X-ray event deposited .",
+			"label": 1
+		},
+		{
+			"sentence1": "In an interview for the book , Vreeland interpreted this phenomenon for Rowlands : `` It 's because Avedon lasted .",
+			"sentence2": "Avedon interpreted this phenomenon to Rowlands in an interview for the book : `` It 's because Vreeland lasted .",
+			"label": 0
+		},
+		{
+			"sentence1": "Adelina Gonzalez Munoz ( born August 6 , 1964 ) is a Spanish former sailor .",
+			"sentence2": "Adelina Gonzalez Munoz ( born 6 August 1964 ) is a female former Spanish sailor .",
+			"label": 1
+		},
+		{
+			"sentence1": "Here , `` A `` and `` B `` can be any real numbers , and `` k `` can be any complex number .",
+			"sentence2": "Here `` A `` and `` B can be any real numbers and `` k `` may be any complex number .",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1805 he began to develop these and similar drawings in Aquatinta , and his great work , `` Svenska vyer `` ( Swedish views ) , arose gradually .",
+			"sentence2": "In 1805 he began to develop these and similar drawings in aquatint , and his great work , `` Svenska vyer `` ( Swedish views ) arose gradually .",
+			"label": 1
+		},
+		{
+			"sentence1": "Ishi also survives and is now being taken over by the AI processor .",
+			"sentence2": "Ishi also survives and is now taken over by the AI processor .",
+			"label": 1
+		},
+		{
+			"sentence1": "In 2000 , Abramoff gave $ 500 to Ed Royce .",
+			"sentence2": "Ed Royce gave Abramoff $ 500 in 2000 .",
+			"label": 0
+		},
+		{
+			"sentence1": "Also Eldred had a younger son , Arthur , and a daughter , Patricia .",
+			"sentence2": "Eldred also had a younger son , Arthur , and one daughter , Patricia .",
+			"label": 1
+		},
+		{
+			"sentence1": "Some leading retailers in `` Mirdif City Centre `` include Carrefour , Zara , Virgin Megastore , and Debenhams .",
+			"sentence2": "Some leading retailers in `` Mirdif City Centre `` are Carrefour , Zara , Virgin Megastore and Debenhams .",
+			"label": 1
+		},
+		{
+			"sentence1": "Gorriti was born in Tarija , Bolivia and was exiled to Salta , Argentina during the Juan Manuel de Rosas dictatorship .",
+			"sentence2": "Gorriti was born in Salta in Argentina and was banished to Tarija , Bolivia during the dictatorship of Juan Manuel de Rosas .",
+			"label": 0
+		},
+		{
+			"sentence1": "In addition , the Cleveland Plain Dealer and the Akron Beacon Journal occasionally cover the city and the Medina County .",
+			"sentence2": "In addition , the Akron Beacon Journal and the Cleveland Plain Dealer occasionally cover the city and Medina County .",
+			"label": 0
+		},
+		{
+			"sentence1": "This was the fifth episode of the 18th and 19th season .",
+			"sentence2": "This was the fifth episode for the 18th and 19th season .",
+			"label": 1
+		},
+		{
+			"sentence1": "He was the first geographer elected to the Royal Society for nearly 50 years and is almost unique in also being a Fellow of the British Academy .",
+			"sentence2": "He was the first geographer to be elected to the Royal Society for nearly 50 years , and is also unique in being almost a fellow of the British Academy .",
+			"label": 0
+		},
+		{
+			"sentence1": "Cleitarchus or Clitarchus ( lived 4th century BC ) was the tyrant of Eretria in Euboea .",
+			"sentence2": "Cleitarchus or Clitarchus ( ; was 4th century BC ) lived tyrant of Eretria in Euboea .",
+			"label": 0
+		},
+		{
+			"sentence1": "Unfortunately , a fire in the exhibition hall demolished the Dutch East Indies ' exhibition pavilion and destroyed most of the objects .",
+			"sentence2": "Unfortunately , a fire in the exhibition hall destroyed the exhibition pavilion of the Dutch East Indies and destroyed most of the objects .",
+			"label": 1
+		},
+		{
+			"sentence1": "Her policy was controlled by P. B. Axelrod , F. I. Dan , L. Martov and A. S. Martynov .",
+			"sentence2": "Its policy was controlled by P. B. Axelrod , F. I. Dan , L. Martov and A. S. Martynov .",
+			"label": 1
+		},
+		{
+			"sentence1": "Fraser studied advanced constitutional law at Harvard Law School . He taught American constitutional history at Macquarie University in Sydney until 2005 .",
+			"sentence2": "He studied American constitutional law at Harvard Law School and lectured advanced constitutional history at Macquarie University in Sydney until 2005 .",
+			"label": 0
+		},
+		{
+			"sentence1": "This technology was first used on Motorola and LG Lumia in 2013 , and was used on some Nokia phones .",
+			"sentence2": "This technology was first used in 2013 on Nokia Lumia , and was used on some Motorola and LG mobile phones .",
+			"label": 0
+		},
+		{
+			"sentence1": "Kuda suffered from heart failure and died on October 1 , 2016 at Alden Town Manor in Cicero , Illinois .",
+			"sentence2": "Kuda died of heart failure and suffered from the Alden Town Manor in Cicero , Illinois on October 1 , 2016 .",
+			"label": 0
+		},
+		{
+			"sentence1": "`` Dale `` returned to Leyte to escort a convoy to Ulithi , and there patrolled until July 29 and then a convoy to Okinawa .",
+			"sentence2": "`` Dale `` returned to Okinawa to escort a convoy to Ulithi and patrolled there until 29 July and then escorted a convoy to Leyte .",
+			"label": 0
+		},
+		{
+			"sentence1": "The river Valea Satului is a tributary of the Calva River in Romania .",
+			"sentence2": "The Calva River is a tributary of the Valea Satului River in Romania .",
+			"label": 0
+		},
+		{
+			"sentence1": "Scutellastra flexuosa is a species of sea snail , a true limpet , a true gastropod mollusk in the Patellidae family , one of the families of the marine limpets .",
+			"sentence2": "Scutellastra flexuosa is a species of sea snail , a true limpet , a true gastropod mollusk in the family Patellidae , one of the families of marine limpets .",
+			"label": 1
+		},
+		{
+			"sentence1": "Chelmsford City racecourse , originally known as Great Leighs Racecourse , is a thoroughbred horse racing venue located in Great Leighs near Chelmsford , Essex , England .",
+			"sentence2": "Racecourse Chelmsford City , originally known as Great Leighs Racecourse , is a pure-bred horse racing venue in Great Leighs , near Chelmsford , Essex , England .",
+			"label": 1
+		},
+		{
+			"sentence1": "Bangkok International Preparatory and Secondary School , or Bangkok Prep , is an independent international school located on the National Curriculum of England based in Bangkok , Thailand .",
+			"sentence2": "Bangkok International Preparatory and Secondary School , or Bangkok Prep , is an independent international school on the National Curriculum of England , based in Bangkok , Thailand .",
+			"label": 1
+		},
+		{
+			"sentence1": "Juliana Olshanski , after her death in 1418 , wanted to marry her niece Ivan Olshanski , the daughter of the Vytautas .",
+			"sentence2": "After her death in 1418 Juliana Olshanski wanted to marry her niece Ivan Olshanski , daughter of Vytautas .",
+			"label": 1
+		},
+		{
+			"sentence1": "Abrar Khan , born 2 February 1984 , is a Pakistani international Kabaddi player .",
+			"sentence2": "Abrar Khan born 2 February 1984 is a Pakistani professional international Kabaddi player .",
+			"label": 1
+		},
+		{
+			"sentence1": "The 1998 PBA season was the 24th PBA ( Philippine Basketball Association ) season .",
+			"sentence2": "The 1998 PBA season was the 24th season of the PBA ( Philippine Basketball Association ) .",
+			"label": 1
+		},
+		{
+			"sentence1": "The active catalyst species is regenerated by the reductive elimination of acetyl jodide ( 4 ) , a de-insertion reaction .",
+			"sentence2": "The de-insertion catalyst species is regenerated by the active elimination of acetyl iodide from ( 4 ) , a reductive reaction .",
+			"label": 0
+		},
+		{
+			"sentence1": "Wick is replaced by Bud when it becomes clear that Wick does not trust his NASA crew .",
+			"sentence2": "Wick is replaced by Wick when it becomes clear that bud of his NASA crew does not trust .",
+			"label": 0
+		},
+		{
+			"sentence1": "The song `` Jolly Life Jolly Life `` which actor Sivaji Ganesan had sung as playback for J. P. Chandrababu became popular .",
+			"sentence2": "The song `` Jolly Life Jolly Life `` , which the actor Sivaji Ganesan had sung as the playback for J. P. Chandrababu , became popular .",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1493 Tupac Inca died and left two illegitimate sons and 90 legitimate sons and daughters .",
+			"sentence2": "Tupac Inca died in 1493 , leaving two legitimate sons , and 90 illegitimate sons and daughters .",
+			"label": 0
+		},
+		{
+			"sentence1": "On September 14 , 2013 , the Huskies played their first game as franchise , traveled to Bracebridge , Ontario , for the second year to play Bracebridge Phantoms .",
+			"sentence2": "On September 14 , 2013 , the Huskies played their second game as a franchise , traveling to Bracebridge , Ontario , to play the first year Bracebridge Phantoms .",
+			"label": 0
+		},
+		{
+			"sentence1": "Mehtab Ahmed Khan is a Pakistani politician who served as Federal Minister for Petroleum and Natural Resources from 2002 to 2007 and is the political rival of Amanullah Khan Jadoon .",
+			"sentence2": "Amanullah Khan Jadoon is a Pakistani politician served as the Federal Minister for Petroleum & Natural Resources during 2002 to 2007 and political rival of Mehtab Ahmed Khan .",
+			"label": 0
+		},
+		{
+			"sentence1": "It was produced by Raymond Wong Pak Ming and directed by Victor Tam Long Cheung .",
+			"sentence2": "It was produced by Raymond Wong Pak Ming and is directed by Victor Tam Long Cheung .",
+			"label": 1
+		},
+		{
+			"sentence1": "The meromictic lakes and ponds of the Gordon River were discovered by Peter Tyler and Professor D.A . Hodgson ( reported 1996 ) .",
+			"sentence2": "The meromictic lakes and ponds of the Gordon River were discovered by D.A . Hodgson and Professor Peter Tyler ( reported in 1996 ) .",
+			"label": 0
+		},
+		{
+			"sentence1": "This kills selectively rapidly dividing cells .",
+			"sentence2": "This selectively kills rapidly dividing cells .",
+			"label": 1
+		},
+		{
+			"sentence1": "This temple is very big , ancient and rich in sculptural wealth . There are five separate lingas with siva Sanctum sanctorum in the temple namely",
+			"sentence2": "This temple is very large , ancient and rich in sculptural wealth . There are five separate lingas with Siva Sanctum sanctorum in the temple , namely :",
+			"label": 1
+		},
+		{
+			"sentence1": "Asadollah Mikaeili , better known as Dariush Mikaeili is an Iranian footballer who plays for Naft Tehran F.C . in the Iranian Premier League .",
+			"sentence2": "Asadollah Mikaeili , better known as Dariush Mikaeili , is an Iranian footballer who plays for Naft Tehran in the Iranian Premier League .",
+			"label": 1
+		},
+		{
+			"sentence1": "The Pisan fleet blocked Porto Pisano and attacked Genoese ships travelling in the Mediterranean .",
+			"sentence2": "The Genoese fleet blocked Porto Pisano and attacked Pisan ships travelling in the Mediterranean Sea .",
+			"label": 0
+		},
+		{
+			"sentence1": "69 % of the soils are very susceptible to erosion and these mostly have low or very low natural fertility .",
+			"sentence2": "69 % of the soils are very susceptible to erosion and usually have low natural or very low fertility .",
+			"label": 0
+		},
+		{
+			"sentence1": "These communities include Kettering , Marlboro Meadows , Melwood Park , Brock Hall , Marlton , and others .",
+			"sentence2": "These communities include Kettering , Marlton , Brock Hall , Marlboro - Miesen , Melwood Park and others .",
+			"label": 0
+		},
+		{
+			"sentence1": "Sonshine Media Network International in the Philippines used the piece as background music following a series of montages for the Glory Mountain in Davao City .",
+			"sentence2": "Sonshine Media Network International in the Philippines used the piece as background music following a series of montages for the Glory Mountain in Davao City . Apo , Mt .",
+			"label": 1
+		},
+		{
+			"sentence1": "She remained there until her name was scrapped on November 1 , 1972 from the list of Navy and she was beaten .",
+			"sentence2": "She remained there until her name was struck from the Navy list on 1 November 1972 , and she was scrapped .",
+			"label": 0
+		},
+		{
+			"sentence1": "Some Chinese diaspora use the name Tenzhu , which is a transcription of the Tibetan name Tianzhu .",
+			"sentence2": "Some Tibetan diaspora use the name Tenzhu , a transcription of the Chinese name Tianzhu .",
+			"label": 0
+		},
+		{
+			"sentence1": "However , she was trapped in a Chinese puzzle box by Grand Master Dashi in the first Xiaolin Showdown .",
+			"sentence2": "In the first Xiaolin showdown she was captured by Grand Master Dashi in a Chinese puzzle box .",
+			"label": 1
+		},
+		{
+			"sentence1": "This department has recently obtained five R & amp ; D projects from the Ministry of Textiles , Govt .",
+			"sentence2": "Recently this department has obtained five R & D Projects received from Ministry of Textiles , Govt .",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the smell in the air right after a rain?",
+			"sentence2": "What really creates the smell of rain?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the one thing that should be on our children's curriculum and isn't?",
+			"sentence2": "How do I revise class 12 syllabus in 1 month?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is your algorithm to reach castle age within 17 minutes in Age of Empires II?",
+			"sentence2": "What is Age of Empires?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are some of Füssen's best kept secrets?",
+			"sentence2": "What are Austin's best kept secrets?",
+			"label": 0
+		},
+		{
+			"sentence1": "How to hack Wifi?",
+			"sentence2": "Can I hack Wi-Fi?",
+			"label": 1
+		},
+		{
+			"sentence1": "Which is the best business to do in India with less investment for youth?",
+			"sentence2": "What are best business plan to invest?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the significance of gamma and beta functions?",
+			"sentence2": "What is exactly beta and gamma functions and why we need it?",
+			"label": 1
+		},
+		{
+			"sentence1": "What are some of the best video games of 2016? Why?",
+			"sentence2": "What are the best games of 2016?",
+			"label": 1
+		},
+		{
+			"sentence1": "Which documents are needed if I have passed the 10th from the Maharashtra State Board and want to join a college in Bangalore?",
+			"sentence2": "I was born in MP and done 10th board from MP. I am planning to do 11th and 12th examination from Maharashtra. Will I get state quota of MH in MBBS?",
+			"label": 0
+		},
+		{
+			"sentence1": "What kind of person are you?",
+			"sentence2": "What is the kind of person that anyone would like?",
+			"label": 0
+		},
+		{
+			"sentence1": "How competitive is the hiring process at Oncomed Pharmaceuticals?",
+			"sentence2": "\"In Spanish, how would you say \"\"Have you met any other celebrities? Last time you said you had met Demi Moore.”\"",
+			"label": 0
+		},
+		{
+			"sentence1": "Who is the next MJ?",
+			"sentence2": "Who is the next Michael Jackson?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the best way to represent Russia in the Model United Nations?",
+			"sentence2": "What is the best way to represent the USA in a Model United Nations?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which processor is better i5 6th gen or i7 4th gen?",
+			"sentence2": "Which CPU is better I5 4th gen or 6th gen?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I solve analytical reasoning questions?",
+			"sentence2": "How can you solve analytical reasoning questions?",
+			"label": 1
+		},
+		{
+			"sentence1": "Why is there still Poverty in Africa?",
+			"sentence2": "Why is there hunger and poverty in Africa?",
+			"label": 1
+		},
+		{
+			"sentence1": "Where can I get free Marvel comic books?",
+			"sentence2": "Where can I get Marvel comics for free?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the difference between a Boeing 747 and a 777?",
+			"sentence2": "What is it like to fly on a Boeing 777 from a passenger's perspective?",
+			"label": 0
+		},
+		{
+			"sentence1": "Do we get scholarships at MIT?",
+			"sentence2": "What do I need to get a scholarship for MIT?",
+			"label": 1
+		},
+		{
+			"sentence1": "Is a second hand Macbook Pro 2012 worth it?",
+			"sentence2": "Is buying a second-hand MacBook worthwhile?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are your most interesting travel stories?",
+			"sentence2": "What are some of the interesting travelling stories?",
+			"label": 1
+		},
+		{
+			"sentence1": "Does time stop ever?",
+			"sentence2": "Can time stop?",
+			"label": 1
+		},
+		{
+			"sentence1": "Why did aircraft stop using variable-sweep wings, like those on an F-14?",
+			"sentence2": "How good is F 22 Raptor as an aircraft (overall)?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I root my Samsung Galaxy S5?",
+			"sentence2": "How can I root my Samsung galaxy s5 at&t?",
+			"label": 0
+		},
+		{
+			"sentence1": "How much U.S. postage is needed to send a greeting card to Australia, letter sized, from the US?",
+			"sentence2": "How do I send greeting card via Indian post?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I get my money back from a scammer?",
+			"sentence2": "What can I do to get back my money from a scammer?",
+			"label": 1
+		},
+		{
+			"sentence1": "What was the first question on Quora?",
+			"sentence2": "What was the first question you answered on Quora?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are simple ways to keep healthy and fit?",
+			"sentence2": "What are the ways to keep the heart healthy?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I arrange an Indian kitchen?",
+			"sentence2": "If we can use air instead of water in half shade polarimeter practical for the measurement of specific rotation of cane sugar solution?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which alcohol drink is less harmful to health?",
+			"sentence2": "Which alcoholic drink is good for health?",
+			"label": 1
+		},
+		{
+			"sentence1": "What should I do if I just got my period?",
+			"sentence2": "I think I just got my first period, what should I do?",
+			"label": 1
+		},
+		{
+			"sentence1": "Why do MOST muslims believe that hindus will go to hell?",
+			"sentence2": "What is it like to believe that your spouse will go to hell?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are some ways to tell if someone has mixed feelings about you?",
+			"sentence2": "Is there any way to tell if someone is fantasizing about you?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I check for viruses or malware on my iPad?",
+			"sentence2": "Do you need to check file uploads for viruses?",
+			"label": 0
+		},
+		{
+			"sentence1": "Are there any secret chambers under the base of destroyed Konark Temple of Odisha?",
+			"sentence2": "What is the biggest secret of Jagannath temple?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is Superdry in Japan?",
+			"sentence2": "Why is Superdry so popular in the UK?",
+			"label": 0
+		},
+		{
+			"sentence1": "Where can I find screenshots of the Facebook News Feed changing over time?",
+			"sentence2": "How has Facebook's UI changed over time?",
+			"label": 0
+		},
+		{
+			"sentence1": "Does the US law prohibit a person from planting a GPS tracking device on someone else, or otherwise using a GPS tracking device, to track the location of someone else without the latter's consent?",
+			"sentence2": "Is it possible to track someone remotely through GPS on his phone without his knowledge and without installing any software on his phone?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I start PCB designing?",
+			"sentence2": "I'm an ECE student. I am planning to learn PCB design using OrCAD to start my career as a PCB designer. Does PCB designing have a bright future and job opportunities?",
+			"label": 0
+		},
+		{
+			"sentence1": "Are there any universities or colleges in the USA which offer a Master's degree in ballistic engineering?",
+			"sentence2": "Are there any universities which offer combined B.S. and M.S. in the USA for computer engineering?",
+			"label": 0
+		},
+		{
+			"sentence1": "What's the difference between a graded and action potential?",
+			"sentence2": "What is the meaning of potential in physics?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can someone hack my WhatsApp?",
+			"sentence2": "Can WhatsApp be hacked?",
+			"label": 0
+		},
+		{
+			"sentence1": "How people accept homoeopathy?",
+			"sentence2": "Why not people accept homeopathy?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the temperment of a Razors Edge pitbull compared to other pitbulls?",
+			"sentence2": "How is a Boxer/Pitbull mix bred?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I blur the background and focus the object with an 18-55mm lens using a Nikon D3300?",
+			"sentence2": "Which camera should I buy? The Canon 1200D with 18-55mm & 55-250mm dual kit or the Nikon D3300 with only the 18-55mm lens for the same price as the 1200D",
+			"label": 0
+		},
+		{
+			"sentence1": "Which is the best relationship, friendship or love?",
+			"sentence2": "Why is friendship better than love?",
+			"label": 1
+		},
+		{
+			"sentence1": "How can a country like Nigeria recover from recession?",
+			"sentence2": "How much does each major part of a car cost proportionately?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which Programming website is better Hackerearth or geeks for geeks?",
+			"sentence2": "Why most of the geeky jokes are only understood by geeks?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are some great business ideas that you wouldn't mind giving away for free?",
+			"sentence2": "How does one successfully get a great business idea?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I overcome the fear of spiders?",
+			"sentence2": "What's the best way to overcome a fear of spiders?",
+			"label": 0
+		},
+		{
+			"sentence1": "Can we use ground penetrating radar frequencies with ground based telescopes into solar system planets to see their subsurfaces?",
+			"sentence2": "If we use ground penetrating radar frequencies with radiotelescopes could we see what’s beyond the surface of planets?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I love and hate a person at the same time?",
+			"sentence2": "Is it possible to love and hate a person at the same time?",
+			"label": 1
+		},
+		{
+			"sentence1": "Which company offers best health cover insurance in India including health check ups and tests?",
+			"sentence2": "Has anyone here tried Philips Lumea hair removal? Can I charge it several times or does it have an expiration date after limited use?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are some good content ranking algorithms?",
+			"sentence2": "What's a good algorithms book with examples in Python?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why in constant pressure process, the change in internal energy becomes '∆U = m × Cv (∆T)'?",
+			"sentence2": "Why in constant pressure process, the change in internal energy '∆U = m × Cv (∆T)'?",
+			"label": 1
+		},
+		{
+			"sentence1": "How can I overcome sadness after a breakup?",
+			"sentence2": "How do I overcome depression after breakup?",
+			"label": 1
+		},
+		{
+			"sentence1": "\"If a girl texts \"\"good night, sweet dreams\"\" to me but puts a heart emoji after it does it mean anything or is it just friendly?\"",
+			"sentence2": "I love a girl. I stopped texting her on WhatsApp for few days as I felt that she was rude and didn't reply in a good way. She doesn't text me. What does it mean?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I get PokeCoins on Pokémon GO?",
+			"sentence2": "Whats the best hack for Pokémon GO?",
+			"label": 0
+		},
+		{
+			"sentence1": "Do grades of 10th and 12th matter for admission in top MBA colleges?",
+			"sentence2": "12th percentage matter in MBA admission?",
+			"label": 1
+		},
+		{
+			"sentence1": "What was the funniest incident you have faced?",
+			"sentence2": "Which is the funniest incident happened with you?",
+			"label": 1
+		},
+		{
+			"sentence1": "The remote device or resource won't accept the connection problem in Windows 8.1. How do I solve this problem?",
+			"sentence2": "When I reformat my Neo laptop into Windows 8.1, its speakers make no sounds. How can I fix this kind of problem?",
+			"label": 0
+		},
+		{
+			"sentence1": "What's your favorite animal?",
+			"sentence2": "What are your favorite animals and why?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is an example of observable evidence for evolution?",
+			"sentence2": "What is the evidence for biological evolution and what is the evidence supporting creationism?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is machining process?",
+			"sentence2": "What is this machine?",
+			"label": 0
+		},
+		{
+			"sentence1": "Who designed the graphics for Adobe CC?",
+			"sentence2": "Who designed the graphics for the new Adobe CC suite?",
+			"label": 1
+		},
+		{
+			"sentence1": "What's the 'Theory Of Everything' you believe in?",
+			"sentence2": "What is the Theory of Everything?",
+			"label": 0
+		},
+		{
+			"sentence1": "If you block someone on Instagram could they still see you in the followers list of an account that didn't block them and they already know?",
+			"sentence2": "Why is a user still on my followers list even after I've blocked them on Instagram?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the best example of Karma in your life?",
+			"sentence2": "What's the best real life karma you've ever seen/experienced?",
+			"label": 1
+		},
+		{
+			"sentence1": "Has India done surgical strike before?",
+			"sentence2": "Has India done surgical strikes before?",
+			"label": 1
+		},
+		{
+			"sentence1": "What kind of people study economics?",
+			"sentence2": "Why do more and more people want to study economics?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is Chemistry World?",
+			"sentence2": "What is chemistry?",
+			"label": 0
+		},
+		{
+			"sentence1": "I have a Tata Indica 2007 model. Can I attach it with Ola?",
+			"sentence2": "Why is Quora eliminating topic-based moderation?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which are the best fresh food blogs?",
+			"sentence2": "What are the best food blogs (2010–11)?",
+			"label": 0
+		},
+		{
+			"sentence1": "I'm an average student and working as customer service associate. I want to do MBA from IIM's, but I feel like I can't achieve it. What should I do?",
+			"sentence2": "I'm an civil engineering graduate with average grades. What should I do if I want to go for an MBA degree from France, Russia or Spain?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I make a website known?",
+			"sentence2": "How do I make websites?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I get coins on musical.ly?",
+			"sentence2": "How many ways can I get 1 head in 5 tosses of a coin?",
+			"label": 0
+		},
+		{
+			"sentence1": "How many marks one has to score in JEE Mains 2017 to get mechanical eng in NIT Trichy?",
+			"sentence2": "Where is the best place to learn about rough stones?",
+			"label": 0
+		},
+		{
+			"sentence1": "Are we in a larger version of the outflow of a universal black hole?",
+			"sentence2": "Could the big bang have been a black hole exploding?",
+			"label": 0
+		},
+		{
+			"sentence1": "How will a guy know if they like a girl?",
+			"sentence2": "How do guys know if a girl is horny?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the meaning of Love to you?",
+			"sentence2": "What is means love?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are the most abundant compounds in the universe and on earth?",
+			"sentence2": "What are the most abundant compounds on earth?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are some things new employees should know going into their first day at TAL International Group?",
+			"sentence2": "What are some things new employees should know going into their first day at Endurance International Group?",
+			"label": 0
+		},
+		{
+			"sentence1": "IT related bottlenecks faced by insurance company?",
+			"sentence2": "Have you secretly embarked on a lesbian affair without anyone knowing?",
+			"label": 0
+		},
+		{
+			"sentence1": "What iPhone app do you use most often?",
+			"sentence2": "Which iPhone app do you use the most?",
+			"label": 1
+		},
+		{
+			"sentence1": "What are some good free VPN providers for Linux?",
+			"sentence2": "Which free VPN service is the best?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I lose weight?",
+			"sentence2": "How do I suck it up and lose weight?",
+			"label": 1
+		},
+		{
+			"sentence1": "What jobs pay 250k a year?",
+			"sentence2": "Do practical skills like graphic design or web development grant you access to make a lucrative (I mean, getting into high percentages, maybe $250k yearly) yearly income if you do a good enough job at marketing yourself?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I plan my honeymoon in south Goa? (Please read details)",
+			"sentence2": "Explain an algorithm to evaluate a n degree polynomial at a, -a, ia and -ia?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I get 5k followers on Instagram?",
+			"sentence2": "How do I get more followers on Instagram if I just started?",
+			"label": 1
+		},
+		{
+			"sentence1": "How can I make my room sound proof?",
+			"sentence2": "How do I make a room sound proof easily?",
+			"label": 1
+		},
+		{
+			"sentence1": "Can someone see how much funds I have in my bank account when they deposit?",
+			"sentence2": "In case of more than one bank account how much money can be deposited in each?",
+			"label": 0
+		},
+		{
+			"sentence1": "I forgot my Facebook and email password. How can I log into Facebook?",
+			"sentence2": "How do I recover my Facebook email and password?",
+			"label": 1
+		},
+		{
+			"sentence1": "Can you get the same cold twice?",
+			"sentence2": "Can one have two different colds at the same time?",
+			"label": 0
+		},
+		{
+			"sentence1": "How was the journey of Balaji Vishwanathan in Quora?",
+			"sentence2": "Does VR harm our eyes?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why do bolts and nuts not get welded, when both are the same metal and their crystal structure is the same?",
+			"sentence2": "What's the best place in the body to take a bullet?",
+			"label": 0
+		},
+		{
+			"sentence1": "Is being transgender an identity disorder?",
+			"sentence2": "Is being transgender considered a mental illness? How do we know?",
+			"label": 0
+		},
+		{
+			"sentence1": "If you had a time machine would you take a one way trip into the future or past?",
+			"sentence2": "If you had a time machine that you could only use for a single one way trip, would you go to the past or the future?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I get my friend to take a shower without offending her?",
+			"sentence2": "Is e-Aadhar card a valid proof for an IRCTC e-ticket to travel on the train?",
+			"label": 0
+		},
+		{
+			"sentence1": "Is ByteFence Anti-Malware safe?",
+			"sentence2": "Why anti-virus is not marking my site as safe?",
+			"label": 0
+		},
+		{
+			"sentence1": "\"What does the phrase \"\"red right hand\"\" mean?\"",
+			"sentence2": "\"What does the phrase \"\"one hand washes the other\"\" mean?\"",
+			"label": 0
+		},
+		{
+			"sentence1": "1 quadra billion is equal to how much billion?",
+			"sentence2": "What are the ways to make $1 billion?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the best way to avoid procrastination?",
+			"sentence2": "What's the best way to stop procrastinating?",
+			"label": 1
+		},
+		{
+			"sentence1": "Is Jayalalithaa on ventilator support?",
+			"sentence2": "Is Jayalalithaa alive?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is most important in life: sex or love?",
+			"sentence2": "Is sex more important for love or love more important for sex?",
+			"label": 1
+		},
+		{
+			"sentence1": "How well did Steve Jobs and Bill Gates get along with each other?",
+			"sentence2": "How was the personal relationship between Steve Jobs and Bill Gates?",
+			"label": 1
+		},
+		{
+			"sentence1": "Should I pursue a master degree in gender studies?",
+			"sentence2": "Is Germany a good place to pursue masters degree in management studies?",
+			"label": 0
+		},
+		{
+			"sentence1": "If all objects which has mass exert gravitational force on another object then why we don't see objects on earth moving towards each other?",
+			"sentence2": "How is the mass of an object affected by a gravitational field?",
+			"label": 0
+		},
+		{
+			"sentence1": "One glass of water is how many ounces?",
+			"sentence2": "How many ounces are in one stick of butter?",
+			"label": 0
+		},
+		{
+			"sentence1": "Do professional photographers use the viewfinder or the LCD when shooting with their DSLRs?",
+			"sentence2": "How can I shoot great photographs with any camera?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the best programming language I should start learning?",
+			"sentence2": "What is the best programming language to learn(in your opinion)?",
+			"label": 1
+		},
+		{
+			"sentence1": "What's it like to get accepted to Harvard but not go?",
+			"sentence2": "What is it like to get admitted to Harvard?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I make my college life better?",
+			"sentence2": "What should I do to make my college life better/a good one?",
+			"label": 1
+		},
+		{
+			"sentence1": "What does MILF stands for?",
+			"sentence2": "What does ASOIAF stand for?",
+			"label": 0
+		},
+		{
+			"sentence1": "If an American citizen marries a Mexican citizen in Mexico, what is the process for the Mexican citizen to be able to come to the United States?",
+			"sentence2": "I am a Mexican citizen. How do I get a visa upon arrival in Belarus?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is wrong with the educational system of the U.S.A?",
+			"sentence2": "What is wrong with the U.S. education system and how can students protest it?",
+			"label": 1
+		},
+		{
+			"sentence1": "Can one self-induce a coma?",
+			"sentence2": "How can I safely induce a coma upon myself?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are some good books in Spanish?",
+			"sentence2": "What are some good Spanish books?",
+			"label": 1
+		},
+		{
+			"sentence1": "Does chiropractic work for allergies?",
+			"sentence2": "How can chiropractic help allergies?",
+			"label": 1
+		},
+		{
+			"sentence1": "How can milk make you fat?",
+			"sentence2": "Does milk make you fat?",
+			"label": 1
+		},
+		{
+			"sentence1": "Is it ethical to upvote an answer just because I spent the time reading it?",
+			"sentence2": "What is the probability that a person will upvote an answer just because it's long?",
+			"label": 1
+		},
+		{
+			"sentence1": "What are the best movies to watch in Hollywood?",
+			"sentence2": "Can you provide me the list of the best hollywood movies you have seen?",
+			"label": 1
+		},
+		{
+			"sentence1": "What does KIK mean in internet slang?",
+			"sentence2": "What does “bae” mean in internet slang?",
+			"label": 0
+		},
+		{
+			"sentence1": "If I want to learn hacking, what should I do?",
+			"sentence2": "I want to learn hacking from where should I start?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is a good itinerary for a 10 day trip to Europe for a solo traveller?",
+			"sentence2": "What is a good itinerary for a 10-day trip in Morocco?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I remove all Google analytics spam?",
+			"sentence2": "What is the best way to block spam referrals in Google analytics?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I promote your website?",
+			"sentence2": "What is the fastest way to promote website?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why should I care if Trump releases his tax returns or not?",
+			"sentence2": "What will make Trump release his tax returns?",
+			"label": 0
+		},
+		{
+			"sentence1": "What would it require for Humans to coexist in peace indefinitely?",
+			"sentence2": "Can Jio SIM be used with a BSNL dongle?",
+			"label": 0
+		},
+		{
+			"sentence1": "Is central fringe dark or bright for youngs double expt when phase is 180 radian?",
+			"sentence2": "When looking for something, is putting up the screen brightness more efficient or using the LED flash?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is The Elder's Scroll?",
+			"sentence2": "What are the best Elder Scrolls games?",
+			"label": 0
+		},
+		{
+			"sentence1": "Does a slim continental 2-pin plug need a fuse?",
+			"sentence2": "In a three pin plug (such as a PC's power line's plug), what does the third pin do?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I to get rid of acne scars?",
+			"sentence2": "How can I get rid from my acnes?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is a blanket ban?",
+			"sentence2": "Why is Facebook blocked in China?",
+			"label": 0
+		},
+		{
+			"sentence1": "Where was the movie ' Kapoor and Sons ( Since 1921 ) ' shot?",
+			"sentence2": "How is the movie Kapoor and Sons ( Since 1921 )?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why is it that Christians can laugh and scoff at the absurdities in other religions, but can't see the absurdities in their own?",
+			"sentence2": "Will multiculturalism ever work?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are the advantages of convolutional neural network compared to a simple neural network from the theoretical and practical respective?",
+			"sentence2": "Why do we use convolution in neural networks?",
+			"label": 0
+		},
+		{
+			"sentence1": "In which form (hard or soft copy) should I read ncert?",
+			"sentence2": "What is the average work day at USCIS like as an Immigration Services Officer?",
+			"label": 0
+		},
+		{
+			"sentence1": "What does it mean if a girl tells a guy that she's on her period and he replies with 'k.'?",
+			"sentence2": "If a girl keeps replying to a guy will she seem desperate? Will the guy get turned off by her if he had feelings for her before?",
+			"label": 0
+		},
+		{
+			"sentence1": "Do you think Quora app is slow and crashes sometimes?",
+			"sentence2": "Why is Quora so slow?",
+			"label": 0
+		},
+		{
+			"sentence1": "What does the term government mean?",
+			"sentence2": "\"What does the term \"\"Government 2.0\"\" mean?\"",
+			"label": 0
+		},
+		{
+			"sentence1": "Why do vets sell Science Diet?",
+			"sentence2": "What is the reason why vets recommend science diet?",
+			"label": 1
+		},
+		{
+			"sentence1": "How much does one crore rupees weighs (in rs. 500 denomination)?",
+			"sentence2": "What do you think of the decision by the Indian Government to demonetize 500 and 1000 rupee notes?",
+			"label": 0
+		},
+		{
+			"sentence1": "What's the difference between analog and digital system?",
+			"sentence2": "What's the main difference between digital and analog?",
+			"label": 1
+		},
+		{
+			"sentence1": "I have a long distance relationship with someone I met online, never in person. Is it normal that he wont call me or even send a picture?",
+			"sentence2": "Are there any opportunities for recently passed undergrads?",
+			"label": 0
+		},
+		{
+			"sentence1": "'Ramcharitmanas' is a great epic as religious as 'Divine Comdey' or 'Paradise Lost'?",
+			"sentence2": "How do Icalculate annual membership cost based on customer repeated visit for service, knowing that not everyone will purchase this 1 time annual fee?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I solve the permutation problem with repetition?",
+			"sentence2": "How do I solve this permutation problem?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why do some men slap their (female) partners during sex?",
+			"sentence2": "Why do women generally moan much louder than men, during sex?",
+			"label": 0
+		},
+		{
+			"sentence1": "Do employees at W&T Offshore have a good work-life balance? Does this differ across positions and departments?",
+			"sentence2": "Do employees at Nordic American Offshore have a good work-life balance? Does this differ across positions and departments?",
+			"label": 0
+		},
+		{
+			"sentence1": "What does it mean when a girl tells you she doesn't know what to say after you tell her you like her?",
+			"sentence2": "Flirting: If a girl doesn't mind that you are checking her out, does it mean she likes you?",
+			"label": 0
+		},
+		{
+			"sentence1": "Is astrology real? Is it a branch of math and/or science?",
+			"sentence2": "Is astrology a real science?",
+			"label": 1
+		},
+		{
+			"sentence1": "Who agrees that all this “your question or answer stuff here needs improvement” is a load of crap?",
+			"sentence2": "Is Quora virtually useless?",
+			"label": 0
+		},
+		{
+			"sentence1": "\"What is theory/concept behind the \"\"Miniature Arc Reactor\"\" built by Tony Stark?\"",
+			"sentence2": "Iron Man 3 (2013 movie): [Spoiler alert] Why does Stark need a truck battery to recharge the Mk. 42 while, for the previous armors, the Arc reactor did the job?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why do I like to eat cheese so much?",
+			"sentence2": "How can girls get into Merchant navy?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are the best cities to visit in Europe?",
+			"sentence2": "Where is the best place to visit in Europe?",
+			"label": 1
+		},
+		{
+			"sentence1": "How much loss does thermal power plants have to incur on an average due to land acquisition problems?",
+			"sentence2": "Why can't I send more than Rs.10k using UPI on SBI Pay or PhonePe with my SBI account or Vijaya Bank account in a Single transaction?",
+			"label": 0
+		},
+		{
+			"sentence1": "If I do bpt in India then what is the my starting salary?",
+			"sentence2": "If I have six months after my graduation in engineering and my job starts in January, what is the best way to utilize my time? I plan to pursue a MBA in the future either in India or abroad.",
+			"label": 0
+		},
+		{
+			"sentence1": "Can I change my university after going to Canada on student visa?",
+			"sentence2": "Can I change university after getting visa in Canada?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I message someone on Facebook without becoming friends?",
+			"sentence2": "Will it show me if someone has seen their message even if we are not friends?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I improve me problem solving skills?",
+			"sentence2": "How can I improve my algorithmic problem solving skill?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are the Black Hat SEO techniques?",
+			"sentence2": "What is the Black Hat SEO? How does it work?",
+			"label": 0
+		},
+		{
+			"sentence1": "How big can the ISS get?",
+			"sentence2": "How big is the ISS?",
+			"label": 0
+		},
+		{
+			"sentence1": "Are people with morals those who suffer the most?",
+			"sentence2": "Why do the good people always have to suffer the most?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is your review on How To Win A Cosmic War by Reza Aslan?",
+			"sentence2": "\"What is Boehner hoping to accomplish by coming on international TV and criticizing Obama saying \"\"He doesn't even have a plan to win\"\" (the Syria + Iraq conflict / civil war)?\"",
+			"label": 0
+		},
+		{
+			"sentence1": "How did you get over hating your self?",
+			"sentence2": "How do I get over my hate?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the difference between interim and ad interim order?",
+			"sentence2": "What is the difference between order and pillar?",
+			"label": 0
+		},
+		{
+			"sentence1": "Can an average student crack NDA easily or not?",
+			"sentence2": "Why are Indian pizzas different?",
+			"label": 0
+		},
+		{
+			"sentence1": "What will Barack Obama do next after he finishes his presidency?",
+			"sentence2": "What will be Barack Obama doing, once he steps down as a president?",
+			"label": 1
+		},
+		{
+			"sentence1": "What makes a girl to fall in love with a boy?",
+			"sentence2": "What makes a girl fall in love with a guy?",
+			"label": 1
+		},
+		{
+			"sentence1": "How can I get peace of mind?",
+			"sentence2": "What do you do to achieve peace of mind?",
+			"label": 1
+		},
+		{
+			"sentence1": "Are men genetically designed to be polygamous?",
+			"sentence2": "Can I take a different guest to global citizen India despite registering name of another guest?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which is better: Yu-Gi-Oh! or Magic: The Gathering?",
+			"sentence2": "Is Yu-Gi-Oh! the TCG more for kids? Is Magic the Gathering more appropriate for adult audiences?",
+			"label": 0
+		},
+		{
+			"sentence1": "\"What is \"\"negative pressure\"\"?\"",
+			"sentence2": "What does negative pressure mean in a closed container?",
+			"label": 0
+		},
+		{
+			"sentence1": "I don't want to study for an exam. What should I do?",
+			"sentence2": "Why don't I want to study before the exam?",
+			"label": 1
+		},
+		{
+			"sentence1": "Why would a girl stop viewing my Snapchat stories?",
+			"sentence2": "Who are the best girls on Snapchat?",
+			"label": 0
+		},
+		{
+			"sentence1": "What's the difference between working all night until 4am and waking up at 12pm and going to sleep at 10pm and waking up to work at 5am?",
+			"sentence2": "Being an 'owl', I usually go to sleep at 11pm-1am, but very rarely, I wake up early (e.g. 5am) and feel kind of a euphoria and rise of productivity, which lasts until afternoon. Is there any medical reason for that euphoria?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I solve my problem of not being able to follow through with all the great ideas I have?",
+			"sentence2": "How do I solve my problem of not being able to follow through with all the great ideas and aspirations I have?",
+			"label": 1
+		},
+		{
+			"sentence1": "I want to do work in ISRO?",
+			"sentence2": "How do I make electricity at home?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which are some of the best academies in Mumbai for UPSC preparation?",
+			"sentence2": "How can I find open source housing databases?",
+			"label": 0
+		},
+		{
+			"sentence1": "How is at skiing Vail, CO?",
+			"sentence2": "How are the skiing conditions in Vail, CO?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do you overcome Writer's Block?",
+			"sentence2": "As a novice writer, what are some tips to get beyond writer's block?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do you become a warrant officer in the military?",
+			"sentence2": "What is a warrant officer in the military?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do you permanently delete your Yahoo account?",
+			"sentence2": "What are some ways to delete my Yahoo Mail account?",
+			"label": 1
+		},
+		{
+			"sentence1": "What was your first experience with making music?",
+			"sentence2": "Can you please Explain coil concept of reactance?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are the best and most addicting Android games?",
+			"sentence2": "What are the best addictive Android Games?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the best romantic conversation you can write for a newly wed couple?",
+			"sentence2": "What is your best advice for a newly married couple to begin and sustain a happy married life?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do you find someone phone by GPS?",
+			"sentence2": "How do you track someone by their phone?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I speak English fluently?",
+			"sentence2": "How do I speak English fluently in half a year?",
+			"label": 1
+		},
+		{
+			"sentence1": "What are the advantages and disadvantages of nuclear power?",
+			"sentence2": "What ser some advantages and disadvantages of Nuclear power?",
+			"label": 1
+		},
+		{
+			"sentence1": "Who is the Compare of the Mr Olympia?",
+			"sentence2": "Is it possible to put some skill in a human through brain surgery?",
+			"label": 0
+		},
+		{
+			"sentence1": "What does the ISIS want?",
+			"sentence2": "Can someone shed a light on ISIS and their ideology?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I access the Belkin router website?",
+			"sentence2": "What should I do if I can't access my Belkin router homepage?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is Behavioral Economics?",
+			"sentence2": "What exactly is behavioral economics?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is a transistor and how does it work in layman's terms?",
+			"sentence2": "In layman's terms, what is a k-d tree and how does it work?",
+			"label": 0
+		},
+		{
+			"sentence1": "What animal is the king of the jungle?",
+			"sentence2": "\"Why is lion called as \"\"the king of the forest\"\" even when tigers are bigger and hence more powerful?\"",
+			"label": 0
+		},
+		{
+			"sentence1": "Why are Alibaba products so cheap? Are they genuine?",
+			"sentence2": "How are Alibaba's (Amazon of China) products?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I start a charity in India?",
+			"sentence2": "How can I start a charity as a teenager?",
+			"label": 0
+		},
+		{
+			"sentence1": "When will apple launch iphone 7 ?",
+			"sentence2": "When will Apple release the iPhone 7?",
+			"label": 1
+		},
+		{
+			"sentence1": "Will doing 2 day split make me muscular?",
+			"sentence2": "My goal is to make 1 million dollars in one year, is there any specific way to do that?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I export my Yahoo contacts to Gmail?",
+			"sentence2": "How can I import my Yahoo contacts to Gmail?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is different between UI and UX?",
+			"sentence2": "What is the difference between UX and UI designer and web designer?",
+			"label": 1
+		},
+		{
+			"sentence1": "How does currency work?",
+			"sentence2": "How do currency's work?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the best dating advice you have ever been given?",
+			"sentence2": "What is the best dating advice you've ever been given?",
+			"label": 1
+		},
+		{
+			"sentence1": "Why do people love music so much?",
+			"sentence2": "Why do we love music?",
+			"label": 1
+		},
+		{
+			"sentence1": "How google's captcha recaptcha works?",
+			"sentence2": "How does Google's new NOCAPTCHA reCAPTCHA work?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I speak American English well?",
+			"sentence2": "How can I speak American English well?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the best way to prepare for verbal ability for CAT?",
+			"sentence2": "What is the best strategy to prepare and master the Verbal section in the CAT? ",
+			"label": 1
+		},
+		{
+			"sentence1": "How would you translate this Spanish phrase into English?",
+			"sentence2": "How can you translate these Spanish phrases into English?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the salary of an IIT faculty?",
+			"sentence2": "What is the salary of iit professors?",
+			"label": 1
+		},
+		{
+			"sentence1": "Will the feeling of ever wanting justice or vindication after dating a narc ever go away?",
+			"sentence2": "Would God ever withdraw the feeling of his presence or comfort as a form of chastisement?",
+			"label": 0
+		},
+		{
+			"sentence1": "How does a celestial object bend space?",
+			"sentence2": "\"What does \"\"bend space and time\"\" mean?\"",
+			"label": 0
+		},
+		{
+			"sentence1": "What does smooth ER do?",
+			"sentence2": "What is the definition and function of Smooth Endoplasmic Reticulum?",
+			"label": 0
+		},
+		{
+			"sentence1": "What's the best way to create a website?",
+			"sentence2": "How do create a website?",
+			"label": 1
+		},
+		{
+			"sentence1": "Is there a high risk that President Hillary Clinton will initiate a war with Russia?",
+			"sentence2": "Will Hillary Clinton make decisions that escalate into a war with Russia?",
+			"label": 1
+		},
+		{
+			"sentence1": "What are some free movie websites?",
+			"sentence2": "What are some good free movie sites?",
+			"label": 1
+		},
+		{
+			"sentence1": "Where are all the black hand models?",
+			"sentence2": "What is a typical work day like for a hand model?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which books are best for neet and AIIMS?",
+			"sentence2": "Which refrence book is best for Neet and AIIMS?",
+			"label": 1
+		},
+		{
+			"sentence1": "Are John the Apostle, John the Evangelist, and John the Baptist all the same person?",
+			"sentence2": "Do we know the significance of John the Baptist?",
+			"label": 0
+		},
+		{
+			"sentence1": "What scopes for production engineering?",
+			"sentence2": "What is the scope of production engineering?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why does all the world admire Vietnam political system?",
+			"sentence2": "\"Why have all the justice systems of the world moved away from the principle of \"\"An eye for an eye\"\"?\"",
+			"label": 0
+		},
+		{
+			"sentence1": "I have lost my PAN card and I also forgot my PAN number. What is the procedure to reissue a PAN card?",
+			"sentence2": "Can I get an ATM card without a PAN number?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I download UPI App (Unified payment Interface) launched by RBI and National Payment Corporation of India?",
+			"sentence2": "Which payment gateway is best for food app in India?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are some good websites or other media sources to find part-time/full-time jobs for retired professionals?",
+			"sentence2": "If someone publishes a paper on ways to safeguard against AI going rogue, should that paper be published online?",
+			"label": 0
+		},
+		{
+			"sentence1": "\"Does \"\"Delivered\"\" in iMessage mean that the message was received by the phone, or read by the user?\"",
+			"sentence2": "iMessage: If one of my friends goes outside of a 3G/Wi-Fi area, will the message go through as an SMS or will the message simply not be received until they enter a 3G/Wi-Fi Zone?",
+			"label": 0
+		},
+		{
+			"sentence1": "How difficult to switch from manual testing to automation testing?",
+			"sentence2": "Which automation tool is good for switching from manual to automation testing?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why does aerobic respiration occur in a cell?",
+			"sentence2": "Where does aerobic respiration occur in a cell?",
+			"label": 1
+		},
+		{
+			"sentence1": "What are the best things that I can do for my parents?",
+			"sentence2": "What is the best thing I can do for my parents?",
+			"label": 1
+		},
+		{
+			"sentence1": "What should one do to prepare for junior college in Singapore?",
+			"sentence2": "How can United win the league when they're at 7th place?",
+			"label": 0
+		},
+		{
+			"sentence1": "Is is safe to take laxative pills to lose weight? If so which are the best ones?",
+			"sentence2": "How do laxative teas make you lose weight?",
+			"label": 1
+		},
+		{
+			"sentence1": "How can our life become interesting?",
+			"sentence2": "When living alone, how can I make life more interesting?",
+			"label": 1
+		},
+		{
+			"sentence1": "How much should I expect to pay for a 1-car caltrain wrap advertisement?",
+			"sentence2": "Is Caltrain taking steps to put more power outlets in cars?",
+			"label": 0
+		},
+		{
+			"sentence1": "If there is one God then why there are so many religions?",
+			"sentence2": "Religion: If you could ask God one question, what would it be?",
+			"label": 0
+		},
+		{
+			"sentence1": "Do most Israelis favor settlement expansion in the West Bank?",
+			"sentence2": "Do most Israeli favor settlement expansion in West Bank?",
+			"label": 1
+		},
+		{
+			"sentence1": "What are some things new employees should know going into their first day at Vector Group?",
+			"sentence2": "What are some things new employees should know going into their first day at Group Strategies?",
+			"label": 0
+		},
+		{
+			"sentence1": "Does a GNIIT course have any use?",
+			"sentence2": "Is there any value for course gNIIT?",
+			"label": 1
+		},
+		{
+			"sentence1": "What's the best project management tool for a digital agency?",
+			"sentence2": "What are the best project management tools for software consultants?",
+			"label": 0
+		},
+		{
+			"sentence1": "\"I've taken a drop for NEET 2017 & joined Aakash. Apart from NCERT and Aakash material, which \"\"good\"\" reference books should I buy for MCQ?\"",
+			"sentence2": "Is aakash chemistry package sufficient for neet?",
+			"label": 0
+		},
+		{
+			"sentence1": "Pension Funds: How can we add a new PF account number to the UAN?",
+			"sentence2": "I have a UAN mapped to a PF account of my previous employer. I joined a new organization in March of this year. However, I have not mapped my new PF account with the UAN till now. Is it possible to map the new PF account with the existing UAN now?",
+			"label": 0
+		},
+		{
+			"sentence1": "Where can I buy high-quality men's polo shirts with no logos?",
+			"sentence2": "Do Polo shirts on guys look attractive?",
+			"label": 0
+		},
+		{
+			"sentence1": "If I have a triangle whose sides are 31.2009 m, 36.0524 m and 67.3914 m, what’s its area?",
+			"sentence2": "If I have a triangle whose sides are 23.3627 m, 47.2099 m and 69.4535 m, what is it's area?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are common tactics and bluffing strategies in Texas Hold'em poker?",
+			"sentence2": "What are some basic strategies for Texas Holdem?",
+			"label": 1
+		},
+		{
+			"sentence1": "Are the jews the only villians pretending to be victims?",
+			"sentence2": "Metaphysics: Are we the environment pretending to not be the environment?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which stream is better Java or AngularJS?",
+			"sentence2": "Which topic I should choose for my civil final year project and I want to do project related to environmental engineering? Suggest me so good topics",
+			"label": 0
+		},
+		{
+			"sentence1": "What should I do to get a 5 on an AP exam with about 1 month left to review/study?",
+			"sentence2": "Is it possible to get a 5 on AP Physics 2 with 1 month of studying? (about 30 minutes a day)",
+			"label": 0
+		},
+		{
+			"sentence1": "How cold can the Gobi Desert get, and how do its average temperatures compare to the ones in the Colorado Plateau?",
+			"sentence2": "How cold can the Gobi Desert get, and how do its average temperatures compare to the ones in the Simpson Desert?",
+			"label": 1
+		},
+		{
+			"sentence1": "What will happen if India and Pakistan gets into war and who will win?",
+			"sentence2": "If war happen between India and Pakistan, then what could be the impact on Indian economy and stock market?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is Hillary Clinton's view on Taiwanese Independence?",
+			"sentence2": "What are Hillary Clinton's views on immigration?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I earn money through online in India?",
+			"sentence2": "What are the best ways to earn money online in India?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the current state of DNA computing?",
+			"sentence2": "What data format or structure do genes use (encoded in DNA)? Computer data may be compressed or deduplicated, is the same true of DNA?",
+			"label": 0
+		},
+		{
+			"sentence1": "What individuals and events in history are a source of pride for Malta?",
+			"sentence2": "What individuals and events in history are a source of pride for Germany?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the most important thing for you?",
+			"sentence2": "What is the best thing you have done for yourself?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why do rich countries like Finland, Sweden and Canada have the highest suicide rates?",
+			"sentence2": "Where should I permanently immigrate: Finland, Denmark, Sweden, or Norway?",
+			"label": 0
+		},
+		{
+			"sentence1": "Are Parliament cigarettes safe? How are they manufactured?",
+			"sentence2": "Are Parliament cigarettes safe?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why should I learn algorithms?",
+			"sentence2": "Which algorithm book should I learn?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are the ways to get noticed for a newly recorded song and music video?",
+			"sentence2": "What is the explanation of the following?",
+			"label": 0
+		},
+		{
+			"sentence1": "If my father dies, after how many days can we get access to his bank account?",
+			"sentence2": "Why should I wait a while to get a bank account after getting my SSN?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which url has to be used to create a blog on Quora?",
+			"sentence2": "How do I create a URL on Quora blogs?",
+			"label": 1
+		},
+		{
+			"sentence1": "How much electricity (units) is used by 1.5 ton split AC?",
+			"sentence2": "How much electricity will be consumed by 2.0 ton 5 star SPLIT AC?",
+			"label": 0
+		},
+		{
+			"sentence1": "\"What do you think of the adage, \"\"Guns don't kill people. People kill people\"\"? Do you think it truly settles the gun ownership issue?\"",
+			"sentence2": "\"If \"\"guns don't kill people; people kill people,\"\" then why should we allow people to have guns?\"",
+			"label": 0
+		},
+		{
+			"sentence1": "How is black money curbed with the ban of 1000 rupee notes and introducing new 500 and 2000 rupee notes?",
+			"sentence2": "How will scraping of 500 and 1000 rupees notes help in curbing corruption and black money?",
+			"label": 1
+		},
+		{
+			"sentence1": "I want to delete an old Instagram account back, but I don't know the password or the email I used. What do I do?",
+			"sentence2": "How can I delete an old Instagram account if I don't know the password for it?",
+			"label": 1
+		},
+		{
+			"sentence1": "Do Japanese people dislike Americans because of the Hiroshima and Nagasaki bombings?",
+			"sentence2": "Do Japanese hold grudges on Americans for Hiroshima and Nagasaki?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the best advice for a first time entrepreneur founder/CEO on the first hires?",
+			"sentence2": "What would be your best tip for a first time startup CEO?",
+			"label": 1
+		},
+		{
+			"sentence1": "Why are Hela cells immortal?",
+			"sentence2": "\"Why are HeLa cells \"\"immortal\"\"?\"",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I cope with homesickness?",
+			"sentence2": "How do I cope with homesickness in school?",
+			"label": 0
+		},
+		{
+			"sentence1": "How much space is required to start a laundromat business?",
+			"sentence2": "How much investment is required for a laundromat business in India?",
+			"label": 0
+		},
+		{
+			"sentence1": "How will the JOBS Act crowdfunding bill affect small businesses (if at all)?",
+			"sentence2": "How do I make a job application for my small business online?",
+			"label": 0
+		},
+		{
+			"sentence1": "Will American girls consider Indian guys for marriage?",
+			"sentence2": "Wich career has more future, Logistics or SCM?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the average salary for doctors in uae?",
+			"sentence2": "What is the average salary of investment bankers in the UAE?",
+			"label": 0
+		},
+		{
+			"sentence1": "Which are the best TV series that you have ever watched and why?",
+			"sentence2": "What are the best TV series you ever watched and why?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is the actual manufacturing cost of a car?",
+			"sentence2": "Is there a website where I can find out how much it costs the car companies to build their cars and how much the dealership actually pays for each car?",
+			"label": 0
+		},
+		{
+			"sentence1": "What  do you think I should study?",
+			"sentence2": "What do you think of this study?",
+			"label": 0
+		},
+		{
+			"sentence1": "How should I study (give me a study plan) for 1st year mbbs?",
+			"sentence2": "How should I study if I want to get distinction in first year MBBS?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is digital marketing?What are the basics of Digital Marketing?What is digital marketing strategy?Who needs digital marketing services?",
+			"sentence2": "What is digital marketing and how to set career in digital marketing?",
+			"label": 1
+		},
+		{
+			"sentence1": "What are some things new employees should know going into their first day at Marvell Technology?",
+			"sentence2": "What are some things new employees should know going into their first day at Akamai Technologies?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the advantage of fuel injection over a carburetor in bikes?",
+			"sentence2": "Why does a motocross bike use a carburetor instead of fuel injection?",
+			"label": 0
+		},
+		{
+			"sentence1": "How was Nazi Germany able to technologically surpass the Allies in so many ways?",
+			"sentence2": "If Nazi Germany made truce with the Allies at their peak of World War 2, what would have happened if they got to keep all the land they took over?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I eliminate homesick?",
+			"sentence2": "How do I stop being so homesick?",
+			"label": 1
+		},
+		{
+			"sentence1": "Is it fair that central govt is not interfering in cauvery matters?",
+			"sentence2": "Will I get the same speed after turning on the hotspot of my mobile as before?",
+			"label": 0
+		},
+		{
+			"sentence1": "How much did the titanic ship cost to make it for the film?",
+			"sentence2": "How much did the titanic cost to make for the film?",
+			"label": 1
+		},
+		{
+			"sentence1": "How to charm a girl to be your girlfriend?",
+			"sentence2": "When can you ask a girl to be your girlfriend?",
+			"label": 0
+		},
+		{
+			"sentence1": "\"What is the origin of the term \"\"land shark\"\"?\"",
+			"sentence2": "\"What is the origin of the term \"\"cold war\"\"?\"",
+			"label": 0
+		},
+		{
+			"sentence1": "What is the best way to avoid procrastination?",
+			"sentence2": "How can I overcome the procrastination?",
+			"label": 1
+		},
+		{
+			"sentence1": "How will Trump's presidency affect Indian students who are planning to do a PhD in the US?",
+			"sentence2": "What would be the scenario for Indian students after Donald trump becomes the President of US?",
+			"label": 1
+		},
+		{
+			"sentence1": "Is there a black hole at the center of every galaxy?",
+			"sentence2": "Why is there a black hole at the center of every galaxy?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do you know if you have inner peace?",
+			"sentence2": "What are some of the best ways to find inner peace?",
+			"label": 0
+		},
+		{
+			"sentence1": "What is your review of Train To Busan (2016 movie)?",
+			"sentence2": "What is you review about the movie Train to Busan (2016)?",
+			"label": 1
+		},
+		{
+			"sentence1": "How can someone not very smart become smarter than those who are already born to be smart?",
+			"sentence2": "Do we need to be smart rather than talented to succeed in today's world? How can one develop smartness?",
+			"label": 0
+		},
+		{
+			"sentence1": "How can I deep fry frozen perogies?",
+			"sentence2": "Difference between CT and pt?",
+			"label": 0
+		},
+		{
+			"sentence1": "Who invented TV?",
+			"sentence2": "Who invented the television? In what year was it invented?",
+			"label": 1
+		},
+		{
+			"sentence1": "Why are Brahmins not minority in India?",
+			"sentence2": "Who are the Bihari people?",
+			"label": 0
+		},
+		{
+			"sentence1": "What kind of people should we avoid?",
+			"sentence2": "What are the types of people that you should always avoid?",
+			"label": 1
+		},
+		{
+			"sentence1": "What is compensation like at the non-profit OpenAI?",
+			"sentence2": "How do I Sustaining a non-profit organization?",
+			"label": 0
+		},
+		{
+			"sentence1": "Can one buy property in Shimla if he is not from Himachal?",
+			"sentence2": "Why doesn't the Himachal Pradesh government allow people from other states to buy land in Himachal?",
+			"label": 0
+		},
+		{
+			"sentence1": "Why do my hands and feet go numb and cold after I shoot meth?",
+			"sentence2": "Why does my arm sting/go numb after shooting meth?",
+			"label": 1
+		},
+		{
+			"sentence1": "How are IISER placements and packages?",
+			"sentence2": "Which are the best MBA colleges in India except IIMs?",
+			"label": 0
+		},
+		{
+			"sentence1": "How do I get rid of back pain?",
+			"sentence2": "How can I get rid of chronic and acute back pain?",
+			"label": 0
+		},
+		{
+			"sentence1": "Yamaha A3000 users, what are the bad sides of your keyboard?",
+			"sentence2": "How much does organizing ted talk coast in india?",
+			"label": 0
+		},
+		{
+			"sentence1": "What are the best romance movies?",
+			"sentence2": "Which is the best romantic movie?",
+			"label": 1
+		},
+		{
+			"sentence1": "How do I get rid of my people phobia?",
+			"sentence2": "How can I get rid of the phobia of exams?",
+			"label": 0
+		},
+		{
+			"sentence1": "How much does it cost to build a bridge?",
+			"sentence2": "How much it would cost to build a bridge from San Francisco to Hawaii?",
+			"label": 0
+		},
+		{
+			"sentence1": "My hope is they locate a new power source.",
+			"sentence2": "they have to find a new way to get energy",
+			"label": 0
+		},
+		{
+			"sentence1": "My hope is they locate a new power source.",
+			"sentence2": "we need a new power source",
+			"label": 0
+		},
+		{
+			"sentence1": "My hope is they locate a new power source.",
+			"sentence2": "they need a new power source",
+			"label": 0
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "The marriage with Marta Casals was in 1975",
+			"label": 0
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "The marriage with Marta Casals, Pablo Casals widow, was in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "Hes marriage with Marta Casals, Pablo Casals widow, was in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "Hes marriage with Marta Casals, Pablo Casals widow, was in the 90's",
+			"label": 0
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "His marriage with Marta Casals, Pablo Casals widow, was in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "Hes marriage with Marta Casals, Pablo Casals widow, was in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "Hes marriage with Pablo Casals widow, was in 1975",
+			"label": 0
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "His marriage with Marta Casals, Pablo Casals widow, was in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "He married Marta Casals, Pablo Casals widow, in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "He married Marta Casals, Pablo Casals widow, was in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "He marriage with Marta Casals, Pablo Casals widow, was in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "Hes marriage with Marta Casals, Pablo Casals widow, was in 1975",
+			"label": 1
+		},
+		{
+			"sentence1": "In 1975 he married Marta Casals, the widow of Pablo Casals.",
+			"sentence2": "Hes marriage with Marta Casals, Pablo Casals widow, was in one thousand nine hundred seventy-five",
+			"label": 1
+		},
+		{
+			"sentence1": "Scaggs nodded slightly.",
+			"sentence2": "Scaggs acknowledge",
+			"label": 0
+		},
+		{
+			"sentence1": "Scaggs nodded slightly.",
+			"sentence2": "Scaggs gesture with his head",
+			"label": 0
+		},
+		{
+			"sentence1": "Found him.",
+			"sentence2": "pack mule",
+			"label": 0
+		},
+		{
+			"sentence1": "Found him.",
+			"sentence2": "track him down",
+			"label": 0
+		},
+		{
+			"sentence1": "Found him.",
+			"sentence2": "track him",
+			"label": 0
+		},
+		{
+			"sentence1": "Found him.",
+			"sentence2": "He was catch",
+			"label": 0
+		},
+		{
+			"sentence1": "Found him.",
+			"sentence2": "Catch him",
+			"label": 0
+		},
+		{
+			"sentence1": "Intel plans to present a paper on its findings today at a conference in Japan.",
+			"sentence2": "Today, at Japan, Intel plans to show it's findings",
+			"label": 0
+		},
+		{
+			"sentence1": "Intel plans to present a paper on its findings today at a conference in Japan.",
+			"sentence2": "Intel plans to show it's findings today in a conference in Japan",
+			"label": 0
+		},
+		{
+			"sentence1": "Everything go well?",
+			"sentence2": "How you doing",
+			"label": 0
+		},
+		{
+			"sentence1": "Everything go well?",
+			"sentence2": "whats up",
+			"label": 0
+		},
+		{
+			"sentence1": "Everything go well?",
+			"sentence2": "how are you",
+			"label": 0
+		},
+		{
+			"sentence1": "Everything go well?",
+			"sentence2": "everything ok?",
+			"label": 1
+		},
+		{
+			"sentence1": "Everything go well?",
+			"sentence2": "all good?",
+			"label": 1
+		},
+		{
+			"sentence1": "Everything go well?",
+			"sentence2": "Its all good?",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is styling her hair.",
+			"sentence2": "A girl is brushing her hair.",
+			"label": 0
+		},
+		{
+			"sentence1": "A group of men play soccer on the beach.",
+			"sentence2": "A group of boys are playing soccer on the beach.",
+			"label": 0
+		},
+		{
+			"sentence1": "One woman is measuring another woman's ankle.",
+			"sentence2": "A woman measures another woman's ankle.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is cutting up a cucumber.",
+			"sentence2": "A man is slicing a cucumber.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing a harp.",
+			"sentence2": "A man is playing a keyboard.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is cutting onions.",
+			"sentence2": "A woman is cutting tofu.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is riding an electric bicycle.",
+			"sentence2": "A man is riding a bicycle.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing the drums.",
+			"sentence2": "A man is playing the guitar.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing guitar.",
+			"sentence2": "A lady is playing the guitar.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing a guitar.",
+			"sentence2": "A man is playing a trumpet.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing a guitar.",
+			"sentence2": "A man is playing a trumpet.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is cutting an onion.",
+			"sentence2": "A man cuts an onion.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is cycling.",
+			"sentence2": "A man is talking.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is slicing open a fish.",
+			"sentence2": "A man is cutting up a fish.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is slicing a tomato.",
+			"sentence2": "A man is slicing a bun.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing a guitar.",
+			"sentence2": "A man is playing a keyboard.",
+			"label": 0
+		},
+		{
+			"sentence1": "A baby panda goes down a slide.",
+			"sentence2": "A panda slides down a slide.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is singing and playing a guitar.",
+			"sentence2": "A man is playing a guitar.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man attacks a woman.",
+			"sentence2": "A man slaps a woman.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is driving a car.",
+			"sentence2": "A man is riding a horse.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is cutting tofu.",
+			"sentence2": "A woman is cutting an onion.",
+			"label": 0
+		},
+		{
+			"sentence1": "The woman is styling her hair.",
+			"sentence2": "The woman is slicing herbs.",
+			"label": 0
+		},
+		{
+			"sentence1": "Two zebras play in an open field.",
+			"sentence2": "Two zebras are playing in a field.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is cutting a potato.",
+			"sentence2": "A man is slicing some potato.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is slicing an onion.",
+			"sentence2": "A woman is slicing a pumpkin.",
+			"label": 0
+		},
+		{
+			"sentence1": "A  man is dancing.",
+			"sentence2": "A man and woman is dancing.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is riding a motorcycle.",
+			"sentence2": "A woman is riding a horse.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is slicing garlics.",
+			"sentence2": "A woman is slicing an onion.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is speaking.",
+			"sentence2": "A man is cooking.",
+			"label": 0
+		},
+		{
+			"sentence1": "A little boy is singing and playing a guitar.",
+			"sentence2": "A man is singing and playing the guitar.",
+			"label": 0
+		},
+		{
+			"sentence1": "A turtle is swimming in water.",
+			"sentence2": "A turtle is walking underwater.",
+			"label": 0
+		},
+		{
+			"sentence1": "A young woman is putting stickers all over her face.",
+			"sentence2": "A woman is applying stickers to her face.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is wrapping tofu.",
+			"sentence2": "A woman is balling dough.",
+			"label": 0
+		},
+		{
+			"sentence1": "A cat is eating some corn.",
+			"sentence2": "A cat is eating corn on the cob.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is eating a food.",
+			"sentence2": "A man is eating a piece of bread.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing a guitar.",
+			"sentence2": "A man is eating pasta.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is kicking pots of water.",
+			"sentence2": "A man is picking flowers.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is cutting a pipe with scissors.",
+			"sentence2": "A man is cutting carpet with a knife.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is dancing in the rain.",
+			"sentence2": "A woman dances in the rain out side.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is taking a bath.",
+			"sentence2": "A woman is riding a horse.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man mixes vegetables in a pot.",
+			"sentence2": "A person is stirring vegetables in a pot.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is talking on a cell phone.",
+			"sentence2": "A man and woman are talking on the phone.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing a guitar.",
+			"sentence2": "A man is singing while playing the guitar.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing a guitar.",
+			"sentence2": "A man is driving a car.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is cutting apple by his hand.",
+			"sentence2": "A man is cutting carpet with a knife.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is opening a door.",
+			"sentence2": "A man is cutting an onion.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is slicing a tomato.",
+			"sentence2": "A man is riding a horse.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is cutting paper with a sword.",
+			"sentence2": "A woman is cutting a tomato.",
+			"label": 0
+		},
+		{
+			"sentence1": "A boy studies a calendar.",
+			"sentence2": "A boy is looking at a calendar.",
+			"label": 0
+		},
+		{
+			"sentence1": "The ballerina is dancing.",
+			"sentence2": "A man is dancing.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is dancing.",
+			"sentence2": "A woman is playing violin.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is slicing some tomatoes.",
+			"sentence2": "A woman is chopping a potato.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is water skiing.",
+			"sentence2": "A woman is slicing fish.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing a flute.",
+			"sentence2": "A man is riding a scooter.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing the piano.",
+			"sentence2": "A man played the guitar.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is picking a can.",
+			"sentence2": "A man is playing a guitar.",
+			"label": 0
+		},
+		{
+			"sentence1": "A man puts three pieces of meat into a pan.",
+			"sentence2": "A man is putting meat in a pan.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is cutting an onion.",
+			"sentence2": "A woman is cleaning a garden.",
+			"label": 0
+		},
+		{
+			"sentence1": "Some men are sawing.",
+			"sentence2": "Men are sawing logs.",
+			"label": 0
+		},
+		{
+			"sentence1": "A car is driven down the road.",
+			"sentence2": "A girl is walking down a road.",
+			"label": 0
+		},
+		{
+			"sentence1": "The man is kissing and hugging the woman.",
+			"sentence2": "A man is hugging and kissing a woman.",
+			"label": 0
+		},
+		{
+			"sentence1": "A train is moving.",
+			"sentence2": "A man is doing yoga.",
+			"label": 0
+		},
+		{
+			"sentence1": "Someone is slicing an onion.",
+			"sentence2": "A woman is cutting onion.",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is playing in the ocean.",
+			"sentence2": "A woman is preparing shrimp to cook.",
+			"label": 0
+		},
+		{
+			"sentence1": "There is no woman playing a flute",
+			"sentence2": "One woman is playing a flute",
+			"label": 0
+		},
+		{
+			"sentence1": "A flute is being played by a girl",
+			"sentence2": "There is no woman playing a flute",
+			"label": 1
+		},
+		{
+			"sentence1": "A flute is being played in a lovely way by a girl",
+			"sentence2": "One woman is playing a flute",
+			"label": 1
+		},
+		{
+			"sentence1": "One woman is playing a flute",
+			"sentence2": "A flute is being put away by a girl",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is making a flute which is not to be played",
+			"sentence2": "One woman is playing a flute",
+			"label": 1
+		},
+		{
+			"sentence1": "One woman is playing a flute",
+			"sentence2": "A flute is being played by a girl",
+			"label": 1
+		},
+		{
+			"sentence1": "The play is about a happy boy playing the piano",
+			"sentence2": "A boy is happily playing the piano",
+			"label": 1
+		},
+		{
+			"sentence1": "A piano is being played by a man",
+			"sentence2": "A piano is being played by a person",
+			"label": 1
+		},
+		{
+			"sentence1": "A piano is being played by a man",
+			"sentence2": "A piano isn't being played by a man",
+			"label": 0
+		},
+		{
+			"sentence1": "The piano player is being a tough man",
+			"sentence2": "A piano is being played by a man",
+			"label": 1
+		},
+		{
+			"sentence1": "A piano is being played by a man",
+			"sentence2": "One boy is happily playing a piano",
+			"label": 1
+		},
+		{
+			"sentence1": "The boy isn't playing the piano happily",
+			"sentence2": "A piano is being played by a man",
+			"label": 1
+		},
+		{
+			"sentence1": "A cheetah is breathlessly chasing its prey across a field",
+			"sentence2": "A cheetah is chasing its prey across a field",
+			"label": 1
+		},
+		{
+			"sentence1": "A cheetah is shaken off by its prey across a field.",
+			"sentence2": "A cheetah is chasing its prey across a field",
+			"label": 1
+		},
+		{
+			"sentence1": "A prey is quickly running behind the cheetah",
+			"sentence2": "A cheetah is chasing its prey across a field",
+			"label": 1
+		},
+		{
+			"sentence1": "A cheetah is breathlessly chasing its prey across a field",
+			"sentence2": "A cheetah is quickly running behind its prey.",
+			"label": 1
+		},
+		{
+			"sentence1": "A cheetah is chasing its prey across a field",
+			"sentence2": "A cheetah is quickly running behind its prey.",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no lion pacing tiredly in a pen",
+			"sentence2": "A lion is pacing tiredly in a pen",
+			"label": 0
+		},
+		{
+			"sentence1": "There is no lion walking",
+			"sentence2": "A lion is slowly walking",
+			"label": 0
+		},
+		{
+			"sentence1": "Not everyone is able to walk a lion",
+			"sentence2": "A lion is slowly walking",
+			"label": 1
+		},
+		{
+			"sentence1": "A lion is pacing tiredly in a pen",
+			"sentence2": "A lion is slowly moving around",
+			"label": 1
+		},
+		{
+			"sentence1": "A lion is pacing tiredly in a pen",
+			"sentence2": "There is no lion walking",
+			"label": 0
+		},
+		{
+			"sentence1": "Not everyone is able to walk a lion",
+			"sentence2": "A lion is pacing tiredly in a pen",
+			"label": 1
+		},
+		{
+			"sentence1": "A lion is slowly walking",
+			"sentence2": "There is no lion pacing tiredly in a pen",
+			"label": 1
+		},
+		{
+			"sentence1": "A lion is slowly walking",
+			"sentence2": "A lion is tiring the whole pen by pacing",
+			"label": 1
+		},
+		{
+			"sentence1": "A lion is pacing tiredly in a pen",
+			"sentence2": "A lion is slowly walking",
+			"label": 1
+		},
+		{
+			"sentence1": "A flute is being played by a man",
+			"sentence2": "The flute is being played by one man",
+			"label": 1
+		},
+		{
+			"sentence1": "A flute is being played by a man",
+			"sentence2": "A flute isn't being played by a man",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is playing the guitar loudly",
+			"sentence2": "The adult is playing the guitar loudly",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no man playing the guitar loudly",
+			"sentence2": "A man is playing the guitar loudly",
+			"label": 0
+		},
+		{
+			"sentence1": "The loud man is not allowed to play the guitar",
+			"sentence2": "A man is playing the guitar loudly",
+			"label": 1
+		},
+		{
+			"sentence1": "The flute is being played by one man",
+			"sentence2": "A man is playing the guitar loudly",
+			"label": 1
+		},
+		{
+			"sentence1": "The person is dicing up a pepper which is orange",
+			"sentence2": "An orange pepper is being diced up by a person",
+			"label": 1
+		},
+		{
+			"sentence1": "A cook is rapidly slicing some bell peppers",
+			"sentence2": "A cook is slicing some bell peppers",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no cook slicing some bell peppers",
+			"sentence2": "A cook is slicing some bell peppers",
+			"label": 0
+		},
+		{
+			"sentence1": "The person is dicing up a pepper which is orange",
+			"sentence2": "A cook is rapidly slicing some bell peppers",
+			"label": 1
+		},
+		{
+			"sentence1": "Some bells are ringing near a cook slicing peppers",
+			"sentence2": "The person is dicing up a pepper which is orange",
+			"label": 1
+		},
+		{
+			"sentence1": "The orange colored dices are being cast by a cook to win the pepper",
+			"sentence2": "A cook is slicing some bell peppers",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is cutting the butter into two pieces",
+			"sentence2": "A girl is cutting butter into two pieces",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is cutting butter into two pieces",
+			"sentence2": "A girl is melting two pieces of butter together",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is cutting butter into two pieces",
+			"sentence2": "A magician is cutting a girl into two pieces like butter",
+			"label": 1
+		},
+		{
+			"sentence1": "Some sliced tofu is being eaten by a woman",
+			"sentence2": "Tofu is being sliced by a woman",
+			"label": 1
+		},
+		{
+			"sentence1": "Tofu isn't being sliced by a woman",
+			"sentence2": "A girl is cutting butter into two pieces",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is cutting butter into two pieces",
+			"sentence2": "Some sliced tofu is being eaten by a woman",
+			"label": 1
+		},
+		{
+			"sentence1": "Tofu is being sliced by a woman",
+			"sentence2": "A girl is cutting the butter into two pieces",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is melting two pieces of butter together",
+			"sentence2": "Tofu is being sliced by a woman",
+			"label": 1
+		},
+		{
+			"sentence1": "A magician is cutting a girl into two pieces like butter",
+			"sentence2": "Tofu is being sliced by a woman",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is cutting butter into two pieces",
+			"sentence2": "Tofu is being sliced by a woman",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no man sitting on the chair",
+			"sentence2": "One man is sitting on the chair",
+			"label": 0
+		},
+		{
+			"sentence1": "There is no man sitting on the chair",
+			"sentence2": "The girl, who is little, is combing her hair into a pony tail.",
+			"label": 1
+		},
+		{
+			"sentence1": "A girl is combing the hair of a little pony's tail",
+			"sentence2": "One man is sitting on the chair",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is carelessly smearing butter on a slice of garlic flavored bread ",
+			"sentence2": "The man is carelessly smearing butter on a slice of garlic bread",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is carelessly smearing butter on a slice of garlic bread",
+			"sentence2": "A man is removing the butter from a piece of bread which is big",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is spreading butter on a piece of bread which is big",
+			"sentence2": "A man is carelessly smearing butter on a slice of garlic flavored bread ",
+			"label": 1
+		},
+		{
+			"sentence1": "The man isn't smearing butter on bread ",
+			"sentence2": "A man is spreading butter on a piece of bread which is big",
+			"label": 0
+		},
+		{
+			"sentence1": "The man is carelessly smearing butter on a slice of garlic bread",
+			"sentence2": "A man is spreading butter on a piece of bread which is big",
+			"label": 1
+		},
+		{
+			"sentence1": "The parrot is amazingly talking into the microphone",
+			"sentence2": "The parrot is talking into the microphone",
+			"label": 1
+		},
+		{
+			"sentence1": "The parrot is talking into the microphone",
+			"sentence2": "The parrot is silent in front of the microphone",
+			"label": 0
+		},
+		{
+			"sentence1": "The parrot is speaking",
+			"sentence2": "A parrot is speaking",
+			"label": 1
+		},
+		{
+			"sentence1": "A parrot is speaking",
+			"sentence2": "There is no parrot speaking",
+			"label": 0
+		},
+		{
+			"sentence1": "The speaker likes parrots",
+			"sentence2": "A parrot is speaking",
+			"label": 1
+		},
+		{
+			"sentence1": "The parrot is talking into the microphone",
+			"sentence2": "The parrot is speaking",
+			"label": 1
+		},
+		{
+			"sentence1": "The speaker likes parrots",
+			"sentence2": "The parrot is talking into the microphone",
+			"label": 1
+		},
+		{
+			"sentence1": "The parrot is amazingly talking into the microphone",
+			"sentence2": "A parrot is speaking",
+			"label": 1
+		},
+		{
+			"sentence1": "The microphone in front of the talking parrot is being muted",
+			"sentence2": "A parrot is speaking",
+			"label": 1
+		},
+		{
+			"sentence1": "The parrot is talking into the microphone",
+			"sentence2": "A parrot is speaking",
+			"label": 1
+		},
+		{
+			"sentence1": "A few kittens are eating",
+			"sentence2": "Some kittens are eating",
+			"label": 1
+		},
+		{
+			"sentence1": "The food on the trays is being eaten by the kittens",
+			"sentence2": "The kittens are eating the food on the trays",
+			"label": 1
+		},
+		{
+			"sentence1": "The kittens on the trays are being eaten as food for an advertisement",
+			"sentence2": "Some kittens are eating",
+			"label": 1
+		},
+		{
+			"sentence1": "The food on the trays is being eaten by the kittens",
+			"sentence2": "A man is eating near the kittens",
+			"label": 1
+		},
+		{
+			"sentence1": "A person is singing and playing a guitar",
+			"sentence2": "A person is singing and playing the guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is putting away a guitar",
+			"sentence2": "A man is passionately playing a guitar",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is passionately playing a guitar",
+			"sentence2": "The guitar player loves the man passionately",
+			"label": 1
+		},
+		{
+			"sentence1": "A person is singing and playing the guitar",
+			"sentence2": "One man is passionately playing the guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "The guitar player loves the man passionately",
+			"sentence2": "A person is singing and playing the guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is passionately playing a guitar",
+			"sentence2": "There is no person singing and playing the guitar",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is passionately playing a guitar",
+			"sentence2": "The singer is playing the guitar in front of a person",
+			"label": 1
+		},
+		{
+			"sentence1": "A few animals are out of the water",
+			"sentence2": "A few animals are playing in the water",
+			"label": 1
+		},
+		{
+			"sentence1": "Nobody is playing ping pong",
+			"sentence2": "Two people are playing ping pong",
+			"label": 0
+		},
+		{
+			"sentence1": "Two people are playing ping pong",
+			"sentence2": "A ping pong player is meeting with two people",
+			"label": 1
+		},
+		{
+			"sentence1": "Two people are playing ping pong",
+			"sentence2": "A few animals are playing in the water",
+			"label": 1
+		},
+		{
+			"sentence1": "A ping pong player is meeting with two people",
+			"sentence2": "A few animals are playing in the water",
+			"label": 1
+		},
+		{
+			"sentence1": "Two people are playing ping pong",
+			"sentence2": "Some animals are playing wildly in the water",
+			"label": 1
+		},
+		{
+			"sentence1": "The windows are being cleaned by a man",
+			"sentence2": "The man has a window of time to clean himself",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is driving a car",
+			"sentence2": "The man isn't driving a car",
+			"label": 0
+		},
+		{
+			"sentence1": "The man is driving a car",
+			"sentence2": "The driver's car is parked by a man",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is driving a car carefully",
+			"sentence2": "The windows are being cleaned by a man",
+			"label": 1
+		},
+		{
+			"sentence1": "The windows are being cleaned by a man",
+			"sentence2": "The man isn't driving a car",
+			"label": 1
+		},
+		{
+			"sentence1": "The driver's car is parked by a man",
+			"sentence2": "The windows are being cleaned by a man",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is driving a car",
+			"sentence2": "The man has a window of time to clean himself",
+			"label": 1
+		},
+		{
+			"sentence1": "One chimp is angrily kicking the target",
+			"sentence2": "A chimp is angrily kicking a target",
+			"label": 1
+		},
+		{
+			"sentence1": "A chimp is angrily kicking a target",
+			"sentence2": "A chimp is missing the target",
+			"label": 0
+		},
+		{
+			"sentence1": "A chimp is angrily kicking a target",
+			"sentence2": "An angry man is targeting a kicking chimp",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman is pouring oil into a skillet",
+			"sentence2": "Oil is being poured into a skillet by the woman",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman isn't pouring oil into a skillet",
+			"sentence2": "The woman is pouring oil into a skillet",
+			"label": 0
+		},
+		{
+			"sentence1": "Oil is being poured into a skillet by the woman",
+			"sentence2": "A chimp is angrily kicking a target",
+			"label": 1
+		},
+		{
+			"sentence1": "A chimp is angrily kicking a target",
+			"sentence2": "The woman isn't pouring oil into a skillet",
+			"label": 1
+		},
+		{
+			"sentence1": "A chimp is angrily kicking a target",
+			"sentence2": "The skillet is being oiled by a woman who is pouring some water",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman is pouring oil into a skillet",
+			"sentence2": "One chimp is angrily kicking the target",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman is pouring oil into a skillet",
+			"sentence2": "A chimp is missing the target",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is setting up the camera and taking sunset pictures at the beach",
+			"sentence2": "A man is taking pictures of a lake",
+			"label": 1
+		},
+		{
+			"sentence1": "A woman is sewing with a machine",
+			"sentence2": "A woman is using a sewing machine",
+			"label": 1
+		},
+		{
+			"sentence1": "A woman is using a sewing machine",
+			"sentence2": "A woman is unstitching with a machine",
+			"label": 1
+		},
+		{
+			"sentence1": "A woman is cracking an egg into a bowl",
+			"sentence2": "A woman is placing a bowl with a crack near an egg",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman is cracking two eggs into a bowl made of glass",
+			"sentence2": "The woman is cracking two eggs into a glass bowl",
+			"label": 1
+		},
+		{
+			"sentence1": "A woman is cracking an egg into a bowl",
+			"sentence2": "The woman is not cracking two eggs into a glass bowl",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman is cracking two eggs into a glass bowl",
+			"sentence2": "An egg is being cracked into a bowl by a woman",
+			"label": 1
+		},
+		{
+			"sentence1": "A few men are cheerfully playing cricket",
+			"sentence2": "A few men are playing cricket",
+			"label": 1
+		},
+		{
+			"sentence1": "People are not playing cricket",
+			"sentence2": "People are playing cricket",
+			"label": 0
+		},
+		{
+			"sentence1": "A few men are playing cricket",
+			"sentence2": "Some people are playing cricket",
+			"label": 1
+		},
+		{
+			"sentence1": "A few men are playing cricket",
+			"sentence2": "People are not playing cricket",
+			"label": 0
+		},
+		{
+			"sentence1": "People are playing cricket",
+			"sentence2": "A few men are watching cricket",
+			"label": 1
+		},
+		{
+			"sentence1": "People are playing cricket",
+			"sentence2": "A few men are playing cricket",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is putting garlic on some slices of bread",
+			"sentence2": "A man is putting garlic on some bread slices",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is slicing some garlic and putting away the bread",
+			"sentence2": "A man is putting garlic on some bread slices",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is sprinkling seasoning on several sliced and buttered loaves of bread",
+			"sentence2": "A person is sprinkling seasoning on several sliced and buttered loaves of bread",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is putting garlic on some bread slices",
+			"sentence2": "There is no man sprinkling seasoning on several sliced and buttered loaves of bread",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is sprinkling seasoning on several sliced and buttered loaves of bread",
+			"sentence2": "A man is slicing some garlic and putting away the bread",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is putting garlic on some bread slices",
+			"sentence2": "A man is sprinkling seasoning on several sliced and buttered loaves of bread",
+			"label": 1
+		},
+		{
+			"sentence1": "Two crocodiles are floating in a green colored swimming pool near some playing kids",
+			"sentence2": "Two kids are playing in a swimming pool with a green colored crocodile float",
+			"label": 1
+		},
+		{
+			"sentence1": "Two kids are pulling an inflatable crocodile out of a pool",
+			"sentence2": "Two kids are pushing an inflatable crocodile in a pool",
+			"label": 1
+		},
+		{
+			"sentence1": "Two kids are playing in a swimming pool with a green colored crocodile float",
+			"sentence2": "Two kids are pulling an inflatable crocodile out of a pool",
+			"label": 1
+		},
+		{
+			"sentence1": "Two kids are playing in a swimming pool with a crocodile float that is green",
+			"sentence2": "Two kids are pushing an inflatable crocodile in a pool",
+			"label": 1
+		},
+		{
+			"sentence1": "Two kids are pushing an inflatable crocodile in a pool",
+			"sentence2": "Two kids are playing in a swimming pool with a green colored crocodile float",
+			"label": 1
+		},
+		{
+			"sentence1": "Someone is falling off a horse",
+			"sentence2": "Someone is on a horse",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is being knocked off of a horse",
+			"sentence2": "The man is not knocked off of a horse",
+			"label": 0
+		},
+		{
+			"sentence1": "The man is abruptly knocked off of a horse",
+			"sentence2": "Someone is falling off a horse",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is being knocked off of a horse",
+			"sentence2": "Someone is on a horse",
+			"label": 1
+		},
+		{
+			"sentence1": "A horse is falling on someone",
+			"sentence2": "The man is being knocked off of a horse",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is being knocked off of a horse",
+			"sentence2": "Someone is falling off a horse",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no woman tapping her fingers",
+			"sentence2": "A woman is tapping her fingers",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is tapping her fingers on a desk",
+			"sentence2": "A woman is tapping her fingers",
+			"label": 1
+		},
+		{
+			"sentence1": "The dog is knocking a boy into the water",
+			"sentence2": "A boy is being knocked into the water by the dog",
+			"label": 1
+		},
+		{
+			"sentence1": "The dog is not knocking the boy into the water",
+			"sentence2": "A dog is pushing a toddler into a rain puddle",
+			"label": 1
+		},
+		{
+			"sentence1": "The dog is knocking a boy into the water",
+			"sentence2": "A dog is pulling a toddler out of a rain puddle",
+			"label": 1
+		},
+		{
+			"sentence1": "The dog is knocking a boy into the water",
+			"sentence2": "A dog is pushing a toddler into a rain puddle",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is hungrily eating a bowl of cereal",
+			"sentence2": "A man is eating a bowl of cereal",
+			"label": 1
+		},
+		{
+			"sentence1": "Cereal is being eaten by the man",
+			"sentence2": "The man is eating cereal",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is eating cereal",
+			"sentence2": "There is no man eating cereal",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is eating a bowl of cereal",
+			"sentence2": "The man is eating cereal",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is playing the guitar",
+			"sentence2": "A man is strumming the guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is packing away the guitar",
+			"sentence2": "A man is playing the guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is playing the flute",
+			"sentence2": "The person is playing the flute",
+			"label": 1
+		},
+		{
+			"sentence1": "The man in not playing the flute",
+			"sentence2": "The man is playing the flute",
+			"label": 0
+		},
+		{
+			"sentence1": "A man is packing away the guitar",
+			"sentence2": "The man is playing the flute",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no woman adding spices to some meat",
+			"sentence2": "A woman is adding spices to some meat",
+			"label": 0
+		},
+		{
+			"sentence1": "The woman is adding sugar to the meat",
+			"sentence2": "The woman is not adding sugar to the meat",
+			"label": 0
+		},
+		{
+			"sentence1": "A woman is adding spices to some meat",
+			"sentence2": "The woman is adding sugar to the meat slowly",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman is not adding sugar to the meat",
+			"sentence2": "A woman is adding spices to some meat",
+			"label": 1
+		},
+		{
+			"sentence1": "A woman is adding spices to some meat",
+			"sentence2": "The woman is adding sugar to the meat",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman is adding sugar to the meat",
+			"sentence2": "There is no woman adding spices to some meat",
+			"label": 1
+		},
+		{
+			"sentence1": "A dog is biting a can",
+			"sentence2": "A can is being bitten by a dog",
+			"label": 1
+		},
+		{
+			"sentence1": "A dog is opening a can of food",
+			"sentence2": "A dog is closing a can of food",
+			"label": 1
+		},
+		{
+			"sentence1": "A dog is closing a can of food",
+			"sentence2": "A dog is biting a can",
+			"label": 1
+		},
+		{
+			"sentence1": "A can is being bitten by a dog",
+			"sentence2": "A dog is opening a can of food",
+			"label": 1
+		},
+		{
+			"sentence1": "A dog is dropping a can",
+			"sentence2": "A dog is opening a can of food",
+			"label": 1
+		},
+		{
+			"sentence1": "A cat is playing with a watermelon",
+			"sentence2": "There is no cat playing with a watermelon",
+			"label": 0
+		},
+		{
+			"sentence1": "The cat is playing with a watermelon",
+			"sentence2": "The cat isn't playing with a watermelon",
+			"label": 0
+		},
+		{
+			"sentence1": "A cat is playing with a watermelon",
+			"sentence2": "The cat is playing with a watermelon",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no boy playing a guitar",
+			"sentence2": "A boy is playing a guitar",
+			"label": 0
+		},
+		{
+			"sentence1": "A teenager is playing the guitar",
+			"sentence2": "A kid is playing a guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A kid is putting the guitar away",
+			"sentence2": "A kid is playing a guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A teenager is playing the guitar",
+			"sentence2": "A boy is playing a guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A boy is playing a guitar",
+			"sentence2": "A kid is putting the guitar away",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no boy playing a guitar",
+			"sentence2": "A kid is playing a guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A woman is wakeboarding on a lake",
+			"sentence2": "One woman is wakeboarding on the lake",
+			"label": 1
+		},
+		{
+			"sentence1": "A woman is wakeboarding on a lake",
+			"sentence2": "A woman is watching the lake",
+			"label": 1
+		},
+		{
+			"sentence1": "One woman is wakeboarding on the lake",
+			"sentence2": "The woman is waterskiing",
+			"label": 1
+		},
+		{
+			"sentence1": "A camera is being hammered onto the nail by the man",
+			"sentence2": "The man is hammering a nail with a camera",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is hammering a nail with a camera",
+			"sentence2": "The man is not hammering a nail with a camera",
+			"label": 0
+		},
+		{
+			"sentence1": "The man is hammering a nail with a camera",
+			"sentence2": "Someone is nailing a camera lens with loud bangs",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is hammering a nail with a camera",
+			"sentence2": "Someone is banging a camera lens against a nail",
+			"label": 1
+		},
+		{
+			"sentence1": "A person near an onion has a cut",
+			"sentence2": "A person is cutting an onion",
+			"label": 1
+		},
+		{
+			"sentence1": "One person is cutting an onion",
+			"sentence2": "A person is cutting an onion",
+			"label": 1
+		},
+		{
+			"sentence1": "A person is cutting an onion",
+			"sentence2": "There is no person cutting an onion",
+			"label": 0
+		},
+		{
+			"sentence1": "A person is cutting an onion",
+			"sentence2": "One person is cutting an onion",
+			"label": 1
+		},
+		{
+			"sentence1": "A carrot is being sliced by a woman",
+			"sentence2": "A woman is slicing a carrot",
+			"label": 1
+		},
+		{
+			"sentence1": "A woman is slicing a carrot",
+			"sentence2": "There is no woman slicing a carrot",
+			"label": 0
+		},
+		{
+			"sentence1": "The oriental lady is cutting a carrot into thin pieces",
+			"sentence2": "The oriental lady is cutting a carrot into pieces that are thin",
+			"label": 1
+		},
+		{
+			"sentence1": "A thin lady is piecing together oriental carrot cuts",
+			"sentence2": "A woman is slicing a carrot",
+			"label": 1
+		},
+		{
+			"sentence1": "The oriental lady is cutting a carrot into thin pieces",
+			"sentence2": "A carrot is being sliced by a woman",
+			"label": 1
+		},
+		{
+			"sentence1": "The oriental lady is cutting a carrot into thin pieces",
+			"sentence2": "A woman is slicing a carrot",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is pouring a plate of shredded cheese into a pot of sauce",
+			"sentence2": "A man is pouring a plate of cheese which is shredded into a pot of sauce",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is pouring a plate of shredded cheese into a pot of sauce",
+			"sentence2": "A man is taking a plate of shredded cheese off of a pot of sauce",
+			"label": 1
+		},
+		{
+			"sentence1": "The woman is adding cheese to the sauce",
+			"sentence2": "The lady is adding cheese to the sauce",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is pouring a plate of cheese which is shredded into a pot of sauce",
+			"sentence2": "The lady is adding cheese to the sauce",
+			"label": 1
+		},
+		{
+			"sentence1": "The lady is adding cheese to the sauce",
+			"sentence2": "A man is taking a plate of shredded cheese off of a pot of sauce",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is pouring a pot of cheese sauce into a shredded plate",
+			"sentence2": "The lady is adding cheese to the sauce",
+			"label": 1
+		},
+		{
+			"sentence1": "The lady is adding cheese to the sauce",
+			"sentence2": "A man is pouring a plate of shredded cheese into a pot of sauce",
+			"label": 1
+		},
+		{
+			"sentence1": "Some cameras are being burned by a person with a blow torch",
+			"sentence2": "A person is burning some cameras with a blow torch",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no person setting fire to the cameras",
+			"sentence2": "The person is setting fire to the cameras",
+			"label": 0
+		},
+		{
+			"sentence1": "A person is burning some cameras with a blow torch",
+			"sentence2": "The person is setting fire to the cameras",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is playing an acoustic guitar",
+			"sentence2": "The man is playing a guitar which is acoustic",
+			"label": 1
+		},
+		{
+			"sentence1": "The man isn't playing an acoustic guitar",
+			"sentence2": "The man is playing an acoustic guitar",
+			"label": 0
+		},
+		{
+			"sentence1": "The man is playing a guitar which is acoustic",
+			"sentence2": "A man is playing the guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A man is playing the guitar",
+			"sentence2": "The man isn't playing an acoustic guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "The man is playing an acoustic guitar",
+			"sentence2": "A man is playing the guitar",
+			"label": 1
+		},
+		{
+			"sentence1": "A person is cutting an onion into pieces",
+			"sentence2": "A person is piecing together an onion",
+			"label": 1
+		},
+		{
+			"sentence1": "A person is slicing a carrot into pieces",
+			"sentence2": "A carrot is being sliced into pieces by a person",
+			"label": 1
+		},
+		{
+			"sentence1": "There is no person slicing a carrot into pieces",
+			"sentence2": "A person is slicing a carrot into pieces",
+			"label": 0
+		}
+	]
+}

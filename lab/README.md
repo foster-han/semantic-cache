@@ -25,6 +25,10 @@ npm run typecheck
 | `scripts/calibrate.ts` | ③⑥ 的阈值，以及 ④ 的建议 θq（跟着 `CE_TARGET` 走） | 课程语料 |
 | `scripts/fetchQqp.ts` | 取 QQP 到 `data/`（`QQP_BALANCE=0` 保留原始正例率） | — |
 | `scripts/probeRerankQqp.ts` | ③④ 在 1000 对真人问题对上的完整曲线 | `data/qqp.json` |
+| `scripts/fetchPairs.ts` | 取 `redis/langcache-sentencepairs-v1` 的任一 config（跨 split 撒页、带退避重试） | — |
+| `scripts/scorePairs.ts` | **付一次推理成本**：所有 (数据集 × 打分器) 的分数与耗时存盘 | `data/langcache-*.json` → `data/scores.json` |
+| `scripts/benchPairs.ts` | 逐打分器 × 逐数据集的完整曲线 | `data/scores.json` |
+| `scripts/compareBaselines.ts` | **自研多闸 vs 主流单阈值**：GPTCache 出厂默认、各单闸调优上限、③+④ 串联的二维最优，外加性能 | `data/scores.json` |
 | `_probe_recallEncoderSanity.ts` | ③ 的编码器候选 + pooling 小样本自检 | 手工 5 对 |
 | `_probe_recallEncoders.ts` | ③ 三个配置的全量曲线（含 pooling 配错的代价） | `data/qqp.json` |
 | `_probe_rerankPipelined.ts` | ④ **以 ③ 的工作点为条件**重评，含全放行基线 | `data/qqp.json` |
@@ -32,9 +36,21 @@ npm run typecheck
 | `_probe_thresholdConfidence.ts` | 那个 θq 有多可信（平台宽度 / 留一 / bootstrap） | 课程语料 18 对 |
 | `_probe_recallEncodersZh.ts` | 中文上还有没有判别力（**方向已定不再推进**，留作那条结论的复现入口） | 中文探针 |
 
+**分数算一次，分析随便跑。**模型推理是这里唯一贵的东西（五个打分器 × 四份数据约半小时），
+而「套 GPTCache 的默认阈值」「扫 ③④ 串联的二维阈值」「换 precision 约束」全是纯计算。
+所以 `scorePairs.ts` 先把分数与耗时存进 `data/scores.json`（入库，它是那些表的直接凭据），
+`benchPairs.ts` 与 `compareBaselines.ts` 都只读它、秒级跑完。**先前 benchPairs 自己跑模型，
+和 scorePairs 算同一件事** —— 两份实现算同一个数，慢的那份还会因为跑在不同时间而对不上。
+
 指标实现全部在 [`ProbeMetrics.ts`](ProbeMetrics.ts) 一份里。**先前每个探针各抄一份，
 而它们抄得不一样** —— cross-encoder 的 logits 路数判断有严谨版和宽松版两种，取错路
 分数整个反向且不报错。同一件事有两种实现时，被信任的总是错的那一份。
+
+取样也有两条防呆，都是撞出来的：`fetchPairs.ts` **跨 split 随机撒页而不是顺序取前 N 行**
+（`all` config 按 source 分块，顺序取只会拿到第一个来源 —— 实测拿到的 800 对逐条等于
+`paws` 那一份），并且**限流时退避重试、失败不写文件**（datasets-server 限流返回的是
+HTML 不是 JSON，一次静默失败会让一份数据停留在旧版本上）。数据文件里的 `sampling`、
+`sources`、`balanced`、`positiveRate` 四个字段就是为了让这些事说得出来。
 
 `ProbeMetrics.bestHitAtPrecision` 里有一条防呆值得单独说：**「正命中率 ≥ X%」这个门槛
 低于全放行基线时，它返回 `baseline-already-passes` 而不是一个数字。**子集正例率就是全放行
@@ -187,6 +203,9 @@ node --experimental-strip-types scripts/calibrate.ts   # 标定 θq / θa，认 
    是构造上必然出错的组合，SDK 在写入前就抛错，而不是等 ⑥ 去兜。卡片把这算作通过。
 3. **单条场景细看** —— 逐闸判定与分数。跑在自己的缓存上，不影响手动探索。
 4. **手动探索** —— 自己出题、改开关、调阈值。结果显示在这一区里。
+5. **运行指标** —— 命中率、命中/未命中延迟、判定分布、**未命中时被哪道闸拦下**、
+   分段命中率。只统计手动提问，对照实验与场景回放不进（那两个一次点击就灌几百条
+   构造流量，混进来命中率就变成「场景集的构成比例」）。`GET /api/metrics` 同一份数据。
 
 **只有「清空缓存」按钮会清手动探索的缓存。** 对照实验和场景回放各跑在隔离的缓存上。
 

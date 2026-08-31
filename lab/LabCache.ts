@@ -10,11 +10,13 @@
 import {
 	compare,
 	createMemoryCacheStore,
+	createMetrics,
 	createSemanticCache,
 	evaluate,
 	type CachedPayload,
 	type CacheEntry,
 	type CachePrompt,
+	type CacheResult,
 	type Chunk,
 	type EvaluationReport,
 	type GateTrace,
@@ -89,6 +91,8 @@ interface LabChunk extends Chunk {
 }
 
 export interface LabResult {
+	/** SDK 原始返回 —— 指标累加器要吃它，验证台自己的字段是给页面看的 */
+	readonly raw: CacheResult;
 	readonly answer: string;
 	readonly decision: "reuse" | "tune" | "regenerate";
 	readonly outcome: string;
@@ -134,6 +138,8 @@ export function createLab(
 ) {
 	let docs: Array<CourseDoc> = DOCS.map(d => ({ ...d }));
 	let counters: LabCounters = fresh();
+	/** 手动提问的运行指标。对齐 Redis LangCache 看板那一组，再加六道闸的分布 */
+	const metrics = createMetrics({ latencySamples: 512 });
 	/**
 	 * 这一次运行该用哪组阈值，由 (语料 × 编码器 × 生成端) 决定 —— 三者都是运行期才
 	 * 知道的，所以标定不能是模块常量。`calibration` 同时带着每个 stage 各自的
@@ -348,15 +354,29 @@ export function createLab(
 			trace: result.trace,
 			anonymized: prompt.matchText,
 			retrievalText: prompt.retrievalText,
+			raw: result,
 		};
 	}
 
 	async function ask(input: LabAsk, override?: Partial<LabConfig>): Promise<LabResult> {
 		const cfg: LabConfig = { ...defaults, ...override };
 		counters.ask += 1;
+		const started = Date.now();
 		const result = await runOn(build(cfg), input, cfg);
 		const key = result.outcome as keyof LabCounters;
 		if (key in counters) counters[key] += 1;
+		/**
+		 * 只有**手动提问**进指标，对照实验和场景回放不进。
+		 *
+		 * 那两个是离线跑标注集，一次点击就灌进几百条构造流量 —— 混进来的话看板上的
+		 * 命中率就变成「场景集的构成比例」，而不是「真实提问的命中情况」。
+		 * 这跟缓存本身要隔离是同一个道理。
+		 */
+		metrics.record({
+			result: result.raw,
+			ms: Date.now() - started,
+			segment: result.raw.trace[0]?.detail.match(/scope = ([^（(]+)/)?.[1]?.trim(),
+		});
 		return result;
 	}
 
@@ -471,6 +491,8 @@ export function createLab(
 		scenario,
 		reset,
 		bumpCorpus,
+		metrics: () => metrics.snapshot(),
+		resetMetrics: () => metrics.reset(),
 		generator: { kind: generator.kind, note: generator.note, approxMsPerCall: generator.approxMsPerCall },
 		defaults,
 		calibration,
