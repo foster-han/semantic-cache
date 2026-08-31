@@ -14,12 +14,20 @@ const byId = id => DOCS.find(d => d.id === id);
  * 不重标，标出来的数就是别人分布上的产物。
  */
 const generator = createGenerator();
+
+/**
+ * **随机生成端必须多采样。** 实测 DeepSeek 连跑五轮，margin 在 0.0041~0.0368 之间摆，
+ * 差了近 9 倍 —— 单轮结果测的是采样噪声，不是分布。stub 是确定性的，1 次就够。
+ */
+const SAMPLES = Number(process.env.CALIB_SAMPLES ?? (generator.kind === "stub" ? 1 : 3));
+
 const answerCache = new Map();
-async function compose(d) {
-  if (answerCache.has(d.id)) return answerCache.get(d.id);
+async function compose(d, sample = 0) {
+  const key = `${d.id}#${sample}`;
+  if (answerCache.has(key)) return answerCache.get(key);
   if (generator.kind === "stub") {
     const text = composeAnswer([d]);
-    answerCache.set(d.id, text);
+    answerCache.set(key, text);
     return text;
   }
   // 真生成要有问题可答 —— 用文档标题构成学生会问的那句话
@@ -29,9 +37,15 @@ async function compose(d) {
     [{ id: d.id, text: d.text, score: 1, title: d.title, version: d.version }],
   );
   const text = payload.kind === "answer" ? payload.answer : "";
-  answerCache.set(d.id, text);
+  answerCache.set(key, text);
   return text;
 }
+
+const median = xs => {
+  const a = [...xs].sort((x, y) => x - y);
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
 
 const PROBES = LANGUAGE === "en" ? [
   ["paraphrase   should MATCH", "What is overfitting?", "What does overfitting mean?", true],
@@ -89,18 +103,26 @@ const spec = [
   ["该拦下 人名", "h3", "h4"],
   ["该拦下 无关", "n18", "hw3"],
 ];
-const cases = [];
-for (const [tag, answerDoc, chunkDoc] of spec) {
-  cases.push([tag, await compose(byId(answerDoc)), byId(chunkDoc).text]);
-}
-const av = await enc.embedPassage(cases.map(c => c[1]));
-const cv2 = await enc.embedPassage(cases.map(c => c[2]));
+if (SAMPLES > 1) console.log(`    每条用例采样 ${SAMPLES} 次，取中位数 —— 随机生成端下单次结果测的是噪声`);
+
 const reuse = [], block = [];
-for (let i = 0; i < cases.length; i++) {
-  const s = cosine(av[i], cv2[i]);
-  (cases[i][0].startsWith("该复用") ? reuse : block).push(s);
-  console.log("   ", cases[i][0].padEnd(12), s.toFixed(4));
+for (const [tag, answerDoc, chunkDoc] of spec) {
+  const chunkText = byId(chunkDoc).text;
+  const scores = [];
+  for (let k = 0; k < SAMPLES; k++) {
+    const answer = await compose(byId(answerDoc), k);
+    const [av, cv2] = await enc.embedPassage([answer, chunkText]);
+    scores.push(cosine(av, cv2));
+  }
+  const m = median(scores);
+  (tag.startsWith("该复用") ? reuse : block).push(m);
+  const spread = SAMPLES > 1 ? `  （${SAMPLES} 次：${Math.min(...scores).toFixed(4)}~${Math.max(...scores).toFixed(4)}）` : "";
+  console.log("   ", tag.padEnd(12), m.toFixed(4) + spread);
 }
-const lo = Math.min(...reuse), hi = Math.max(...block);
-console.log(`    → 该复用最低 ${lo.toFixed(4)} | 该拦下最高 ${hi.toFixed(4)} | margin ${(lo-hi).toFixed(4)} → ${lo>hi?"可分":"**重叠**"}`);
+// **用中位数，不用 min/max。** 极值统计量对单个坏样本最敏感 —— 生成端一旦是随机的，
+// min(该复用) 和 max(该拦下) 测的就是那次最差的采样，而不是分布的位置。
+const lo = median(reuse), hi = median(block);
+const worst = Math.min(...reuse), best = Math.max(...block);
+console.log(`    → 该复用中位 ${lo.toFixed(4)} | 该拦下中位 ${hi.toFixed(4)} | margin ${(lo-hi).toFixed(4)} → ${lo>hi?"可分":"**重叠**"}`);
+console.log(`    → 最坏情况：该复用最低 ${worst.toFixed(4)} vs 该拦下最高 ${best.toFixed(4)}${worst>best?"":"　**这两组在最坏情况下重叠 —— 任何单一阈值都会同时犯两种错**"}`);
 if (lo > hi) console.log(`    → 建议 θa高 ≈ ${(lo - (lo-hi)*0.25).toFixed(3)} / θa低 ≈ ${(hi + (lo-hi)*0.25).toFixed(3)}`);

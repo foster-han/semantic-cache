@@ -48,7 +48,7 @@ function runClaude(args: ReadonlyArray<string>, prompt: string, timeoutMs: numbe
 	});
 }
 
-export type GeneratorKind = "stub" | "claude-cli";
+export type GeneratorKind = "stub" | "claude-cli" | "deepseek";
 
 export interface LabGenerator {
 	readonly kind: GeneratorKind;
@@ -146,9 +146,106 @@ function claudeCliGenerator(): LabGenerator {
 	};
 }
 
+/* ---------- DeepSeek（OpenAI 兼容的 /chat/completions） ---------- */
+
+/**
+ * 直接打 HTTP，不经过任何 agent harness。
+ *
+ * 这是**第一个能在真生成下跑完整场景集的选项**：一次 1~3 秒，416 次约 15 分钟，
+ * 而 `claude -p` 起进程要 8.5 秒、同样的量要一个多小时。有了它，「关掉 ⑥ 假命中
+ * 从 0 升到 4」这类端到端结论才第一次能在真 LLM 上复验，而不是在 stub 上。
+ *
+ * 零依赖：Node 自带 fetch，不引任何 SDK。
+ */
+function deepseekGenerator(): LabGenerator {
+	const key = process.env.DEEPSEEK_API_KEY;
+	if (!key) {
+		throw new Error(
+			"GEN=deepseek 需要 DEEPSEEK_API_KEY。若你的 Codex 已经配好 DeepSeek，可以从那儿取：\n" +
+				`  export DEEPSEEK_API_KEY=$(grep -oP 'experimental_bearer_token\\s*=\\s*"\\K[^"]+' ~/.codex/config.toml)`,
+		);
+	}
+	const baseUrl = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/u, "");
+	const model = process.env.GEN_MODEL ?? "deepseek-v4-flash";
+	const timeoutMs = Number(process.env.GEN_TIMEOUT_MS ?? 120_000);
+
+	async function ask(user: string): Promise<string> {
+		// 429 和 5xx 是暂时的，值得重试；4xx 是请求本身错了，重试没意义
+		let lastError = "";
+		for (let attempt = 0; attempt < 3; attempt++) {
+			if (attempt > 0) await new Promise(r => setTimeout(r, 400 * 2 ** attempt));
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), timeoutMs);
+			try {
+				const res = await fetch(`${baseUrl}/chat/completions`, {
+					method: "POST",
+					headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+					body: JSON.stringify({
+						model,
+						messages: [
+							{ role: "system", content: SYSTEM },
+							{ role: "user", content: user },
+						],
+						// 生成要稳定：同一份资料 + 同一个问题，两次跑出来的答案分布不该差太多，
+						// 否则标定的支撑度是在测采样噪声
+						temperature: 0.2,
+						max_tokens: 400,
+					}),
+					signal: controller.signal,
+				});
+				const body = (await res.json()) as {
+					choices?: Array<{ message?: { content?: string } }>;
+					error?: { message?: string };
+				};
+				if (!res.ok) {
+					lastError = `HTTP ${res.status}：${body.error?.message ?? "(无错误信息)"}`;
+					if (res.status !== 429 && res.status < 500) break;
+					continue;
+				}
+				const text = (body.choices?.[0]?.message?.content ?? "").trim();
+				if (text === "") {
+					lastError = "返回空内容";
+					continue;
+				}
+				return text;
+			} catch (err) {
+				lastError = String(err);
+			} finally {
+				clearTimeout(timer);
+			}
+		}
+		throw new Error(
+			`DeepSeek 生成失败（GEN=deepseek, model=${model}）。这里不退回 stub —— ` +
+				`两种分布混在一起标出来的 θa 比标不准更糟。最后一次错误：${lastError}`,
+		);
+	}
+
+	return {
+		kind: "deepseek",
+		note: `deepseek ${model} —— 真生成，约 1~3 秒一次，完整 bench 跑得动（~15 分钟）`,
+		approxMsPerCall: 2_000,
+		async generate(prompt, chunks) {
+			const answer =
+				chunks.length === 0
+					? "（本课程下没有可用资料）"
+					: await ask(`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}`);
+			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
+		},
+		async refine(cachedAnswer, prompt, chunks) {
+			const answer = await ask(
+				`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}\n\n` +
+					`下面是之前给别的同学的答案，大体对但不一定贴合这次的资料。请**基于上面的资料**把它改得贴合，` +
+					`能沿用就沿用，不要从头重写：\n${cachedAnswer}`,
+			);
+			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
+		},
+	};
+}
+
 export function createGenerator(): LabGenerator {
 	const wanted = process.env.GEN ?? "stub";
 	if (wanted === "claude-cli") return claudeCliGenerator();
-	if (wanted !== "stub") throw new Error(`GEN=${wanted} 无法识别。只能是 stub / claude-cli。`);
+	if (wanted === "deepseek") return deepseekGenerator();
+	if (wanted !== "stub") throw new Error(`GEN=${wanted} 无法识别。只能是 stub / claude-cli / deepseek。`);
 	return stubGenerator();
 }

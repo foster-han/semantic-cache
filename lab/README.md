@@ -65,9 +65,27 @@ MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm s
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `GEN` | `stub` | `stub` / `claude-cli`（走本机 Claude Code，**不需要 API key**） |
-| `GEN_MODEL` | 无 | 传给 `claude -p --model` |
+| `GEN` | `stub` | `stub` / `claude-cli` / `deepseek` |
+| `GEN_MODEL` | 按后端 | `claude -p --model` 的值；deepseek 默认 `deepseek-v4-flash` |
 | `GEN_TIMEOUT_MS` | `120000` | 单次超时 |
+| `DEEPSEEK_API_KEY` | 无 | `GEN=deepseek` 必需 |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | 换兼容端点 |
+| `CALIB_SAMPLES` | stub 1 / 其余 3 | `calibrate.ts` 每条用例采样几次 |
+
+三个生成端的取舍：
+
+| | 一次耗时 | 完整 bench（416 次） | 要什么 |
+|---|---|---|---|
+| `stub` | 0 | 秒级 | 什么都不要，但**不是真生成** |
+| `claude-cli` | ~8.5 秒 | 一个多小时，**跑不动** | 本机 Claude Code，不用 API key |
+| `deepseek` | **~1 秒** | **~15 分钟，跑得动** | `DEEPSEEK_API_KEY` |
+
+Codex 用户注意：若你的 Codex 已经配好 DeepSeek，key 可以直接取出来 ——
+
+```bash
+export DEEPSEEK_API_KEY=$(grep -oP 'experimental_bearer_token\s*=\s*"\K[^"]+' ~/.codex/config.toml)
+GEN=deepseek MODE=local npm start
+```
 
 `claude-cli` 约 8.5 秒一次，够用来重新标定和手动/场景验证；**完整 bench 跑不动**
 （13 场景 × 30 条干扰 ≈ 416 次 ≈ 1 小时），所以页面上会把对照实验卡禁掉。
