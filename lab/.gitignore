@@ -1,0 +1,5 @@
+# 数据默认不入库，但 qqp.json 是例外：FINDINGS 的数字全基于它那一份，
+# 当成跑分基准钉在仓库里。见 data/README.md
+data/*
+!data/README.md
+!data/qqp.json

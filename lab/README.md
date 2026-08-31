@@ -14,6 +14,33 @@ npm run stub       # 零依赖秒起，但分数没有统计意义
 npm run typecheck
 ```
 
+## 探针与跑分脚本
+
+`scripts/` 下是可复现的正式脚本，`_probe_*.ts` 是各回结论的复现入口（跑一次要几分钟到
+十几分钟，所以不进 `npm run` 的快捷方式）。数字都记在 [`FINDINGS.md`](../FINDINGS.md)，
+这里只说哪个脚本对应哪一节。
+
+| 脚本 | 回答什么 | 数据 |
+|---|---|---|
+| `scripts/calibrate.ts` | ③⑥ 的阈值，以及 ④ 的建议 θq（跟着 `CE_TARGET` 走） | 课程语料 |
+| `scripts/fetchQqp.ts` | 取 QQP 到 `data/`（`QQP_BALANCE=0` 保留原始正例率） | — |
+| `scripts/probeRerankQqp.ts` | ③④ 在 1000 对真人问题对上的完整曲线 | `data/qqp.json` |
+| `_probe_recallEncoderSanity.ts` | ③ 的编码器候选 + pooling 小样本自检 | 手工 5 对 |
+| `_probe_recallEncoders.ts` | ③ 三个配置的全量曲线（含 pooling 配错的代价） | `data/qqp.json` |
+| `_probe_rerankPipelined.ts` | ④ **以 ③ 的工作点为条件**重评，含全放行基线 | `data/qqp.json` |
+| `_probe_ce6.ts` | ④ 的 candidate 传旧问题还是旧答案（2×2） | 课程语料 18 对 |
+| `_probe_thresholdConfidence.ts` | 那个 θq 有多可信（平台宽度 / 留一 / bootstrap） | 课程语料 18 对 |
+| `_probe_recallEncodersZh.ts` | 中文上还有没有判别力（**方向已定不再推进**，留作那条结论的复现入口） | 中文探针 |
+
+指标实现全部在 [`ProbeMetrics.ts`](ProbeMetrics.ts) 一份里。**先前每个探针各抄一份，
+而它们抄得不一样** —— cross-encoder 的 logits 路数判断有严谨版和宽松版两种，取错路
+分数整个反向且不报错。同一件事有两种实现时，被信任的总是错的那一份。
+
+`ProbeMetrics.bestHitAtPrecision` 里有一条防呆值得单独说：**「正命中率 ≥ X%」这个门槛
+低于全放行基线时，它返回 `baseline-already-passes` 而不是一个数字。**子集正例率就是全放行
+的正命中率，一道把候选筛得只剩正例的前置闸会把基线推到 90% 以上，此时任何打分器靠
+「什么都放行」就能达标、报出漂亮的 100% 命中率。那不是判别力，是门槛失效。
+
 ## 配置：四个互不相干的轴
 
 **编码器、语料、存储、生成端是四件独立的事，随便组合。** npm scripts 只是常见组合的
@@ -34,7 +61,19 @@ MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm s
 | `MODE` | `local` | `local` 真模型（ONNX，本地跑）/ `stub` 字符 Jaccard 的哈希投影 |
 | `PAIR_MODEL` | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | ③ 缓存匹配（问题↔问题） |
 | `RETR_MODEL` | `Xenova/multilingual-e5-small` | 检索 + ⑥ 的答案侧编码 |
-| `CE_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | ④ 精排。**默认这个在中文上全盲**（18 对真实对子 margin −0.0003）。想跑 ④ 的真实精度：`CE_MODEL=Xenova/bge-reranker-base`（margin +0.7801），换完必须重标 θq。候选实测见 [FINDINGS](../FINDINGS.md) |
+| `CE_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | ④ 精排。**默认这个在中文上全盲**（18 对真实对子 margin −0.0003）。想跑 ④ 的真实精度：`CE_MODEL=Xenova/bge-reranker-base`，换完必须重标 θq。候选实测见 [FINDINGS](../FINDINGS.md) |
+| `CE_TARGET` | `question` | ④ 把**旧问题**还是**旧答案**递给重排器。`answer` 才是 query→passage，手上可得的重排器都是那么训练的 —— 同一个 `bge-reranker-base`，留一交叉验证 27.8%（问↔答，假负 0）对 50%（问↔问，假负 1）。**换形态就是换尺度，θq 不通用**，所以标定表按 (模型 × 形态) 索引 |
+
+中文上已标定过、可直接跑的 ④ 组合只有一个：
+
+```bash
+CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer npm start
+```
+
+其余 (模型 × 形态) 组合表里没有 θq，④ 就是关的 —— 页面横幅会说明是「没加载到模型」
+还是「这个组合没标定过」。要自己标：`lab/_probe_ce6.ts` 量判别力，`scripts/calibrate.ts`
+出建议值（两者都跟着 `CE_TARGET` 走），然后补一行到 `Calibrations.ts` 的
+`RERANK_CALIBRATIONS`。
 
 ### ② 语料
 
