@@ -554,7 +554,36 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				expiresAt: ttl === null || ttl === undefined ? null : created + ttl,
 				meta: items[i].options?.meta,
 			};
+			/**
+			 * 写入前查一次「同一个问题是否已经有条目」。
+			 *
+			 * 并发未命中是这里唯一的来源：进程内有合流挡着，跨进程挡不住 ——
+			 * 两个进程各自生成、各自写入，就留下两行同 `(scope, matchHash)`。
+			 * 这一次查询把重复窗口从**整个生成时长**（秒级）缩到**一次往返**
+			 * （毫秒级），而两次生成几乎不会在同一毫秒结束。
+			 *
+			 * **比原文，不只比哈希。** `matchHash` 是非密码学哈希，一次碰撞是
+			 * 两个完全不同的问题 —— 它们该共存，不该互相覆盖。这正是 ② 在读路径上
+			 * 的做法（哈希命中之后再比一次原文），这里只是把同一条规矩用到写入侧。
+			 *
+			 * 没有做成 `(scope, match_hash)` 唯一索引：那会让一次碰撞变成两个问题
+			 * 永久互相踢，而且要动 schema、要改 `put` 语义、要再改一次 `entryId`
+			 * 语义。重复行是**良性**的（`getByHash` 确定性取最新，③ 顶多浪费一个
+			 * 候选位），不值得为它换一次契约变更。理由见 DESIGN.md 的并发一节。
+			 */
+			const normalized = normalizeKey(prompt.matchText);
+			const existing = await options.store.getByHash(slot.scope, slot.matchHash);
+			const duplicate =
+				existing && existing.id !== items[i].options?.supersedes && normalizeKey(existing.matchText) === normalized
+					? existing.id
+					: null;
+
 			await options.store.put(entry);
+
+			// 先写后删。多于两行时一次只收一条，靠后续写入收敛 —— 反正读路径不受影响。
+			for (const stale of new Set([items[i].options?.supersedes, duplicate])) {
+				if (stale !== undefined && stale !== null) await options.store.evict(stale);
+			}
 			written.push(entry);
 		}
 		return written;
@@ -647,6 +676,12 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	 * 顺序反过来之后，同 (scope, matchHash) 的两条会共存几毫秒 —— 这是安全的：
 	 * `getByHash` 的契约就是取最新的那条，读到的一定是替换后的那一条。
 	 */
+	/**
+	 * 替换一条：写新的，成功后驱逐旧的。
+	 *
+	 * 驱逐由 `writeMany` 统一做（`supersedes`），和「写入前查重」是同一段逻辑 ——
+	 * 两者都是「写完之后收掉一条该走的」，没必要两套。
+	 */
 	async function replaceEntry(
 		supersededId: string,
 		prompt: CachePrompt,
@@ -654,9 +689,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		writeOptions: WriteOptions | undefined,
 		ticket: WriteTicket,
 	): Promise<CacheEntry> {
-		const replacement = await write(prompt, payload, { ...writeOptions, ticket });
-		await options.store.evict(supersededId);
-		return replacement;
+		return write(prompt, payload, { ...writeOptions, ticket, supersedes: supersededId });
 	}
 
 	/**
