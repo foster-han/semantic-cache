@@ -108,6 +108,8 @@ CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer npm start
 | `STORE` | 按上面推断 | `memory` / `pgvector` / `redis`，显式覆盖推断 |
 | `SEMCACHE_TABLE` | `semantic_cache_<维度>` | pgvector 表名 |
 | `SEMCACHE_NS` | `semcache_<维度>` | Redis key 前缀 |
+| `SEMCACHE_EVICT` | 无 | `fifo` / `rr` / `lru` / `lfu`，配合 `SEMCACHE_CAPACITY`。不设就不淘汰（只靠 TTL） |
+| `SEMCACHE_CAPACITY` | `10000` | 每个 scope 最多留多少条 |
 | `SEMCACHE_ANN` | 无 | `1` 则建近似索引（HNSW）；默认 scope 内精确 KNN |
 
 默认名带上向量维度，是因为 stub 是 256 维、e5-small 是 384 维 ——

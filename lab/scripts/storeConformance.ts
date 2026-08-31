@@ -169,6 +169,8 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	out.push(`purgeExpired=${await store.purgeExpired()}`);
 	out.push(`purge 后=${(await store.all()).map(e => e.id).join(",")}`);
 
+	/* touch：fifo/rr 必须是真空操作，lru/lfu 必须真记账。
+	   这一条只在配了 eviction 的库上有意义，所以放在末尾单独跑（见 evictionRun）。 */
 	await store.clear();
 	out.push(`clear 后=${(await store.all()).length}`);
 	return out;
@@ -183,9 +185,65 @@ if (backing.kind === "memory") {
 	);
 }
 
+/**
+ * 淘汰策略的一致性。**四种策略在三个后端必须给出同一批留存 id** ——
+ * `rr` 例外（它的语义就是随机），只比条数。
+ *
+ * 不定序的话「删哪一条」就成了实现细节，换后端结果就变，而那种差异只会在
+ * 缓存被写爆之后才显形 —— 最难查的一类。
+ */
+async function evictionRun(policy: "fifo" | "rr" | "lru" | "lfu", s: InspectableCacheStore): Promise<Array<string>> {
+	const out: Array<string> = [];
+	await s.clear();
+
+	/**
+	 * **先把容量填满，再 touch，最后写第 4 条。**
+	 *
+	 * 先前的写法是连写 6 条再 touch —— 那时要 touch 的条目早被淘汰了，
+	 * `touch` 打在不存在的 id 上静默返回，于是 lru/lfu 跑出和 fifo 一样的结果、
+	 * 记账也是「无」。四种策略"一致"但一致地什么都没测到。
+	 */
+	for (let i = 0; i < 3; i++) await s.put(entry(`e${i}`, "course:1", `h-${i}`, i + 1, ["n1"], null));
+	await s.touch("e0");
+	await s.touch("e0");
+	await s.touch("e1");
+	await s.put(entry("e3", "course:1", "h-3", 4, ["n1"], null));
+
+	const kept = (await s.all()).map(x => x.id).sort();
+	out.push(policy === "rr" ? `${policy}: 留 ${kept.length} 条（随机，只比条数）` : `${policy}: ${kept.join(",")}`);
+
+	// fifo/rr 不该在读路径写入；lru/lfu 必须真记账
+	const probe = await s.getById("e0");
+	const accounted = probe?.lastUsedAt !== undefined || probe?.useCount !== undefined;
+	out.push(`${policy}: e0 记账=${accounted ? `有(次数 ${probe?.useCount ?? "-"})` : "无"}`);
+
+	/**
+	 * LFU 的一个真实性质，值得写成判据：**新条目 useCount=0，会被立刻淘汰。**
+	 * 它不是 bug，是纯频率策略的固有代价 —— 冷启动的条目永远攒不到次数。
+	 */
+	if (policy === "lfu") {
+		await s.put(entry("brandnew", "course:1", "h-new", 99, ["n1"], null));
+		const after = (await s.all()).map(x => x.id);
+		out.push(`lfu: 新条目留下了吗=${after.includes("brandnew") ? "留下" : "**立刻被淘汰**"}`);
+	}
+
+	await s.clear();
+	return out;
+}
+
 const memory = await run(createMemoryCacheStore({ now }), now);
 const real = await run(backing.store, now);
 await backing.close();
+
+/* 淘汰策略：每种策略各建一次库（配置在建库时定死，不能中途改） */
+const POLICIES = ["fifo", "lru", "lfu", "rr"] as const;
+for (const policy of POLICIES) {
+	const cfg = { policy, capacity: 3 } as const;
+	memory.push(...(await evictionRun(policy, createMemoryCacheStore({ now, eviction: cfg }))));
+	const side = await createLabStore({ dimensions: { match: DIM, answer: DIM }, now, eviction: cfg });
+	real.push(...(await evictionRun(policy, side.store)));
+	await side.close();
+}
 
 let bad = 0;
 for (let i = 0; i < Math.max(memory.length, real.length); i++) {

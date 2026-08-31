@@ -22,6 +22,15 @@ export interface CacheEntry {
 	readonly createdAt: number;
 	readonly expiresAt: number | null;
 	readonly meta?: Readonly<Record<string, string>>;
+	/**
+	 * 最近一次被复用的时间。`lru` 淘汰用，其他策略下恒为 undefined。
+	 *
+	 * 写入时不设 —— 那时它等于 `createdAt`，多存一遍没有信息。排序时用
+	 * `lastUsedAt ?? createdAt`。
+	 */
+	readonly lastUsedAt?: number;
+	/** 被复用过几次。`lfu` 淘汰用，其他策略下恒为 undefined */
+	readonly useCount?: number;
 }
 
 export interface Candidate {
@@ -86,6 +95,21 @@ export interface CacheStore {
 	 * 挂个定时任务调它即可。
 	 */
 	purgeExpired(): Promise<number>;
+	/**
+	 * 命中时记账。**`fifo`/`rr` 下必须是真正的空操作**（不发请求、不写盘）——
+	 * 那两种策略不需要读路径写入，而调用方会无条件调它，策略知识留在存储里。
+	 *
+	 * `lru` 更新 `lastUsedAt`，`lfu` 自增 `useCount`。条目不存在时静默返回：
+	 * 它可能刚被并发驱逐，为一次记账失败让整个命中路径抛错不值得。
+	 */
+	touch(id: string): Promise<void>;
+	/**
+	 * 把一个 scope 压回容量上限，返回删掉的条数。没配 `eviction` 时返回 0。
+	 *
+	 * 由存储在 `put` 之后自己调，所以调用方通常不用碰它；单独暴露是为了能测，
+	 * 也为了让运维能对某个 scope 手动收一次。
+	 */
+	evictOverCapacity(scope: string): Promise<number>;
 }
 
 /**

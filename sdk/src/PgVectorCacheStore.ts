@@ -1,4 +1,5 @@
 import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
+import type { EvictionConfig } from "./types/Eviction.ts";
 import type { SqlExecutor } from "./types/SqlExecutor.ts";
 
 /**
@@ -41,6 +42,8 @@ export interface PgVectorCacheStoreOptions {
 	 */
 	readonly ann?: boolean;
 	readonly now?: () => number;
+	/** 容量淘汰。不给就不淘汰 —— 只靠 TTL 与显式失效 */
+	readonly eviction?: EvictionConfig;
 }
 
 /** 表名只可能来自代码或环境变量，但它是拼进 SQL 的——必须先验一遍。 */
@@ -111,12 +114,14 @@ function toEntry(row: Record<string, unknown>): CacheEntry {
 		createdAt: readNumber(row, "created_at"),
 		expiresAt: readNullableNumber(row, "expires_at"),
 		meta: row.meta === null || row.meta === undefined ? undefined : readRecord(row, "meta"),
+		lastUsedAt: readNullableNumber(row, "last_used_at") ?? undefined,
+		useCount: readNullableNumber(row, "use_count") ?? undefined,
 	};
 }
 
 const COLUMNS =
 	"id, scope, match_text, match_hash, match_vector, kind, answer, plan, answer_vector, " +
-	"source_ids, source_version, created_at, expires_at, meta";
+	"source_ids, source_version, created_at, expires_at, meta, last_used_at, use_count";
 
 /** `vector(384)` → 384；不是向量列时返回 null。 */
 function parseVectorDimension(formattedType: string): number | null {
@@ -131,6 +136,25 @@ export function createPgVectorCacheStore(
 	assertIdentifier(table);
 	const { sql, dimensions } = options;
 	const now = options.now ?? (() => Date.now());
+	const eviction = options.eviction;
+
+	/**
+	 * 淘汰时的**保留优先级**：排在前面的先保住，`OFFSET capacity` 之后的删掉。
+	 *
+	 * 三种确定性策略都带 `id` 做次级键 —— 同毫秒写入、同使用次数时若不定序，
+	 * 「删哪一条」就成了实现细节，三种后端会给出不同答案。`rr` 例外，
+	 * 它的语义就是随机。
+	 *
+	 * `lfu` 在次数相同时退到 LRU：纯 LFU 会让早期攒够次数的老条目永远赖着不走。
+	 */
+	const keepOrderSql =
+		eviction?.policy === "lru"
+			? "COALESCE(last_used_at, created_at) DESC, id DESC"
+			: eviction?.policy === "lfu"
+				? "COALESCE(use_count, 0) DESC, COALESCE(last_used_at, created_at) DESC, id DESC"
+				: eviction?.policy === "rr"
+					? "random()"
+					: "created_at DESC, id DESC";
 	// 索引名不能带 schema 前缀，但要跟着表名走，免得两张表的索引重名
 	const bare = table.includes(".") ? table.slice(table.indexOf(".") + 1) : table;
 
@@ -190,9 +214,15 @@ export function createPgVectorCacheStore(
 					source_version text NOT NULL DEFAULT '',
 					created_at     bigint NOT NULL,
 					expires_at     bigint,
-					meta           jsonb
+					meta           jsonb,
+					-- lru/lfu 的记账列。fifo/rr 下永远是 NULL，不写就不占空间
+					last_used_at   bigint,
+					use_count      integer
 				)`,
 			);
+			// 老表升级：加列是幂等的，不会碰已有数据
+			await sql.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS last_used_at bigint`);
+			await sql.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS use_count integer`);
 			await assertDimensions();
 
 			// ② 精确匹配：scope + hash 直接定位，过期判断跟着走索引不用回表
@@ -250,7 +280,7 @@ export function createPgVectorCacheStore(
 		async put(entry) {
 			await sql.query(
 				`INSERT INTO ${table} (${COLUMNS})
-				 VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8::jsonb, $9::vector, $10::text[], $11, $12, $13, $14::jsonb)`,
+				 VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8::jsonb, $9::vector, $10::text[], $11, $12, $13, $14::jsonb, $15, $16)`,
 				[
 					entry.id,
 					entry.scope,
@@ -267,8 +297,19 @@ export function createPgVectorCacheStore(
 					entry.createdAt,
 					entry.expiresAt,
 					entry.meta === undefined ? null : JSON.stringify(entry.meta),
+					entry.lastUsedAt ?? null,
+					entry.useCount ?? null,
 				],
 			);
+			if (eviction) {
+				await sql.query(
+					`DELETE FROM ${table} WHERE id IN (
+					   SELECT id FROM ${table} WHERE scope = $1
+					   ORDER BY ${keepOrderSql} OFFSET $2
+					 )`,
+					[entry.scope, eviction.capacity],
+				);
+			}
 		},
 
 		async evict(id) {
@@ -278,6 +319,34 @@ export function createPgVectorCacheStore(
 		async evictBySource(sourceId) {
 			// `&&` 是数组重叠，走 GIN 索引；`source_ids` 里出现过这篇资料就失效
 			const done = await sql.query(`DELETE FROM ${table} WHERE source_ids && ARRAY[$1]::text[]`, [sourceId]);
+			return done.rowCount ?? 0;
+		},
+
+		async touch(id) {
+			// fifo/rr 不需要记账 —— 这里连一次往返都不发
+			if (eviction?.policy !== "lru" && eviction?.policy !== "lfu") return;
+			// 条目可能刚被并发驱逐 —— 0 行受影响就是正常结果，不抛
+			await sql.query(
+				`UPDATE ${table} SET last_used_at = $2, use_count = COALESCE(use_count, 0) + 1 WHERE id = $1`,
+				[id, now()],
+			);
+		},
+
+		/**
+		 * 一条语句压回容量，不先 COUNT。
+		 *
+		 * `ORDER BY <保留优先级> OFFSET capacity` 选出的正是「超出上限的那些」——
+		 * 少一次往返，也避免 COUNT 与 DELETE 之间的竞态。
+		 */
+		async evictOverCapacity(scope) {
+			if (!eviction) return 0;
+			const done = await sql.query(
+				`DELETE FROM ${table} WHERE id IN (
+				   SELECT id FROM ${table} WHERE scope = $1
+				   ORDER BY ${keepOrderSql} OFFSET $2
+				 )`,
+				[scope, eviction.capacity],
+			);
 			return done.rowCount ?? 0;
 		},
 

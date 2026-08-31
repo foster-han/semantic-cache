@@ -213,6 +213,36 @@ compare(withGate, without).falseHitDelta;  // 这道闸的价值
 画 precision/recall 曲线定阈值，precision ≥ 95% 再放量，shadow mode 先行。
 **默认阈值只是占位，必须在你自己的数据上重标。**
 
+## 容量淘汰
+
+```ts
+createPgVectorCacheStore({ ..., eviction: { policy: "fifo", capacity: 10000 } });
+// policy: "fifo" | "rr" | "lru" | "lfu"
+```
+
+**容量是每 scope 的，不是全库。** 召回是 scope 内的（③ 的 pre-filter），所以「太多」
+是 scope 内的概念；按全库设上限会让热门 scope 挤掉冷门 scope 的全部条目 ——
+那是多租户里最难查的一类问题。
+
+| 策略 | 排序依据 | 命中时要记账吗 |
+|---|---|---|
+| `fifo` | 写入时间（本来就存着） | **不要** |
+| `rr` | 随机 | **不要** |
+| `lru` | 最近使用时间 | **要** —— 每次命中一次写 |
+| `lfu` | 使用次数（同次数退到 LRU） | **要** |
+
+**`lru`/`lfu` 会把命中路径变成写路径**，而命中越多写越多 —— 命中多正是这东西
+起作用的时候。所以推荐从 `fifo` 起步：它拿已有的 `createdAt` 排序，零额外成本，
+对「问题分布随时间漂移」这个语义缓存的主要失效模式已经够用。
+
+`touch()` 在 `fifo`/`rr` 下是**真正的空操作**（连一次往返都不发），所以 SDK 无条件
+调它，策略知识留在存储里。三个后端的四种策略跑同一份判据
+（`lab/scripts/storeConformance.ts`），必须给出同一批留存 id。
+
+**LFU 的固有代价写成了判据**：新条目 `useCount=0`，很容易被立刻淘汰。次数封顶
+1023（Redis 自己的 LFU 用 8 位对数计数器，理由一样）—— 不封顶的话早期攒够次数的
+老条目永远赖着不走。
+
 ## 运行指标
 
 ```ts

@@ -13,6 +13,7 @@ import {
 	type InspectableCacheStore,
 	type RedisExecutor,
 	type SqlExecutor,
+	type EvictionConfig,
 } from "../sdk/src/index.ts";
 
 export type LabStoreKind = "memory" | "pgvector" | "redis";
@@ -78,6 +79,8 @@ export interface LabStoreOptions {
 	readonly dimensions: { readonly match: number; readonly answer: number };
 	/** 注入时钟，供一致性测试构造「已过期」条目 */
 	readonly now?: () => number;
+	/** 容量淘汰。一致性测试要按策略分别建库，所以从外面传 */
+	readonly eviction?: EvictionConfig;
 }
 
 /**
@@ -102,6 +105,19 @@ export async function createLabStore(options: LabStoreOptions): Promise<LabStore
 	const redisUrl = process.env.SEMCACHE_REDIS;
 	const kind = pickKind(pgUrl, redisUrl, process.env.STORE);
 	const ann = process.env.SEMCACHE_ANN === "1";
+	/**
+	 * 淘汰策略也从环境变量来，跟其他四个轴一致。
+	 * 显式传进来的 `options.eviction` 优先（一致性测试要按策略分别建库）。
+	 */
+	const envPolicy = process.env.SEMCACHE_EVICT;
+	if (envPolicy !== undefined && !['fifo', 'rr', 'lru', 'lfu'].includes(envPolicy)) {
+		throw new Error(`SEMCACHE_EVICT=${envPolicy} 无法识别。只能是 fifo / rr / lru / lfu。`);
+	}
+	const eviction =
+		options.eviction ??
+		(envPolicy === undefined
+			? undefined
+			: { policy: envPolicy as EvictionConfig["policy"], capacity: Number(process.env.SEMCACHE_CAPACITY ?? 10000) });
 
 	/**
 	 * 默认表名/命名空间**带上维度**。
@@ -118,7 +134,7 @@ export async function createLabStore(options: LabStoreOptions): Promise<LabStore
 
 	if (kind === "memory") {
 		return {
-			store: createMemoryCacheStore({ now: options.now }),
+			store: createMemoryCacheStore({ now: options.now, eviction }),
 			kind,
 			note: "内存 —— 进程退出即丢。设 SEMCACHE_DB 换 pgvector，设 SEMCACHE_REDIS 换 Redis。",
 			async close() {},
@@ -137,6 +153,7 @@ export async function createLabStore(options: LabStoreOptions): Promise<LabStore
 			namespace,
 			dimensions: options.dimensions,
 			now: options.now,
+			eviction,
 			ann,
 		});
 		await store.ensureSchema();
@@ -161,6 +178,7 @@ export async function createLabStore(options: LabStoreOptions): Promise<LabStore
 		table,
 		dimensions: options.dimensions,
 		now: options.now,
+		eviction,
 		ann,
 	});
 	await store.ensureSchema();

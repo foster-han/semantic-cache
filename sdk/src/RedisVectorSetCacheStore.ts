@@ -1,4 +1,5 @@
 import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
+import type { EvictionConfig } from "./types/Eviction.ts";
 import type { RedisExecutor } from "./types/RedisExecutor.ts";
 
 /**
@@ -51,6 +52,8 @@ export interface RedisVectorSetCacheStoreOptions {
 	readonly dimensions: { readonly match: number; readonly answer: number };
 	/** key 前缀，默认 `semcache`。换编码器就换一个，等同于 pgvector 那边换表名 */
 	readonly namespace?: string;
+	/** 容量淘汰。不给就不维护排序集合，零额外开销 */
+	readonly eviction?: EvictionConfig;
 	/**
 	 * 用 HNSW 近似检索。**默认关闭**，也就是 scope 内精确 KNN（`VSIM ... TRUTH`）。
 	 *
@@ -91,6 +94,9 @@ const FIELDS = [
 	"created_at",
 	"expires_at",
 	"meta",
+	// lru/lfu 的记账列。追加在末尾，前面的顺序一个都不动
+	"last_used_at",
+	"use_count",
 ] as const;
 
 /** Lua 里拼 `HMGET` 用的字面量列表 */
@@ -168,6 +174,9 @@ function toEntry(values: ReadonlyArray<unknown>): CacheEntry | null {
 		// 空串是「没有」，不是 0 —— createdAt 用不着这个区分，expiresAt 用得着
 		expiresAt: expiresAt === "" ? null : Number(expiresAt),
 		meta: meta === "" ? undefined : parseRecord(meta),
+		// 空串 = 从没记过账（fifo/rr 下永远如此），不是 0
+		lastUsedAt: at("last_used_at") === "" ? undefined : Number(at("last_used_at")),
+		useCount: at("use_count") === "" ? undefined : Number(at("use_count")),
 	};
 }
 
@@ -201,6 +210,27 @@ return 'OK'
  * **一条条目的本体加 5 个索引，始终在同一个脚本里删完**：多结构写一半崩掉留下的
  * 孤儿索引，是这条路上唯一会静默给出错答案的失效方式。
  */
+/**
+ * LFU 的分数要**同时装下次数和时间**。
+ *
+ * zset 只有一个 double，而次数相同时必须退到 LRU 破平 —— 否则同分的条目只能按成员
+ * 字典序淘汰，那时「刚写进去的新条目」会因为 id 恰好靠前而被立刻删掉，
+ * 和内存/pgvector 的结果不一致（一致性测试就是这么抓到的）。
+ *
+ * 打包：`min(次数, 1023) * 2^41 + 毫秒时间戳`。
+ *   - 41 位放得下毫秒时间戳到 2039 年（2^41 ≈ 2.199e12，当前约 1.77e12）
+ *   - 次数封顶 1023 占 10 位，合计 51 位，在 double 的 53 位有效位之内
+ *
+ * **次数封顶是有意的，不是精度妥协。** Redis 自己的 LFU 用的是 8 位对数计数器，
+ * 理由一样：不封顶的计数器会让早期攒够次数的老条目永远赖着不走。
+ */
+const LFU_COUNT_CAP = 1023;
+const LFU_TIME_BITS = 2 ** 41;
+
+function lfuScore(useCount: number, lastUsedAt: number): number {
+	return Math.min(useCount, LFU_COUNT_CAP) * LFU_TIME_BITS + lastUsedAt;
+}
+
 const SCRIPT_EVICT = `
 local n = 0
 for i = 2, #ARGV do
@@ -213,6 +243,7 @@ for i = 2, #ARGV do
     redis.call('ZREM', KEYS[2], id)
     redis.call('ZREM', ARGV[1] .. ':h:' .. m[1] .. ':' .. m[2], id)
     redis.call('SREM', ARGV[1] .. ':scope:' .. m[1], id)
+    redis.call('ZREM', ARGV[1] .. ':rank:' .. m[1], id)
     for _, s in ipairs(cjson.decode(m[3])) do redis.call('SREM', ARGV[1] .. ':src:' .. s, id) end
     n = n + 1
   end
@@ -235,6 +266,7 @@ for i = 3, #ARGV do
       redis.call('ZREM', KEYS[2], id)
       redis.call('ZREM', ARGV[1] .. ':h:' .. m[1] .. ':' .. m[2], id)
       redis.call('SREM', ARGV[1] .. ':scope:' .. m[1], id)
+      redis.call('ZREM', ARGV[1] .. ':rank:' .. m[1], id)
       for _, s in ipairs(cjson.decode(m[3])) do redis.call('SREM', ARGV[1] .. ':src:' .. s, id) end
       n = n + 1
     end
@@ -305,6 +337,46 @@ export function createRedisVectorSetCacheStore(
 ): InspectableCacheStore & { ensureSchema(): Promise<void> } {
 	const namespace = options.namespace ?? "semcache";
 	assertNamespace(namespace);
+	const eviction = options.eviction;
+
+	/**
+	 * 排序集合的分数 = **保留优先级**，分数越高越先保住，删的是分数最低的。
+	 *
+	 * `fifo` 用写入时间（分数写一次就不动）、`lru` 用最近使用时间（touch 时覆盖）、
+	 * `lfu` 用使用次数（touch 时自增）。`rr` 不需要顺序，走 SET 的随机取样，
+	 * 所以它不维护这个集合。
+	 */
+	function keepScore(entry: CacheEntry): number {
+		switch (eviction?.policy) {
+			case "lru":
+				return entry.lastUsedAt ?? entry.createdAt;
+			case "lfu":
+				return lfuScore(entry.useCount ?? 0, entry.lastUsedAt ?? entry.createdAt);
+			default:
+				return entry.createdAt;
+		}
+	}
+
+	/** 把一个 scope 压回容量，返回删掉的条数。rr 走随机取样，其余走排序集合 */
+	async function trim(scope: string): Promise<number> {
+		if (!eviction) return 0;
+		if (eviction.policy === "rr") {
+			const size = Number(await redis.sendCommand(["SCARD", keys.scope(scope)]));
+			const over = size - eviction.capacity;
+			if (over <= 0) return 0;
+			// SRANDMEMBER 带负数会给重复元素，所以取正数再去重
+			const picked = (await redis.sendCommand(["SRANDMEMBER", keys.scope(scope), String(over)])) as Array<string>;
+			const ids = [...new Set(picked.map(String))];
+			return ids.length === 0 ? 0 : await deleteIds(ids);
+		}
+		const size = Number(await redis.sendCommand(["ZCARD", keys.rank(scope)]));
+		const over = size - eviction.capacity;
+		if (over <= 0) return 0;
+		// 分数最低的那批就是该走的
+		const doomed = (await redis.sendCommand(["ZRANGE", keys.rank(scope), "0", String(over - 1)])) as Array<string>;
+		const ids = doomed.map(String);
+		return ids.length === 0 ? 0 : await deleteIds(ids);
+	}
 	const { redis, dimensions } = options;
 	const now = options.now ?? (() => Date.now());
 	const batchSize = options.batchSize ?? 500;
@@ -335,6 +407,8 @@ export function createRedisVectorSetCacheStore(
 		byHash: (scope: string, hash: string) => `${namespace}:h:${scope}:${hash}`,
 		/** `clearScope` 要按 scope 枚举，向量集给不了 */
 		scope: (scope: string) => `${namespace}:scope:${scope}`,
+		/** 淘汰排序集合。分数含义随策略变；只在配了 eviction 时才维护 */
+		rank: (scope: string) => `${namespace}:rank:${scope}`,
 		/** ⑤ 语料改版时按资料 id 反查，等价于 pgvector 那边的 GIN 索引 */
 		source: (sourceId: string) => `${namespace}:src:${sourceId}`,
 	};
@@ -467,6 +541,9 @@ export function createRedisVectorSetCacheStore(
 				// 空串是「永不过期」。落 0 会让它变成「早就过期」
 				"expires_at", entry.expiresAt === null ? "" : String(entry.expiresAt),
 				"meta", entry.meta === undefined ? "" : JSON.stringify(entry.meta),
+				// lru/lfu 的记账列。空串 = 没记过，读回来是 undefined
+				"last_used_at", entry.lastUsedAt === undefined ? "" : String(entry.lastUsedAt),
+				"use_count", entry.useCount === undefined ? "" : String(entry.useCount),
 			];
 			const attributes = JSON.stringify({ scope: entry.scope, expires_at: entry.expiresAt ?? NEVER });
 			const done = await evalScript(
@@ -490,6 +567,13 @@ export function createRedisVectorSetCacheStore(
 			if (asText(done) === "DUP") {
 				throw new Error(`缓存条目 id 重复：${entry.id}。id 由库生成，重复只可能是生成器碰撞。`);
 			}
+			if (eviction) {
+				// rr 不需要排序集合 —— 它用 scope 的 SET 做随机取样
+				if (eviction.policy !== "rr") {
+					await redis.sendCommand(["ZADD", keys.rank(entry.scope), String(keepScore(entry)), entry.id]);
+				}
+				await trim(entry.scope);
+			}
 		},
 
 		async evict(id) {
@@ -498,6 +582,28 @@ export function createRedisVectorSetCacheStore(
 
 		async evictBySource(sourceId) {
 			return deleteIds(await listSetIds(keys.source(sourceId)));
+		},
+
+		async touch(id) {
+			// fifo/rr 不需要记账 —— 这里连一次往返都不发
+			if (eviction?.policy !== "lru" && eviction?.policy !== "lfu") return;
+			const ek = keys.entry(id);
+			const got = (await redis.sendCommand(["HMGET", ek, "scope", "use_count"])) as Array<string | null>;
+			const scope = got[0];
+			if (scope === null || scope === undefined) return; // 可能刚被并发驱逐，静默返回
+			const next = Number(got[1] ?? 0) + 1;
+			const stamp = now();
+			await redis.sendCommand(["HSET", ek, "last_used_at", String(stamp), "use_count", String(next)]);
+			await redis.sendCommand([
+				"ZADD",
+				keys.rank(String(scope)),
+				String(eviction.policy === "lfu" ? lfuScore(next, stamp) : stamp),
+				id,
+			]);
+		},
+
+		async evictOverCapacity(scope) {
+			return trim(scope);
 		},
 
 		async purgeExpired() {

@@ -20,6 +20,7 @@ export type { ComparisonReport, EvaluationHooks, EvaluationReport, Scenario, Sce
 export type { EncoderRole, PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "./types/Encoders.ts";
 export type { Calibrated, RecallStage, RerankStage, SupportStage } from "./types/Calibration.ts";
 export type { CacheEntry, CacheStore, Candidate, InspectableCacheStore } from "./types/CacheStore.ts";
+export type { EvictionConfig, EvictionPolicy } from "./types/Eviction.ts";
 export type { RedisExecutor } from "./types/RedisExecutor.ts";
 export type { SqlExecutor, SqlRows } from "./types/SqlExecutor.ts";
 export type { Chunk, Retriever, SourceVersionResolver } from "./types/Retrieval.ts";

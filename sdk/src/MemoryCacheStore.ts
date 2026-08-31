@@ -1,5 +1,6 @@
 import { cosine } from "./VectorMath.ts";
 import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
+import type { EvictionConfig } from "./types/Eviction.ts";
 
 /**
  * 内存实现。用于单测、离线标定和本地验证台。
@@ -11,9 +12,44 @@ import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/Cache
  * `all()` / `clear()` 是异步的，尽管内存里同步就能做完 —— 这样调用方从内存
  * 切到 pgvector 时不用改一遍 await。
  */
-export function createMemoryCacheStore(options?: { now?: () => number }): InspectableCacheStore {
+export function createMemoryCacheStore(options?: {
+	now?: () => number;
+	/** 容量淘汰。不给就不淘汰 —— 只靠 TTL 与显式失效 */
+	eviction?: EvictionConfig;
+}): InspectableCacheStore {
 	const now = options?.now ?? (() => Date.now());
+	const eviction = options?.eviction;
 	let entries: Array<CacheEntry> = [];
+
+	/**
+	 * 淘汰时的**保留优先级**：排在前面的先保住，超出容量的从尾部删。
+	 *
+	 * 三种确定性策略都带 id 做次级键 —— 同毫秒写入、同使用次数时如果不定序，
+	 * 「删哪一条」就成了实现细节，三种后端会给出不同答案。`rr` 例外，
+	 * 它的语义就是随机。
+	 */
+	function keepOrder(a: CacheEntry, b: CacheEntry): number {
+		switch (eviction?.policy) {
+			case "lru": {
+				const ua = a.lastUsedAt ?? a.createdAt;
+				const ub = b.lastUsedAt ?? b.createdAt;
+				return ub - ua || (a.id < b.id ? 1 : -1);
+			}
+			case "lfu": {
+				const ca = a.useCount ?? 0;
+				const cb = b.useCount ?? 0;
+				if (ca !== cb) return cb - ca;
+				// 次数相同时退到 LRU —— 纯 LFU 会让早期攒够次数的老条目永远赖着不走
+				const ua = a.lastUsedAt ?? a.createdAt;
+				const ub = b.lastUsedAt ?? b.createdAt;
+				return ub - ua || (a.id < b.id ? 1 : -1);
+			}
+			case "rr":
+				return Math.random() - 0.5;
+			default: // fifo：留最新的
+				return b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1);
+		}
+	}
 
 	function live(): Array<CacheEntry> {
 		const t = now();
@@ -51,6 +87,11 @@ export function createMemoryCacheStore(options?: { now?: () => number }): Inspec
 				throw new Error(`缓存条目 id 重复：${entry.id}。id 由库生成，重复只可能是生成器碰撞。`);
 			}
 			entries.push(entry);
+			if (!eviction) return;
+			const scoped = entries.filter(e => e.scope === entry.scope);
+			if (scoped.length <= eviction.capacity) return;
+			const doomed = new Set(scoped.sort(keepOrder).slice(eviction.capacity).map(e => e.id));
+			entries = entries.filter(e => !doomed.has(e.id));
 		},
 		async evict(id) {
 			entries = entries.filter(e => e.id !== id);
@@ -60,6 +101,24 @@ export function createMemoryCacheStore(options?: { now?: () => number }): Inspec
 			entries = entries.filter(e => !e.sourceIds.includes(sourceId));
 			return before - entries.length;
 		},
+		async touch(id) {
+			// fifo/rr 不需要记账 —— 真正的空操作，连查找都不做
+			if (eviction?.policy !== "lru" && eviction?.policy !== "lfu") return;
+			const i = entries.findIndex(e => e.id === id);
+			if (i < 0) return; // 可能刚被并发驱逐，静默返回
+			const e = entries[i];
+			entries[i] = { ...e, lastUsedAt: now(), useCount: (e.useCount ?? 0) + 1 };
+		},
+
+		async evictOverCapacity(scope) {
+			if (!eviction) return 0;
+			const scoped = entries.filter(e => e.scope === scope);
+			if (scoped.length <= eviction.capacity) return 0;
+			const doomed = new Set(scoped.sort(keepOrder).slice(eviction.capacity).map(e => e.id));
+			entries = entries.filter(e => !doomed.has(e.id));
+			return doomed.size;
+		},
+
 		async purgeExpired() {
 			const t = now();
 			const before = entries.length;

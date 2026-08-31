@@ -354,6 +354,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				verdict: "off",
 				detail: "plan 条目无实体特定内容 —— 实体是参数，执行时填参并授权",
 			});
+			await options.store.touch(entry.id);
 			return {
 				outcome: wasExact ? "exact" : "reuse",
 				payload: payloadOf(entry),
@@ -435,6 +436,13 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 
 		/* 置信带 */
 		const confident = supportValue >= support.thresholds.high || !gates.answerCheck;
+		/**
+		 * 命中记账。`fifo`/`rr` 的存储实现里这是真正的空操作（不发请求），
+		 * 所以这里无条件调 —— 策略知识留在存储里，判定逻辑不该知道用的哪一种。
+		 *
+		 * 中带也算命中：它复用了这条条目的答案。
+		 */
+		await options.store.touch(entry.id);
 		return {
 			outcome: confident ? (wasExact ? "exact" : "reuse") : "mid",
 			payload: payloadOf(entry),
