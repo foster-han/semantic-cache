@@ -24,6 +24,7 @@ const lab = createLab(encoders, backing.store);
 
 console.log(`\n模型后端：${encoders.mode}　—　${encoders.note}`);
 console.log(`存储后端：${backing.kind}　—　${backing.note}`);
+console.log(`生成后端：${lab.generator.kind}　—　${lab.generator.note}`);
 if (encoders.mode === "stub") {
 	console.log("⚠  stub 模式的分数没有统计意义，只用来跑通控制流。真验证请用 MODE=local。");
 }
@@ -53,6 +54,7 @@ async function snapshot() {
 		mode: encoders.mode,
 		note: encoders.note,
 		store: { kind: backing.kind, note: backing.note },
+		generator: lab.generator,
 		rerankAvailable: encoders.rerankAvailable,
 		defaults: DEFAULTS,
 		course: COURSE,

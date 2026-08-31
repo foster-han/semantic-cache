@@ -1,11 +1,37 @@
 /** 语言无关的标定：① 重排器判别力 ② ⑥ 支撑度阈值 ③ 检索 top-1 命中率 */
 import { createEncoders, cosine } from "../Models.ts";
 import { compose as composeAnswer, DOCS, LANGUAGE } from "../Corpus.ts";
+import { createGenerator } from "../Generators.ts";
 const enc = await createEncoders();
 const byId = id => DOCS.find(d => d.id === id);
-// **和运行路径用同一个 compose** —— 标定与实现分叉过一次，代价是英文语料下
-// 阈值高过了支撑度天花板，任何条目都无法直接复用。
-const compose = d => composeAnswer([d]);
+
+/**
+ * **标定必须和运行路径用同一个生成端。** 分叉过一次，代价是英文语料下阈值高过了
+ * 支撑度天花板，任何条目都无法直接复用。
+ *
+ * 所以这里走的是 Generators.ts 那个端口：默认 stub（换序换壳，支撑度天然偏高），
+ * `GEN=claude-cli` 换真生成。**θa 只在标定它的那个生成端上有效** —— 换了生成端
+ * 不重标，标出来的数就是别人分布上的产物。
+ */
+const generator = createGenerator();
+const answerCache = new Map();
+async function compose(d) {
+  if (answerCache.has(d.id)) return answerCache.get(d.id);
+  if (generator.kind === "stub") {
+    const text = composeAnswer([d]);
+    answerCache.set(d.id, text);
+    return text;
+  }
+  // 真生成要有问题可答 —— 用文档标题构成学生会问的那句话
+  const q = LANGUAGE === "en" ? `What is ${d.title}?` : `${d.title}是什么？`;
+  const payload = await generator.generate(
+    { matchText: q, retrievalText: q, context: {} },
+    [{ id: d.id, text: d.text, score: 1, title: d.title, version: d.version }],
+  );
+  const text = payload.kind === "answer" ? payload.answer : "";
+  answerCache.set(d.id, text);
+  return text;
+}
 
 const PROBES = LANGUAGE === "en" ? [
   ["paraphrase   should MATCH", "What is overfitting?", "What does overfitting mean?", true],
@@ -48,20 +74,25 @@ for (let i = 0; i < qs.length; i++) {
 }
 console.log(`    → top-1 命中 ${hit}/${qs.length}`);
 
-console.log("\n③ ⑥ 支撑度阈值（答案↔片段，同一 passage 空间）");
-const cases = [
-  ["该复用", compose(byId("n5")), byId("n5").text],
-  ["该复用", compose(byId("n13")), byId("n13").text],
-  ["该复用", compose(byId("n11")), byId("n11").text],
-  ["该拦下 反义", compose(byId("n5")), byId("n6").text],
-  ["该拦下 反义", compose(byId("n11")), byId("n10").text],
-  ["该拦下 跨章", compose(byId("n14")), byId("n16").text],
-  ["该拦下 跨章", compose(byId("n4")), byId("n17").text],
+console.log(`\n③ ⑥ 支撑度阈值（答案↔片段，同一 passage 空间）　生成端 ${generator.kind}`);
+if (generator.kind !== "stub") console.log(`    （真生成，${10} 条用例，约 ${Math.round(generator.approxMsPerCall * 8 / 1000)} 秒）`);
+const spec = [
+  ["该复用", "n5", "n5"],
+  ["该复用", "n13", "n13"],
+  ["该复用", "n11", "n11"],
+  ["该拦下 反义", "n5", "n6"],
+  ["该拦下 反义", "n11", "n10"],
+  ["该拦下 跨章", "n14", "n16"],
+  ["该拦下 跨章", "n4", "n17"],
   // 个人数据已从语料里移除（那是路由 + 授权的事），相应的标定用例也随之删除
-  ["该拦下 人名", compose(byId("h1")), byId("h2").text],
-  ["该拦下 人名", compose(byId("h3")), byId("h4").text],
-  ["该拦下 无关", compose(byId("n18")), byId("hw3").text],
+  ["该拦下 人名", "h1", "h2"],
+  ["该拦下 人名", "h3", "h4"],
+  ["该拦下 无关", "n18", "hw3"],
 ];
+const cases = [];
+for (const [tag, answerDoc, chunkDoc] of spec) {
+  cases.push([tag, await compose(byId(answerDoc)), byId(chunkDoc).text]);
+}
 const av = await enc.embedPassage(cases.map(c => c[1]));
 const cv2 = await enc.embedPassage(cases.map(c => c[2]));
 const reuse = [], block = [];

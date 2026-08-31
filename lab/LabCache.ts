@@ -32,6 +32,7 @@ import {
 	STUDENT_RECORDS,
 	SYL_V2,
 } from "./Corpus.ts";
+import { createGenerator, type LabGenerator } from "./Generators.ts";
 import { cosine, type LabEncoders } from "./Models.ts";
 import type { CourseDoc, LabAsk, LabScenario } from "./types/Corpus.ts";
 import type { LabConfig, LabCounters } from "./types/LabConfig.ts";
@@ -119,7 +120,11 @@ export interface LabBenchReport {
  * 验证台不该知道自己接的是哪一种。两种后端跑同一份场景集应当得到同样的数字，
  * 这本身就是一条可验证的断言（见 scripts/compareStores.ts）。
  */
-export function createLab(encoder: LabEncoders, store: InspectableCacheStore = createMemoryCacheStore()) {
+export function createLab(
+	encoder: LabEncoders,
+	store: InspectableCacheStore = createMemoryCacheStore(),
+	generator: LabGenerator = createGenerator(),
+) {
 	let docs: Array<CourseDoc> = DOCS.map(d => ({ ...d }));
 	let counters: LabCounters = fresh();
 
@@ -171,21 +176,13 @@ export function createLab(encoder: LabEncoders, store: InspectableCacheStore = c
 
 	// kind 是必填的 —— 缺了它 SDK 会把这条当成 plan 处理（sourceIds 落空）。
 	// 验证台原来是 .mjs，这个契约变更没在编译期报错，所以踩过一次；转 TS 就是为此。
-	const generate = async (_request: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload> => ({
-		kind: "answer",
-		answer: compose(chunks as ReadonlyArray<LabChunk>),
-		sourceIds: chunks.map(c => c.id),
-	});
+	// 生成端是可切换的端口（GEN=stub / claude-cli）。stub 是换序换壳，不是真生成 ——
+	// ⑥ 的支撑度因此天然偏高，θa 的绝对值在它上面标不准。见 Generators.ts。
+	const generate = (prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload> =>
+		generator.generate(prompt, chunks);
 
-	const refine = async (
-		cachedAnswer: string,
-		_request: CachePrompt,
-		chunks: ReadonlyArray<Chunk>,
-	): Promise<CachedPayload> => ({
-		kind: "answer",
-		answer: `${cachedAnswer}${refineSuffix((chunks[0] as LabChunk | undefined)?.title ?? "—")}`,
-		sourceIds: chunks.map(c => c.id),
-	});
+	const refine = (cachedAnswer: string, prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload> =>
+		generator.refine(cachedAnswer, prompt, chunks);
 
 	/**
 	 * 按一组开关组装一个 SDK 实例。
@@ -299,10 +296,16 @@ export function createLab(encoder: LabEncoders, store: InspectableCacheStore = c
 	 * 场景集回归。判据用 SDK 的 evaluate ——「答案的首要依据是不是那篇资料」，
 	 * 不是「有没有复用」。命中另一条内容正确的缓存也算成功。
 	 */
-	async function bench(override?: Partial<LabConfig>): Promise<LabBenchReport> {
+	async function bench(override?: Partial<LabConfig>, storeOverride?: InspectableCacheStore): Promise<LabBenchReport> {
 		const cfg: LabConfig = { ...DEFAULTS, ...override };
-		// 隔离缓存：跑对照实验不该动到手动探索攒下来的条目
-		const isolated = createMemoryCacheStore();
+		/**
+		 * 默认跑在一个一次性的内存缓存上 —— 点一次对照实验不该动到手动探索攒下来的条目。
+		 *
+		 * `storeOverride` 是留给 `compareStores.ts` 的：那个脚本的全部意义就是让同一份
+		 * 场景集**真的落到真库上**。不传的话它比的是内存跟内存，
+		 * 「换存储不改判定」就成了一句空话，而且空得看不出来——两列数字永远一致。
+		 */
+		const isolated = storeOverride ?? createMemoryCacheStore();
 		const cache = build(cfg, isolated);
 		const scenarios: Array<Scenario> = SCENARIOS.map((s: LabScenario) => ({
 			key: s.key,
@@ -326,11 +329,14 @@ export function createLab(encoder: LabEncoders, store: InspectableCacheStore = c
 			});
 		} catch (err) {
 			docs = DOCS.map(d => ({ ...d }));
+			await isolated.clear();
 			// SDK 拒绝了这个配置 —— 这本身就是有效结果，如实报出来
 			return { rejected: true, reason: String(err instanceof Error ? err.message : err), rows: [], total: 0, falseHit: 0, missed: 0 };
 		}
 		// 只还原语料版本。手动缓存不归这里管
 		docs = DOCS.map(d => ({ ...d }));
+		// 跑完不留状态。一次性内存缓存随手就丢，这一步是为传了真库的那种情况
+		await isolated.clear();
 
 		const byKey = new Map(SCENARIOS.map(s => [s.key, s]));
 		return {
@@ -380,6 +386,7 @@ export function createLab(encoder: LabEncoders, store: InspectableCacheStore = c
 		scenario,
 		reset,
 		bumpCorpus,
+		generator: { kind: generator.kind, note: generator.note, approxMsPerCall: generator.approxMsPerCall },
 		defaults: DEFAULTS,
 		get docs(): ReadonlyArray<CourseDoc> {
 			return docs;

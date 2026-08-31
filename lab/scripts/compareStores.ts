@@ -58,7 +58,8 @@ const results: Record<string, LabBenchReport> = {};
 let mismatched = 0;
 for (const [label, cfg] of CONFIGS) {
 	const mem = await memoryLab.bench(cfg);
-	const real = await realLab.bench(cfg);
+	// 显式把真库交给 bench —— 不传它就跑在一次性内存缓存上，这个脚本会变成自己跟自己比
+	const real = await realLab.bench(cfg, backing.store);
 	results[label] = mem;
 	const same = fingerprint(mem) === fingerprint(real);
 	if (!same) mismatched += 1;
