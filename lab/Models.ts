@@ -20,7 +20,7 @@ export interface LabEncoders extends PairEncoder, RetrievalEncoder {
 	readonly retrievalModel: string;
 	/** 无重排器时返回 null */
 	rerank(a: string, b: string): Promise<number | null>;
-	/** 供 SDK 使用的重排器端口；无重排器时为 undefined */
+	/** 供 SDK 使用的重排器接口；无重排器时为 undefined */
 	readonly reranker?: Reranker;
 }
 

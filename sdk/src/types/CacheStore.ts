@@ -31,7 +31,7 @@ export interface Candidate {
 }
 
 /**
- * 存储端口。内存实现用于测试与标定，生产实现打 pgvector。
+ * 存储接口。内存实现用于测试与标定，生产实现打 pgvector。
  *
  * `searchNearest` 必须在库内做 pre-filter：只返回同一个 scope、且未过期的条目。
  * 过期行即使还没被清理也绝不能返回。

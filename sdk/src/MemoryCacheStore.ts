@@ -44,7 +44,7 @@ export function createMemoryCacheStore(options?: { now?: () => number }): Inspec
 			return ranked.slice(0, limit);
 		},
 		async put(entry) {
-			// 端口要求 id 重复必须抛错。先前这里是无条件 push，于是同一个
+			// 接口要求 id 重复必须抛错。先前这里是无条件 push，于是同一个
 			// id 碰撞 bug 在内存后端表现为"两条都在、后写的永远取不到"，
 			// 在 pgvector 上表现为"后写的被静默丢弃" —— 同一个 bug 两种症状最难查。
 			if (entries.some(e => e.id === entry.id)) {

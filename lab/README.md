@@ -3,114 +3,105 @@
 跑一门课的语料与带标注用例，用对照实验检验（或推翻）《语义缓存的精度层》里的论断。
 判定逻辑全部来自 `../sdk` —— **跑验证台就是在跑 SDK**，这里不再有第二套实现。
 
+跑出来的数字在 [`../FINDINGS.md`](../FINDINGS.md)。
+
+## 跑起来
+
 ```bash
 npm install
-npm start          # 中文语料，真模型（首次约 300MB 下载）
-npm run start:en   # 英文语料
-npm run stub       # 零依赖秒起，但分数无统计意义
+npm start          # 中文语料 + 真模型（首次约 300MB 下载）→ http://localhost:7788
+npm run stub       # 零依赖秒起，但分数没有统计意义
 npm run typecheck
-# → http://localhost:7788
 ```
 
-## 存储后端
+## 配置：四个互不相干的轴
 
-默认内存 —— `npm run stub` 要能零依赖秒起，这是硬要求。给了连接串就走真库，
-pgvector 和 Redis 二选一：
+**编码器、语料、存储、生成端是四件独立的事，随便组合。** npm scripts 只是常见组合的
+快捷方式，真正起作用的是环境变量 —— 想要哪种组合，直接拼：
 
 ```bash
-# pgvector
-createdb semcache && psql -d semcache -c 'CREATE EXTENSION vector'
-npm run start:pg           # 真模型 + pgvector
-npm run stub:pg            # stub + pgvector
+# 真模型 + 英文语料 + Redis + 真生成
+GEN=claude-cli MODE=local CORPUS_LANG=en SEMCACHE_REDIS=redis://localhost:6379/2 npm start
 
-# Redis 8（vectorset 是内核自带的，不用装 Redis Stack）
-npm run start:redis        # 真模型 + Redis，默认 redis://localhost:6379/2
-npm run stub:redis         # stub + Redis
+# stub 编码器 + pgvector（跑得快，用来验存储实现，不用来读分数）
+MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm start
 ```
 
-| 变量 | 作用 |
-|---|---|
-| `SEMCACHE_DB` | pgvector 连接串。设了就走 pgvector |
-| `SEMCACHE_REDIS` | Redis 连接串。设了就走 vectorset。和上一个同时设会直接报错 |
-| `STORE` | `memory` / `pgvector` / `redis`，显式覆盖上面的推断 |
-| `SEMCACHE_TABLE` | pgvector 的表名，默认 `semantic_cache` |
-| `SEMCACHE_NS` | Redis 的 key 前缀，默认 `semcache` |
-| `SEMCACHE_ANN` | `1` 走近似（pg 建 HNSW / Redis 不加 `TRUTH`）；默认 scope 内精确 KNN |
+### ① 编码器 —— 三个打分器角色
 
-Redis 那边有三处和 pgvector 不一样、且不是换个写法就能绕开的：
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `MODE` | `local` | `local` 真模型（ONNX，本地跑）/ `stub` 字符 Jaccard 的哈希投影 |
+| `PAIR_MODEL` | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | ③ 缓存匹配（问题↔问题） |
+| `RETR_MODEL` | `Xenova/multilingual-e5-small` | 检索 + ⑥ 的答案侧编码 |
+| `CE_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | ④ 精排。**默认这个是故意留的坏例子**，见下 |
 
-- **`VADD` 默认 Q8 量化**，必须显式 `NOQUANT` 才是 float32。不加就过不了精度判据
-- **过期不能用原生 TTL**。`PEXPIREAT` 是真删，`all()` 就再也看不见已过期未清理的条目；
-  何况 `now` 是注入的，假时钟驱动不了原生 TTL。所以 `expires_at` 是参与 `FILTER` 的普通数值
-- **`VSIM` 的分数是 `(1 + 余弦) / 2`**，取 `2 * score - 1` 才等于 `VectorMath.cosine`
+### ② 语料
 
-向量集只解决 `searchNearest` 一个方法，其余靠自己维护的五个二级索引（entry hash、
-all zset、scope+hash zset、scope set、source set）。写路径因此全走 Lua ——
-多结构写一半崩掉留下的孤儿索引，是这条路上唯一会静默给出错答案的失效方式。
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `CORPUS_LANG` | `zh` | `zh` / `en`。同一套场景，两种语言各一份 |
 
-向量列的维度从编码器上量出来（stub 256 维、e5-small 384 维），不写死 ——
-换 `MODE` 而表还是老的会在建表阶段就报错，不会等到插入时才炸。
+### ③ 存储
 
-两个验证脚本，都要求两种后端同时在场：
+**给了连接串就走那个后端，都不给走内存。** 默认内存是硬要求 —— `npm run stub` 得能零依赖秒起。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `SEMCACHE_DB` | 无 | Postgres 连接串。设了就走 pgvector |
+| `SEMCACHE_REDIS` | 无 | Redis 连接串。要 Redis 8（vectorset 在内核里，不用 Redis Stack） |
+| `STORE` | 按上面推断 | `memory` / `pgvector` / `redis`，显式覆盖推断 |
+| `SEMCACHE_TABLE` | `semantic_cache_<维度>` | pgvector 表名 |
+| `SEMCACHE_NS` | `semcache_<维度>` | Redis key 前缀 |
+| `SEMCACHE_ANN` | 无 | `1` 则建近似索引（HNSW）；默认 scope 内精确 KNN |
+
+默认名带上向量维度，是因为 stub 是 256 维、e5-small 是 384 维 ——
+不带的话两者会抢同一张表，换 `MODE` 时启动就被维度守卫拦死。
+
+### ④ 生成端
+
+默认 `stub`：把检索到的首个片段换序换壳。**它不是真生成**，⑥ 的支撑度因此天然偏高，
+θa 的绝对值在它上面标不准。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `GEN` | `stub` | `stub` / `claude-cli`（走本机 Claude Code，**不需要 API key**） |
+| `GEN_MODEL` | 无 | 传给 `claude -p --model` |
+| `GEN_TIMEOUT_MS` | `120000` | 单次超时 |
+
+`claude-cli` 约 8.5 秒一次，够用来重新标定和手动/场景验证；**完整 bench 跑不动**
+（13 场景 × 30 条干扰 ≈ 416 次 ≈ 1 小时），所以页面上会把对照实验卡禁掉。
+生成失败直接抛错，**不退回 stub** —— 两种分布混着标出来的 θa 比标不准更糟。
+
+### 其他
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `PORT` | `7788` | 监听端口 |
+
+## 验证脚本
 
 ```bash
-npm run compare-stores            # 同一份场景集，两种后端的结论必须逐行一致
-npm run compare-stores:redis
-npm run store-conformance         # 直接对着 CacheStore 的十个方法比可观察结果
-npm run store-conformance:redis   # 换 SEMCACHE_NS，别和真跑的缓存共用前缀
+npm run compare-stores      # 同一份场景集，两种存储后端的结论必须逐行一致
+npm run store-conformance   # 直接对着 CacheStore 的十一个方法比可观察结果
+node --experimental-strip-types scripts/calibrate.ts   # 标定 θq / θa，认 GEN=
 ```
 
-`compare-stores` 只走 `resolve` 那条路；`getById`、`evictBySource`、`clearScope`、
-`purgeExpired`、以及「重复哈希取哪一条」「重复 id 该不该抛」都碰不到，
-所以才有第二个脚本。它同时把一条真实差异写成了判据：**`vector` 列是 float4**，
-向量往返只能保证在单精度分辨率内（约 6e-8），不是逐位相同。
+前两个要两种后端都在（默认内存 + pgvector；`:redis` 后缀换成 Redis）。
+`compare-stores` 只走 `resolve` 那条路，`getById`、`evictBySource`、`clearScope`、
+`purgeExpired` 碰不到，所以才有第二个。
 
-## 生成端
-
-默认 `stub` —— 把检索到的首个片段换序换壳。**它不是真生成**，向量分布跟真答案差得远，
-⑥ 的支撑度因此天然偏高，θa 的绝对值在它上面标不准。
-
-```bash
-GEN=claude-cli npm start      # 用本机 Claude Code 做真生成，不需要 API key
-GEN_MODEL=claude-opus-5 …     # 可选，指定模型
-GEN_TIMEOUT_MS=120000 …       # 可选，单次超时
-```
-
-约 8.5 秒一次，够用来重新标定和手动/场景验证；**完整 bench 跑不动**
-（13 场景 × 30 条干扰 ≈ 416 次 ≈ 1 小时）。生成失败直接抛错，**不退回 stub** ——
-两种分布混在一起标出来的 θa 比标不准更糟。
-
-### 实测：换成真生成之后 θa 怎么变
-
-`scripts/calibrate.ts` 走的是同一个生成端口，所以两种生成端可以直接对比
-（10 条标定用例，中文语料，e5-small passage 空间）：
-
-| 生成端 | 该复用最低 | 该拦下最高 | margin | 建议 θa高 / θa低 |
-|---|---|---|---|---|
-| stub（换序换壳） | 0.9891 | 0.9543 | 0.0348 | 0.980 / 0.963 |
-| `claude -p`（真生成） | 0.9719 | 0.9378 | **0.0341** | **0.963 / 0.946** |
-
-**结论比"stub 标不准"更具体：⑥ 的判别力几乎没损失（margin 0.0348 → 0.0341，
-差 2%），但整个分布下移了约 0.017。** 也就是说算子是对的，阈值必须跟着生成端重标。
-
-代价是现行默认 0.97 / 0.96 在真生成下余量变得很薄：该复用的最低值 0.9719 只比
-θa高 高出 0.0019。仍然分得开，但一次改写风格的波动就能把它推进微调带。
-
-**这套阈值属于生成端，就像 θq 属于重排器。** 换生成端不重标，标出来的数就是
-别人分布上的产物 —— 和"换打分器必须连阈值一起换"是同一条规矩。
-
-### 这个场景集测不出阈值差别
-
-三组阈值（0.97/0.96、0.980/0.963、0.963/0.946）跑同一份场景集，**结果完全一样**
-（假命中 0，通过 5/13）。不是阈值不重要，是 13 条用例的支撑度分布太两极，
-落不进这几条线之间。**测阈值要用标定探针，不要用 bench。**
+**标定要用 `calibrate.ts` 的探针，不要用 bench** —— 13 条场景集的支撑度分布太两极，
+分不出几组阈值的差别。
 
 ## 页面从上到下就是使用顺序
 
 1. **重排器自检** —— 先跑。跨度 < 0.15 说明模型和任务不匹配，此时 ④ 的任何数字都不可信。
 2. **对照实验** —— 每张卡自动跑两遍完整场景集（开/关某道闸），并排显示假命中数并生成结论。
-3. **单条场景细看** —— 逐闸判定与分数。
-4. **手动探索** —— 自己出题、改开关、调阈值。默认收起。
+3. **单条场景细看** —— 逐闸判定与分数。跑在自己的缓存上，不影响手动探索。
+4. **手动探索** —— 自己出题、改开关、调阈值。结果显示在这一区里。
+
+**只有「清空缓存」按钮会清手动探索的缓存。** 对照实验和场景回放各跑在隔离的缓存上。
 
 ## 场景（一门课 ML101，13 条）
 
@@ -129,45 +120,3 @@ GEN_TIMEOUT_MS=120000 …       # 可选，单次超时
 
 **个人成绩不在语料里。**「李四的作业二得了多少分」是结构化查询 + 授权检查，
 应由意图路由送去工具，不该进 RAG 与缓存。实体塌陷的合法载体是**学科内容里的人名**。
-
-## 最新实测（英文，真模型，13 条）
-
-模型：句对 `paraphrase-multilingual-MiniLM-L12-v2` · 检索 `multilingual-e5-small` · 重排 `ms-marco-MiniLM-L-6-v2`
-阈值：θq 0.979 / θa高 0.923 / θa低 0.910（由 `scripts/calibrate.ts` 在本语料上标定）
-
-| 配置 | 假命中 | 通过 | 复用 |
-|---|---|---|---|
-| 全闸打开 | **0** | 13/13 | 3 |
-| 关掉 ⑥ | **4** | 9/13 | 7 |
-| 关掉「⑥ 用保留实体的原文检索」 | 1 | 12/13 | 5 |
-| 关掉 ④ 精排 | **0** | 13/13 | **5** |
-
-关掉 ⑥ 多漏的四条正是它该管的两类：同词不同指 ×2、实体塌陷 ×2。
-代价是复用次数从 3 涨到 7 —— **精度归零换来命中率减半**。
-
-第四行是有效对照（SDK 已删掉「无精排就拿 θq 卡余弦」那条退化路径）：
-**精排零精度收益，却砍掉 2 次合法复用 —— 在这个测试集上是纯负收益。**
-与探针结论一致：`ms-marco` 对问题配对任务错配，θq 0.979 把同义改写也一起拒了。
-
-第三行这一轮**量化不可靠**：两条实体用例期望文档不同，匿名化后随机撞中一条。
-形态上仍显示失明，但要更多实体用例才能给出稳定差值。
-
-## 判据
-
-**答案的首要依据（`sourceIds[0]`）是不是那篇资料**，不是「有没有复用」。
-
-- 有干扰缓存后，命中另一条**内容正确**的缓存也是成功
-- 必须落在首要依据上：只要期望文档出现在 top-k 里就算过，会把
-  「复用了过拟合的答案给问欠拟合的学生」判成通过
-
-**已知盲区**：两个概念住在同一篇资料里时（L1/L2 同属一节、precision/recall 同属一节），
-这个判据看不出错，④ 的价值因此被系统性低估。
-
-## 诚实的边界
-
-- stub 模式的分数是字符 Jaccard 的哈希投影，**别拿它的 bench 数字说事**
-- 13 条是手工构造的，不是真实流量分布。能证伪，不能证明生产精度——那要 100–500 条真实标注
-- 「生成」是拼接检索到的首个片段并换序换壳，不是真 LLM。⑥ 的支撑度因此天然偏高，
-  能读的是**相对差值**，不是绝对阈值
-- 默认重排器 `ms-marco` 是**故意留着的坏例子**（中文饱和、任务也不匹配），
-  好让自检卡有东西可挡。真跑 ④ 的精度请用 `CE_MODEL=` 换句对相似度模型

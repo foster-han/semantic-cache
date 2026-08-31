@@ -1,5 +1,5 @@
 /**
- * 最小 Redis 端口。
+ * 最小 Redis 接口。
  *
  * SDK 是零依赖的，所以这里**不 import `redis` / `ioredis`** —— 由调用方把自己的
  * 客户端传进来。node-redis 的 `sendCommand` 天然就是这个形状，不用写适配器：

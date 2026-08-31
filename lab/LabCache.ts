@@ -116,7 +116,7 @@ export interface LabBenchReport {
 }
 
 /**
- * 存储从外面传进来 —— 内存和 pgvector 走的是同一个 `CacheStore` 端口，
+ * 存储从外面传进来 —— 内存和 pgvector 走的是同一个 `CacheStore` 接口，
  * 验证台不该知道自己接的是哪一种。两种后端跑同一份场景集应当得到同样的数字，
  * 这本身就是一条可验证的断言（见 scripts/compareStores.ts）。
  */
@@ -176,7 +176,7 @@ export function createLab(
 
 	// kind 是必填的 —— 缺了它 SDK 会把这条当成 plan 处理（sourceIds 落空）。
 	// 验证台原来是 .mjs，这个契约变更没在编译期报错，所以踩过一次；转 TS 就是为此。
-	// 生成端是可切换的端口（GEN=stub / claude-cli）。stub 是换序换壳，不是真生成 ——
+	// 生成端是可切换的接口（GEN=stub / claude-cli）。stub 是换序换壳，不是真生成 ——
 	// ⑥ 的支撑度因此天然偏高，θa 的绝对值在它上面标不准。见 Generators.ts。
 	const generate = (prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload> =>
 		generator.generate(prompt, chunks);

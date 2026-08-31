@@ -2,7 +2,7 @@
  * 存储后端的选择。**内存、pgvector 和 Redis 之间只差一个环境变量。**
  *
  * 默认内存：`npm run stub` 要能零依赖秒起，这是验证台的一条硬要求。
- * 给了连接串就走真库 —— 判定逻辑一行不变，`SemanticCache` 只认 `CacheStore` 端口，
+ * 给了连接串就走真库 —— 判定逻辑一行不变，`SemanticCache` 只认 `CacheStore` 接口，
  * 所以三种后端跑出来的场景集结果应当完全一致。**这本身就是一条可验证的断言。**
  */
 import { createRequire } from "node:module";

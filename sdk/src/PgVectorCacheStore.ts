@@ -2,11 +2,11 @@ import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/Cache
 import type { SqlExecutor } from "./types/SqlExecutor.ts";
 
 /**
- * pgvector 实现。判定逻辑一行都不用改 —— `SemanticCache` 只认 `CacheStore` 端口。
+ * pgvector 实现。判定逻辑一行都不用改 —— `SemanticCache` 只认 `CacheStore` 接口。
  *
  * 三处不能省的约束，都写进了 SQL：
  *
- * 1. **scope 与过期条件必须在 WHERE 里**，不能捞回来在应用层过滤。端口文档要求
+ * 1. **scope 与过期条件必须在 WHERE 里**，不能捞回来在应用层过滤。接口文档要求
  *    「过期行即使还没被清理也绝不能返回」—— 应用层过滤在分页/LIMIT 下做不到这点：
  *    LIMIT 先生效，过期行会挤掉本该返回的候选。
  * 2. **两个向量在不同空间，落两列**。`match_vector` 是 PairEncoder 空间（③ 召回用），

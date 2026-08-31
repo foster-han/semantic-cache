@@ -3,7 +3,7 @@ import type { RedisExecutor } from "./types/RedisExecutor.ts";
 
 /**
  * Redis 实现，走 Redis 8 内置的 **Vector Set**（`VADD` / `VSIM`），不是 RediSearch。
- * 判定逻辑一行都不用改 —— `SemanticCache` 只认 `CacheStore` 端口。
+ * 判定逻辑一行都不用改 —— `SemanticCache` 只认 `CacheStore` 接口。
  *
  * 选 vectorset 而不是 `FT.*` 的原因很实际：它在 Redis 8 的核心里，`MODULE LIST`
  * 直接就有，不用额外装 Redis Stack。代价见下面第 2 条。
@@ -18,7 +18,7 @@ import type { RedisExecutor } from "./types/RedisExecutor.ts";
  *    资料 id 反查、没有 scope 计数。所以这里额外维护 5 个结构（见 keys），
  *    并且**写路径全部走 Lua**——多结构写一半崩掉留下的孤儿索引，是这条路上
  *    唯一会静默给出错答案的失效方式，MULTI 在连接池下还挡不住它。
- * 3. **过期不能用 Redis 原生 TTL。** 端口要求过期条目「读路径看不见，但 `all()`
+ * 3. **过期不能用 Redis 原生 TTL。** 接口要求过期条目「读路径看不见，但 `all()`
  *    要看得见」，而 `PEXPIREAT` 是真删，`all()` 就再也看不见了；何况 `now` 是注入
  *    的，假时钟根本驱动不了原生 TTL。所以 `expires_at` 落成参与 `FILTER` 的普通
  *    数值属性，清理走显式的 `purgeExpired()`。
@@ -160,7 +160,7 @@ function toEntry(values: ReadonlyArray<unknown>): CacheEntry | null {
 }
 
 /**
- * 写入。**先查重再写**：端口要求 id 重复必须抛错，
+ * 写入。**先查重再写**：接口要求 id 重复必须抛错，
  * 而 `VADD` 对已存在的元素是覆盖，`HSET` 也是，两个都不会自己报。
  */
 const SCRIPT_PUT = `
@@ -262,7 +262,7 @@ return out
 
 /**
  * ③ 召回。**scope 与过期条件在 `FILTER` 里，不是捞回来在应用层筛** ——
- * 端口要求「过期条目即使还没被清理也绝不能返回」，应用层筛在 `COUNT` 下做不到：
+ * 接口要求「过期条目即使还没被清理也绝不能返回」，应用层筛在 `COUNT` 下做不到：
  * 限制先生效，过期条目会挤掉本该返回的候选。
  *
  * 分数一律 `tostring` 之后再回：Lua 的 number 转 RESP 会被截成整数，

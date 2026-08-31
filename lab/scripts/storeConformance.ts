@@ -1,5 +1,5 @@
 /**
- * 存储端口一致性。
+ * 存储接口一致性。
  *
  * `compareStores.ts` 比的是端到端结论，走的只有 `resolve` 那条路，`getById` 和
  * `evictBySource` 根本碰不到。这里直接对着 `CacheStore` 的十个方法跑同一串操作，
