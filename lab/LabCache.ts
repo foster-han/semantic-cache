@@ -21,39 +21,46 @@ import {
 	type InspectableCacheStore,
 	type Scenario,
 } from "../sdk/src/index.ts";
-import {
-	compose,
-	COURSE,
-	DISTRACTORS,
-	DOCS,
-	ENTITIES,
-	refineSuffix,
-	SCENARIOS,
-	STUDENT_RECORDS,
-	SYL_V2,
-} from "./Corpus.ts";
-import { createGenerator, type LabGenerator } from "./Generators.ts";
+import { COURSE, DISTRACTORS, DOCS, ENTITIES, LANGUAGE, SCENARIOS, STUDENT_RECORDS, SYL_V2 } from "./Corpus.ts";
+import { resolveCalibration, type ActiveCalibration } from "./Calibrations.ts";
+import { createGenerator, memoizeGenerator, type LabGenerator } from "./Generators.ts";
 import { cosine, type LabEncoders } from "./Models.ts";
 import type { CourseDoc, LabAsk, LabScenario } from "./types/Corpus.ts";
 import type { LabConfig, LabCounters } from "./types/LabConfig.ts";
 
-export const DEFAULTS: LabConfig = {
+/**
+ * 与标定无关的那部分默认值。**四个阈值和 ④ 的开关不在这里** —— 它们由
+ * `Calibrations.ts` 按 (语料 × 编码器 × 生成端) 给出，见 `defaultsFor()`。
+ */
+export const BASE_DEFAULTS = {
 	gate1: false,
-	gate4: true,
 	gate5: true,
 	gate6: true,
 	preAnonRetrieval: true,
 	declareRedacted: false,
 	scopeMode: "course",
-	thetaQ: 0.55,
-	recallFloor: 0.45,
-	thetaAHi: 0.97,
-	thetaALo: 0.96,
 	topK: 5,
 	chunkK: 3,
 	chunkCut: 0.85,
 	unitBoost: 0.92,
-};
+} as const satisfies Omit<LabConfig, "gate4" | "thetaQ" | "recallFloor" | "thetaAHi" | "thetaALo">;
+
+/**
+ * 把标定表那一行合成一份完整默认配置。
+ *
+ * **④ 的默认开关跟着 `thetaQ` 走**：没有标定过的闸值就没有这道闸，开着它只会得到
+ * 一道恒放行的假闸 —— 那比关着更糟，因为页面上看起来它在工作。
+ */
+export function defaultsFor(calibration: ActiveCalibration): LabConfig {
+	return {
+		...BASE_DEFAULTS,
+		gate4: calibration.thetaQ !== null,
+		thetaQ: calibration.thetaQ,
+		recallFloor: calibration.recallFloor,
+		thetaAHi: calibration.thetaAHi,
+		thetaALo: calibration.thetaALo,
+	};
+}
 
 export interface AnonymizeResult {
 	readonly text: string;
@@ -127,6 +134,17 @@ export function createLab(
 ) {
 	let docs: Array<CourseDoc> = DOCS.map(d => ({ ...d }));
 	let counters: LabCounters = fresh();
+	/**
+	 * 这一次运行该用哪组阈值，由 (语料 × 编码器 × 生成端) 决定 —— 三者都是运行期才
+	 * 知道的，所以标定不能是模块常量。`calibration` 同时带着每个 stage 各自的
+	 * `calibratedOn`，页面和 trace 上看到的就是「这个数是在什么上标出来的」。
+	 */
+	const calibration = resolveCalibration({
+		corpus: LANGUAGE,
+		encoders: encoder.mode,
+		generator: generator.kind,
+	});
+	const defaults = defaultsFor(calibration);
 
 	function fresh(): LabCounters {
 		return { ask: 0, exact: 0, reuse: 0, refine: 0, generated: 0 };
@@ -147,6 +165,28 @@ export function createLab(
 	 * 非当前章节的片段打个折扣。没有这个上下文时「归一化是怎么做的」在两个
 	 * 学生那里是完全相同的输入，复用其实是对的 —— 那时它是检索歧义，不是缓存问题。
 	 */
+	/**
+	 * 资料向量缓存。**键是 `id + version`，所以「语料改版」自动失效，不用手工清。**
+	 *
+	 * 先前每次检索都把整份语料重新编码一遍。实测：一次未命中的 ask 约 2400ms，
+	 * 其中 embedPassage×27 占 1257ms（52%），而生成只占 845ms —— 也就是说
+	 * 「真生成太慢」这个印象里有一半根本不是生成的锅。一次完整 bench（416 次）
+	 * 因此白白多花约 8.7 分钟。
+	 *
+	 * 真实 RAG 应用不会这么干，那正是向量索引存在的意义；验证台这里图省事，
+	 * 结果把自己的实现开销算到了被测对象头上。
+	 */
+	const passageCache = new Map<string, ReadonlyArray<number>>();
+
+	async function passageVectors(pool: ReadonlyArray<CourseDoc>): Promise<Array<ReadonlyArray<number>>> {
+		const missing = pool.filter(d => !passageCache.has(`${d.id}v${d.version}`));
+		if (missing.length > 0) {
+			const fresh = await encoder.embedPassage(missing.map(d => d.text));
+			missing.forEach((d, i) => passageCache.set(`${d.id}v${d.version}`, fresh[i]));
+		}
+		return pool.map(d => passageCache.get(`${d.id}v${d.version}`) as ReadonlyArray<number>);
+	}
+
 	async function retrieveChunks(text: string, unit: string | null, cfg: LabConfig): Promise<Array<LabChunk>> {
 		const pool: Array<CourseDoc> = docs.filter(d => d.course === COURSE).map(d => ({ ...d }));
 		for (const [name, rec] of Object.entries(STUDENT_RECORDS)) {
@@ -157,7 +197,7 @@ export function createLab(
 		if (pool.length === 0) return [];
 
 		const [qv] = await encoder.embedQuery([text]);
-		const dv = await encoder.embedPassage(pool.map(d => d.text));
+		const dv = await passageVectors(pool);
 		const ranked = pool
 			.map((d, i) => ({
 				id: d.id,
@@ -198,23 +238,47 @@ export function createLab(
 	 * 于是「问一句、再问同义的一句」在页面上看起来永远不命中 —— 而实际上是中间
 	 * 那一下把种子抹了。清理必须是显式动作，不能是别的操作的副作用。
 	 */
-	function build(cfg: LabConfig, storeOverride?: InspectableCacheStore) {
-		const calibratedOn = `本课程语料，⑥ 用 top-1 算子（scripts/calibrate.ts）`;
+	/**
+	 * bench 与场景回放用**去重过**的生成端：同输入只生成一次。
+	 *
+	 * 91% 的调用是重复输入（30 条干扰 × 26 场景），去掉之后 1558 次降到 122 次。
+	 * 而且对照实验因此更干净 —— 生成成了固定函数，A/B 的差值里不再混采样噪声。
+	 * 每次 bench 一份新的 memo，跨 bench 不共享（配置不同，语料可能已改版）。
+	 *
+	 * `GEN_MEMO=0` 可关掉，用来看生成端自身的抖动。
+	 */
+	function benchGenerator(): LabGenerator {
+		return process.env.GEN_MEMO === "0" ? generator : memoizeGenerator(generator);
+	}
+
+	function build(cfg: LabConfig, storeOverride?: InspectableCacheStore, genOverride?: LabGenerator) {
+		/**
+		 * **三个 stage 的 `calibratedOn` 各不相同。** 先前它们共用一句
+		 * 「本课程语料，⑥ 用 top-1 算子」，而 ④ 的闸值根本不是那个脚本标出来的 ——
+		 * 这个必填字段的全部意义就是防止阈值离开标定语境，填一句放之四海皆准的话
+		 * 等于把它作废。
+		 */
+		if (cfg.gate4 && encoder.reranker && cfg.thetaQ === null) {
+			throw new Error(
+				`④ 打开了，但当前组合（${LANGUAGE} × ${encoder.mode} 编码器）没有标定过的 θq。${calibration.rerankNote}。` +
+					`出路：换 CE_MODEL= 成句对相似度模型后跑 scripts/calibrate.ts 补一行标定，或显式 THETA_Q= 一个值（那就由你自己为它负责）。`,
+			);
+		}
 		return createSemanticCache({
 			recall: {
 				scorer: { embedQuestions: t => encoder.embedQuestions(t) },
 				thresholds: { floor: cfg.recallFloor },
-				calibratedOn,
+				calibratedOn: calibration.recallNote,
 			},
 			support: {
 				scorer: { embedQuery: t => encoder.embedQuery(t), embedPassage: t => encoder.embedPassage(t) },
 				thresholds: { high: cfg.thetaAHi, low: cfg.thetaALo },
-				calibratedOn,
+				calibratedOn: calibration.supportNote,
 			},
 			// 关掉 ④ 就是不传这一段 —— 连同它的阈值一起消失
 			rerank:
-				cfg.gate4 && encoder.reranker
-					? { scorer: encoder.reranker, thresholds: { floor: cfg.thetaQ }, calibratedOn }
+				cfg.gate4 && encoder.reranker && cfg.thetaQ !== null
+					? { scorer: encoder.reranker, thresholds: { floor: cfg.thetaQ }, calibratedOn: calibration.rerankNote }
 					: undefined,
 			store: storeOverride ?? store,
 			retriever: { retrieve: (text, ctx) => retrieveChunks(text, ctx.unit || null, cfg) },
@@ -228,7 +292,7 @@ export function createLab(
 				return { key, shared: true };
 			},
 			sourceVersion: ids => fingerprint(ids),
-			refine,
+			refine: (answer, prompt, chunks) => (genOverride ?? generator).refine(answer, prompt, chunks),
 			gates: { sourceVersion: cfg.gate5, answerCheck: cfg.gate6 },
 			recallLimit: cfg.topK,
 			ttlMs: null,
@@ -252,9 +316,14 @@ export function createLab(
 	}
 
 	/** 在指定的缓存实例上问一次。手动提问和场景回放共用这一份，只是缓存不同。 */
-	async function runOn(cache: ReturnType<typeof build>, input: LabAsk, cfg: LabConfig): Promise<LabResult> {
+	async function runOn(
+		cache: ReturnType<typeof build>,
+		input: LabAsk,
+		cfg: LabConfig,
+		gen: LabGenerator = generator,
+	): Promise<LabResult> {
 		const prompt = toRequest(input, cfg);
-		const result = await cache.resolve(prompt, generate);
+		const result = await cache.resolve(prompt, (p, c) => gen.generate(p, c));
 		// payload 是唯一读取入口 —— SDK 已经删掉了并排的 answer 字段，
 		// 因为 plan 时它是空串，读到空串却不报错正是要消灭的那种失效。
 		const answer =
@@ -273,7 +342,7 @@ export function createLab(
 	}
 
 	async function ask(input: LabAsk, override?: Partial<LabConfig>): Promise<LabResult> {
-		const cfg: LabConfig = { ...DEFAULTS, ...override };
+		const cfg: LabConfig = { ...defaults, ...override };
 		counters.ask += 1;
 		const result = await runOn(build(cfg), input, cfg);
 		const key = result.outcome as keyof LabCounters;
@@ -297,7 +366,7 @@ export function createLab(
 	 * 不是「有没有复用」。命中另一条内容正确的缓存也算成功。
 	 */
 	async function bench(override?: Partial<LabConfig>, storeOverride?: InspectableCacheStore): Promise<LabBenchReport> {
-		const cfg: LabConfig = { ...DEFAULTS, ...override };
+		const cfg: LabConfig = { ...defaults, ...override };
 		/**
 		 * 默认跑在一个一次性的内存缓存上 —— 点一次对照实验不该动到手动探索攒下来的条目。
 		 *
@@ -306,7 +375,6 @@ export function createLab(
 		 * 「换存储不改判定」就成了一句空话，而且空得看不出来——两列数字永远一致。
 		 */
 		const isolated = storeOverride ?? createMemoryCacheStore();
-		const cache = build(cfg, isolated);
 		const scenarios: Array<Scenario> = SCENARIOS.map((s: LabScenario) => ({
 			key: s.key,
 			label: s.label,
@@ -318,7 +386,13 @@ export function createLab(
 
 		let report: EvaluationReport;
 		try {
-			report = await evaluate(cache, scenarios, generate, {
+			// **`build()` 也要在 try 里。** 它会拒绝一些配置（脱敏 × 共享 scope、
+			// ④ 开着却没有标定过的 θq），而「这个配置不成立」正是对照实验的有效结果之一 ——
+			// 先前 build 在 try 外面，于是它一抛错整个请求变成 500，页面上看到的是
+			// 「请求失败」而不是「配置 B 被拒绝，原因是……」。
+			const gen = benchGenerator();
+			const cache = build(cfg, isolated, gen);
+			report = await evaluate(cache, scenarios, (p, c) => gen.generate(p, c), {
 				reset: async () => {
 					docs = DOCS.map(d => ({ ...d }));
 					await isolated.clear();
@@ -367,14 +441,15 @@ export function createLab(
 	async function scenario(key: string, override?: Partial<LabConfig>): Promise<LabResult | null> {
 		const sc = SCENARIOS.find(s => s.key === key);
 		if (!sc) return null;
-		const cfg: LabConfig = { ...DEFAULTS, ...override };
+		const cfg: LabConfig = { ...defaults, ...override };
 		const isolated = createMemoryCacheStore();
-		const cache = build(cfg, isolated);
+		const gen = benchGenerator();
+		const cache = build(cfg, isolated, gen);
 		const snapshot = docs.map(d => ({ ...d }));
 		try {
-			await cache.resolve(toRequest(sc.seed, cfg), generate);
+			await cache.resolve(toRequest(sc.seed, cfg), (p, c) => gen.generate(p, c));
 			if (sc.bumpCorpus) bumpCorpus();
-			return await runOn(cache, sc.probe, cfg);
+			return await runOn(cache, sc.probe, cfg, gen);
 		} finally {
 			docs = snapshot;
 		}
@@ -387,7 +462,8 @@ export function createLab(
 		reset,
 		bumpCorpus,
 		generator: { kind: generator.kind, note: generator.note, approxMsPerCall: generator.approxMsPerCall },
-		defaults: DEFAULTS,
+		defaults,
+		calibration,
 		get docs(): ReadonlyArray<CourseDoc> {
 			return docs;
 		},
@@ -397,10 +473,6 @@ export function createLab(
 		},
 		get counters(): LabCounters {
 			return counters;
-		},
-		async warm(cfg?: Partial<LabConfig>): Promise<number> {
-			for (const t of DISTRACTORS) await ask({ text: t, user: "warm" }, cfg);
-			return (await store.all()).length;
 		},
 	};
 }

@@ -1,4 +1,4 @@
-import type { ComposeChunk, CourseDoc, LabScenario } from "./types/Corpus.ts";
+import type { ComposeChunk, CourseDoc, LabScenario, RerankProbe } from "./types/Corpus.ts";
 
 /**
  * 场景：老师上传这学期一门课的资料，学生针对这门课问各种各样的问题。
@@ -160,6 +160,21 @@ export const DISTRACTORS: ReadonlyArray<string> = [
  *   expect    —— 顺带记录预期的复用行为，只作参考不作判据
  *   catches   —— 期望由哪道闸拦下
  */
+/**
+ * ④ 的判别力探针。**问句全部取自这门课**，不是通用例子 —— 先前用的是
+ * 「怎么重置密码 / 忘记密码了怎么办」，那正是 v1 语料被废弃的理由（跟学科资料无关），
+ * 拿它测出来的判别力说明不了这个重排器在本语料上够不够用。
+ *
+ * 判据是 margin（正例最低 − 负例最高），不是跨度：跨度大但顺序反的模型毫无用处。
+ */
+export const RERANK_PROBES: ReadonlyArray<RerankProbe> = [
+	{ label: "同义改写（该高）", a: "什么是过拟合？", b: "过拟合是什么意思？", shouldMatch: true },
+	{ label: "逐字相同（该高）", a: "什么是过拟合？", b: "什么是过拟合？", shouldMatch: true },
+	{ label: "近义反义（该低）", a: "什么是过拟合？", b: "什么是欠拟合？", shouldMatch: false },
+	{ label: "同主题不同问（该低）", a: "什么是过拟合？", b: "正则化强度怎么调？", shouldMatch: false },
+	{ label: "完全无关（该低）", a: "什么是过拟合？", b: "成绩什么时候公布？", shouldMatch: false },
+];
+
 export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	/* ---- 正例：缓存本来就该吃下的 ---- */
 	{
@@ -187,6 +202,70 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 		note: "问法差得比较远，但仍是同一个意图",
 		seed: { text: "为什么要做 k 折交叉验证？", user: "s1", unit: "第六章" },
 		probe: { text: "交叉验证有什么用？", user: "s4", unit: "第六章" },
+		expect: "reuse",
+	},
+
+	{
+		key: "para-bias",
+		expectDoc: "n7",
+		label: "同义改写 · 偏差方差",
+		note: "术语问法 vs 大白话问法",
+		seed: { text: "偏差和方差是什么关系？", user: "s1", unit: "第四章" },
+		probe: { text: "偏差方差怎么权衡？", user: "s2", unit: "第四章" },
+		expect: "reuse",
+	},
+	{
+		key: "para-norm",
+		expectDoc: "n14",
+		label: "同义改写 · 特征归一化",
+		note: "「怎么做」和「为什么要做」——意图相同，措辞几乎不重叠",
+		seed: { text: "特征归一化怎么做？", user: "s1", unit: "第七章" },
+		probe: { text: "为什么要对特征做归一化？", user: "s3", unit: "第七章" },
+		expect: "reuse",
+	},
+	{
+		key: "para-prune",
+		expectDoc: "n18",
+		label: "同义改写 · 剪枝",
+		note: "口语「砍枝」vs 术语「剪枝」",
+		seed: { text: "决策树为什么要剪枝？", user: "s1", unit: "第八章" },
+		probe: { text: "剪枝是为了解决什么问题？", user: "s4", unit: "第八章" },
+		expect: "reuse",
+	},
+	{
+		key: "para-early",
+		expectDoc: "n9",
+		label: "同义改写 · 早停",
+		note: "「什么时候停」是学生实际会用的问法",
+		seed: { text: "早停是怎么回事？", user: "s1", unit: "第五章" },
+		probe: { text: "训练什么时候该停下来？", user: "s2", unit: "第五章" },
+		expect: "reuse",
+	},
+	{
+		key: "para-f1",
+		expectDoc: "n12",
+		label: "同义改写 · F1",
+		note: "缩写 vs 展开",
+		seed: { text: "F1 分数是什么？", user: "s1", unit: "第六章" },
+		probe: { text: "F1 怎么理解？", user: "s3", unit: "第六章" },
+		expect: "reuse",
+	},
+	{
+		key: "para-loss",
+		expectDoc: "n2",
+		label: "同义改写 · 损失函数",
+		note: "「干什么用的」——最常见的初学者问法",
+		seed: { text: "损失函数是干什么的？", user: "s1", unit: "第二章" },
+		probe: { text: "为什么需要损失函数？", user: "s4", unit: "第二章" },
+		expect: "reuse",
+	},
+	{
+		key: "para-ensemble",
+		expectDoc: "n19",
+		label: "同义改写 · 集成方法",
+		note: "「多个模型一起用」是不带术语的问法",
+		seed: { text: "集成方法是什么？", user: "s1", unit: "第九章" },
+		probe: { text: "为什么把多个模型合起来会更好？", user: "s2", unit: "第九章" },
 		expect: "reuse",
 	},
 
@@ -302,6 +381,67 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 		probe: { text: "作业三要报告哪些指标？", user: "s2", unit: "第八章" },
 		expect: "regenerate",
 		catches: [3, 4],
+	},
+
+	{
+		key: "anti-acc-prec",
+		expectDoc: "n11",
+		label: "近义对 · 准确率/精确率",
+		note: "两个词差一个字，住在不同文档里 —— 判据够得着",
+		seed: { text: "准确率是什么？", user: "s1", unit: "第六章" },
+		probe: { text: "精确率是什么？", user: "s2", unit: "第六章" },
+		expect: "regenerate",
+		catches: [3, 4],
+	},
+	{
+		key: "anti-early-prune",
+		expectDoc: "n18",
+		label: "近义对 · 早停/剪枝",
+		note: "都是「防过拟合的手段」，问法极像，分属第五章和第八章",
+		seed: { text: "早停怎么防止过拟合？", user: "s1", unit: "第五章" },
+		probe: { text: "剪枝怎么防止过拟合？", user: "s2", unit: "第八章" },
+		expect: "regenerate",
+		catches: [3, 4, 6],
+	},
+	{
+		key: "anti-tree-ensemble",
+		expectDoc: "n19",
+		label: "近义对 · 决策树/集成",
+		note: "一个是单模型一个是多模型，学生常混",
+		seed: { text: "决策树是怎么工作的？", user: "s1", unit: "第八章" },
+		probe: { text: "集成方法是怎么工作的？", user: "s2", unit: "第九章" },
+		expect: "regenerate",
+		catches: [3, 4],
+	},
+	{
+		key: "anti-norm-encode",
+		expectDoc: "n15",
+		label: "近义对 · 归一化/编码",
+		note: "同属第七章特征工程，都是「特征要先处理一下」",
+		seed: { text: "数值特征要怎么预处理？", user: "s1", unit: "第七章" },
+		probe: { text: "类别特征要怎么预处理？", user: "s2", unit: "第七章" },
+		expect: "regenerate",
+		catches: [3, 4, 6],
+	},
+	{
+		key: "entity-method3",
+		expectDoc: "h3",
+		label: "实体塌陷 · Hinton/Vapnik",
+		note: "第三对人名，扩大实体用例的样本",
+		seed: { text: "Hinton 提出了什么方法？", user: "s1", unit: "第十二章" },
+		probe: { text: "Vapnik 提出了什么方法？", user: "s2", unit: "第十二章" },
+		expect: "regenerate",
+		catches: 6,
+	},
+	{
+		key: "entity-method4",
+		expectDoc: "h4",
+		label: "实体塌陷 · LeCun/Breiman",
+		note: "第四对人名",
+		seed: { text: "LeCun 提出了什么方法？", user: "s1", unit: "第十二章" },
+		probe: { text: "Breiman 提出了什么方法？", user: "s2", unit: "第十二章" },
+		expect: "regenerate",
+		catches: 6,
 	},
 ];
 

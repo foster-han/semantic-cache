@@ -12,5 +12,15 @@ export const LANGUAGE: "zh" | "en" = process.env.CORPUS_LANG === "en" ? "en" : "
 
 const active: CourseCorpus = LANGUAGE === "en" ? CorpusEnModule : CorpusZhModule;
 
-export const { COURSE, DOCS, SYL_V2, ENTITIES, STUDENT_RECORDS, DISTRACTORS, SCENARIOS, compose, refineSuffix } =
-	active;
+export const {
+	COURSE,
+	DOCS,
+	SYL_V2,
+	ENTITIES,
+	STUDENT_RECORDS,
+	DISTRACTORS,
+	SCENARIOS,
+	RERANK_PROBES,
+	compose,
+	refineSuffix,
+} = active;

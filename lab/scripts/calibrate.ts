@@ -1,6 +1,6 @@
 /** 语言无关的标定：① 重排器判别力 ② ⑥ 支撑度阈值 ③ 检索 top-1 命中率 */
 import { createEncoders, cosine } from "../Models.ts";
-import { compose as composeAnswer, DOCS, LANGUAGE } from "../Corpus.ts";
+import { compose as composeAnswer, DOCS, LANGUAGE, RERANK_PROBES } from "../Corpus.ts";
 import { createGenerator } from "../Generators.ts";
 const enc = await createEncoders();
 const byId = id => DOCS.find(d => d.id === id);
@@ -47,17 +47,11 @@ const median = xs => {
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 };
 
-const PROBES = LANGUAGE === "en" ? [
-  ["paraphrase   should MATCH", "What is overfitting?", "What does overfitting mean?", true],
-  ["near-antonym should DIFFER", "What is overfitting?", "What is underfitting?", false],
-  ["unrelated    should DIFFER", "What is overfitting?", "When are grades released?", false],
-  ["identical    should MATCH", "What is overfitting?", "What is overfitting?", true],
-] : [
-  ["同义      应高", "什么是过拟合？", "过拟合是什么意思？", true],
-  ["近义反义   应低", "什么是过拟合？", "什么是欠拟合？", false],
-  ["完全无关   应低", "什么是过拟合？", "成绩什么时候公布？", false],
-  ["逐字相同   应高", "什么是过拟合？", "什么是过拟合？", true],
-];
+/**
+ * 探针取自语料包（`RERANK_PROBES`）—— 和验证台页面上那个自检**同一份**。
+ * 先前这里自带一套写死的问句，于是「页面说可用」和「标定脚本说可用」测的不是同一件事。
+ */
+const PROBES = RERANK_PROBES.map(p => [p.label, p.a, p.b, p.shouldMatch]);
 
 console.log(`\n== 语言 ${LANGUAGE} ==\n`);
 console.log("① 重排器判别力（问题↔问题）");
@@ -89,20 +83,65 @@ for (let i = 0; i < qs.length; i++) {
 console.log(`    → top-1 命中 ${hit}/${qs.length}`);
 
 console.log(`\n③ ⑥ 支撑度阈值（答案↔片段，同一 passage 空间）　生成端 ${generator.kind}`);
-if (generator.kind !== "stub") console.log(`    （真生成，${10} 条用例，约 ${Math.round(generator.approxMsPerCall * 8 / 1000)} 秒）`);
 const spec = [
+  /* ---- 该复用：答案就是据这一篇写的 ----
+     一篇一条，覆盖全部讲义。先前只有 3 条 —— 而 θa 的每一个结论都压在
+     min/中位 上，3 个样本给不出可信的分布位置。 */
+  ["该复用", "n1", "n1"],
+  ["该复用", "n2", "n2"],
+  ["该复用", "n3", "n3"],
+  ["该复用", "n4", "n4"],
   ["该复用", "n5", "n5"],
-  ["该复用", "n13", "n13"],
+  ["该复用", "n6", "n6"],
+  ["该复用", "n7", "n7"],
+  ["该复用", "n8", "n8"],
+  ["该复用", "n9", "n9"],
+  ["该复用", "n10", "n10"],
   ["该复用", "n11", "n11"],
+  ["该复用", "n12", "n12"],
+  ["该复用", "n13", "n13"],
+  ["该复用", "n14", "n14"],
+  ["该复用", "n15", "n15"],
+  ["该复用", "n16", "n16"],
+  ["该复用", "n17", "n17"],
+  ["该复用", "n18", "n18"],
+  ["该复用", "n19", "n19"],
+
+  /* ---- 该拦下 · 反义或近义，且**住在不同文档里** ----
+     同一篇里的两个概念（L1/L2 都在 n8、precision/recall 都在 n11）
+     这个判据看不出错，所以不放进标定集 —— 那是已知盲区，见 FINDINGS.md。 */
   ["该拦下 反义", "n5", "n6"],
-  ["该拦下 反义", "n11", "n10"],
+  ["该拦下 反义", "n6", "n5"],
+  ["该拦下 反义", "n10", "n11"],
+  ["该拦下 反义", "n11", "n12"],
+  ["该拦下 反义", "n1", "n2"],
+  ["该拦下 近义", "n9", "n18"],
+  ["该拦下 近义", "n18", "n19"],
+  ["该拦下 近义", "n14", "n15"],
+  ["该拦下 近义", "n13", "n12"],
+  ["该拦下 近义", "n3", "n2"],
+
+  /* ---- 该拦下 · 同词不同指：问题侧看不出差别，检索结果不同 ---- */
   ["该拦下 跨章", "n14", "n16"],
+  ["该拦下 跨章", "n16", "n14"],
   ["该拦下 跨章", "n4", "n17"],
-  // 个人数据已从语料里移除（那是路由 + 授权的事），相应的标定用例也随之删除
+  ["该拦下 跨章", "n17", "n4"],
+
+  /* ---- 该拦下 · 人名：学科内容里的实体，六对全排 ---- */
   ["该拦下 人名", "h1", "h2"],
+  ["该拦下 人名", "h1", "h3"],
+  ["该拦下 人名", "h1", "h4"],
+  ["该拦下 人名", "h2", "h3"],
+  ["该拦下 人名", "h2", "h4"],
   ["该拦下 人名", "h3", "h4"],
+
+  /* ---- 该拦下 · 完全无关：底线对照 ---- */
   ["该拦下 无关", "n18", "hw3"],
+  ["该拦下 无关", "n5", "syl"],
+  ["该拦下 无关", "n11", "hw-rule"],
 ];
+const uniqueDocs = new Set(spec.map(x => x[1])).size;
+if (generator.kind !== "stub") console.log(`    （真生成，${spec.length} 条用例 / ${uniqueDocs} 篇文档 × ${SAMPLES} 采样 ≈ ${Math.round(generator.approxMsPerCall * uniqueDocs * SAMPLES / 1000)} 秒）`);
 if (SAMPLES > 1) console.log(`    每条用例采样 ${SAMPLES} 次，取中位数 —— 随机生成端下单次结果测的是噪声`);
 
 const reuse = [], block = [];
@@ -117,7 +156,7 @@ for (const [tag, answerDoc, chunkDoc] of spec) {
   const m = median(scores);
   (tag.startsWith("该复用") ? reuse : block).push(m);
   const spread = SAMPLES > 1 ? `  （${SAMPLES} 次：${Math.min(...scores).toFixed(4)}~${Math.max(...scores).toFixed(4)}）` : "";
-  console.log("   ", tag.padEnd(12), m.toFixed(4) + spread);
+  console.log("   ", tag.padEnd(12), `${answerDoc}→${chunkDoc}`.padEnd(11), m.toFixed(4) + spread);
 }
 // **用中位数，不用 min/max。** 极值统计量对单个坏样本最敏感 —— 生成端一旦是随机的，
 // min(该复用) 和 max(该拦下) 测的就是那次最差的采样，而不是分布的位置。

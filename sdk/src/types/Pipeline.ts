@@ -127,9 +127,16 @@ export type CachedPayload =
 			readonly plan: Readonly<Record<string, string>>;
 	  };
 
-/** @deprecated 用 CachedPayload。保留以免旧代码断裂。 */
+/**
+ * @deprecated 用 `CachedPayload`。保留以免旧代码断裂。
+ *
+ * 先前这个接口在本文件里声明了**两次**（第二次多了一行字段注释）。两次的成员恰好
+ * 一致，于是 interface merging 让它合法通过了类型检查 —— 改动其中一份才会炸，
+ * 而那时看到的报错是「同名声明不一致」，不是「这里有两份」。合成一份。
+ */
 export interface GeneratedAnswer {
 	readonly answer: string;
+	/** 实际据以生成的资料，顺序即重要性 */
 	readonly sourceIds: ReadonlyArray<string>;
 }
 
@@ -139,12 +146,6 @@ export type Refine = (
 	prompt: CachePrompt,
 	chunks: ReadonlyArray<Chunk>,
 ) => Promise<CachedPayload>;
-
-export interface GeneratedAnswer {
-	readonly answer: string;
-	/** 实际据以生成的资料，顺序即重要性 */
-	readonly sourceIds: ReadonlyArray<string>;
-}
 
 /**
  * 闸门开关。

@@ -99,6 +99,14 @@ export interface CacheStore {
 export interface InspectableCacheStore extends CacheStore {
 	/** 清空。生产不该调 */
 	clear(): Promise<void>;
-	/** 列出全部条目，**含已过期但尚未清理的** —— 供 UI 展示与断言检查 */
+	/**
+	 * 列出全部条目，**含已过期但尚未清理的** —— 供 UI 展示与断言检查。
+	 *
+	 * **顺序是契约的一部分：按 `createdAt` 升序，同毫秒按 `id` 升序。**
+	 * 两个真库实现本来就得给个 ORDER BY（否则分页和「最近 N 条」都没有意义），
+	 * 而内存实现先前返回的是插入顺序 —— 两者在条目按时间顺序写入时恰好一致，
+	 * 于是这处分叉一直看不见，直到一致性脚本里出现一条 createdAt 更早、
+	 * 却最后写入的条目。
+	 */
 	all(): Promise<ReadonlyArray<CacheEntry>>;
 }

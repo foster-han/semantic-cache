@@ -1,3 +1,5 @@
+import type { ProbePair } from "../../sdk/src/index.ts";
+
 /** 老师上传的一篇课程资料。`unit` 是章节/单元，参与检索时的章节加权。 */
 export interface CourseDoc {
 	readonly id: string;
@@ -46,6 +48,15 @@ export interface ComposeChunk {
 	readonly version: number;
 }
 
+/**
+ * ④ 的判别力探针。**必须跟着语料语言走** —— 一个英文训练的重排器在中文上饱和，
+ * 而这件事只有用本语料的问句去问才看得出来。
+ *
+ * 用的是 SDK 的 `ProbePair`：`checkReranker` 要的就是这个形状，
+ * 验证台不该为同一件事再造一套（先前那套 spread 判据比它弱，见 Server.ts）。
+ */
+export type RerankProbe = ProbePair;
+
 /** 一门课的完整语料包。中英文各一份，结构相同以便直接比较。 */
 export interface CourseCorpus {
 	readonly COURSE: string;
@@ -58,6 +69,8 @@ export interface CourseCorpus {
 	/** 干扰缓存：让召回的 top-k 真的有东西可排 */
 	readonly DISTRACTORS: ReadonlyArray<string>;
 	readonly SCENARIOS: ReadonlyArray<LabScenario>;
+	/** ④ 上线前的判别力探针：三组难度递减 + 一组逐字相同 */
+	readonly RERANK_PROBES: ReadonlyArray<RerankProbe>;
 	/**
 	 * 把检索片段拼成答案。**住在语料包里，是因为模板语言必须跟着语料语言走。**
 	 *

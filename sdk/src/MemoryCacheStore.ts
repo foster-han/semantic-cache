@@ -72,8 +72,10 @@ export function createMemoryCacheStore(options?: { now?: () => number }): Inspec
 			return before - entries.length;
 		},
 		async all() {
-			// 返回副本：直接给出内部数组的话，调用方手里的引用会随后续写入变化
-			return [...entries];
+			// 返回副本：直接给出内部数组的话，调用方手里的引用会随后续写入变化。
+			// 排序是契约要求的（createdAt 升序，同毫秒按 id）—— 插入顺序只在
+			// 「条目恰好按时间写入」时与它一致，那种巧合掩盖过一次真库与内存的分叉。
+			return [...entries].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 		},
 		async clear() {
 			entries = [];

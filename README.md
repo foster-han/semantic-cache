@@ -45,8 +45,15 @@ GEN=claude-cli MODE=local CORPUS_LANG=en SEMCACHE_REDIS=redis://localhost:6379/2
 只想看 SDK 本身：
 
 ```bash
-cd sdk && node --experimental-strip-types example/Smoke.ts   # 假模型，不下载任何东西
+cd sdk
+node --experimental-strip-types example/Smoke.ts   # 端到端冒烟：假模型，不下载任何东西，失败退非 0
+npm run test                                       # 单测（node:test，零依赖）
+npm install && npm run typecheck                   # 类型检查要 tsc，所以这一步才需要装东西
 ```
+
+单测覆盖的是那些**出错也不报错**的不变式：⑥ 的 top-1 算子、票据配错 prompt、
+没有依据的答案不写入、检索故障不驱逐、中带替换必须先写后删、判别力判据是 margin
+而不是跨度。每一条都对应 [`FINDINGS.md`](FINDINGS.md#踩过的坑) 里的一个坑。
 
 ## 往下看
 

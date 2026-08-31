@@ -4,14 +4,17 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { checkReranker } from "../sdk/src/index.ts";
 import { createEncoders } from "./Models.ts";
-import { createLab, DEFAULTS } from "./LabCache.ts";
+import { createLab } from "./LabCache.ts";
 import { createLabStore } from "./Store.ts";
-import { COURSE, DOCS, SCENARIOS } from "./Corpus.ts";
+import { COURSE, DOCS, LANGUAGE, RERANK_PROBES, SCENARIOS } from "./Corpus.ts";
 import type { LabConfig } from "./types/LabConfig.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 7788);
+/** 与 SDK `checkReranker` 的默认值一致：margin 小于这个数就是任务错配 */
+const MIN_RERANK_MARGIN = 0.15;
 
 const encoders = await createEncoders();
 
@@ -25,6 +28,7 @@ const lab = createLab(encoders, backing.store);
 console.log(`\n模型后端：${encoders.mode}　—　${encoders.note}`);
 console.log(`存储后端：${backing.kind}　—　${backing.note}`);
 console.log(`生成后端：${lab.generator.kind}　—　${lab.generator.note}`);
+console.log(lab.calibration.summary);
 if (encoders.mode === "stub") {
 	console.log("⚠  stub 模式的分数没有统计意义，只用来跑通控制流。真验证请用 MODE=local。");
 }
@@ -51,12 +55,25 @@ function configOf(body: Record<string, unknown>): Partial<LabConfig> {
 
 async function snapshot() {
 	return {
+		// 四个互不相干的轴，页面顶部要把它们摊开显示 —— 「现在跑的到底是什么」
+		// 不该靠翻启动日志或猜环境变量
 		mode: encoders.mode,
 		note: encoders.note,
+		models: encoders.models,
+		corpus: LANGUAGE,
 		store: { kind: backing.kind, note: backing.note },
 		generator: lab.generator,
 		rerankAvailable: encoders.rerankAvailable,
-		defaults: DEFAULTS,
+		defaults: lab.defaults,
+		// 阈值是哪一行标定出来的、有没有被借用/覆盖 —— 页面要照着这个说话
+		calibration: {
+			summary: lab.calibration.summary,
+			borrowed: lab.calibration.borrowed,
+			overridden: lab.calibration.overridden,
+			recallNote: lab.calibration.recallNote,
+			rerankNote: lab.calibration.rerankNote,
+			supportNote: lab.calibration.supportNote,
+		},
 		course: COURSE,
 		units: [...new Set(DOCS.map(d => d.unit))],
 		scenarios: SCENARIOS.map(s => ({
@@ -69,7 +86,9 @@ async function snapshot() {
 			expect: s.expect,
 			bumpCorpus: Boolean(s.bumpCorpus),
 		})),
-		docs: lab.docs.map(d => ({ id: d.id, unit: d.unit, title: d.title, version: d.version })),
+		// 正文也发。判据是「答案的首要依据是不是那篇资料」——
+		// 页面上只看到 n7 / n9 两个 id 却读不到它们写了什么，这个判据就没法用眼睛复核
+		docs: lab.docs.map(d => ({ id: d.id, unit: d.unit, title: d.title, version: d.version, text: d.text })),
 		cache: (await lab.cache()).map(e => ({
 			id: e.id,
 			scope: e.scope,
@@ -134,23 +153,29 @@ const server = createServer(async (req, res) => {
 			return;
 		}
 		if (req.method === "POST" && url.pathname === "/api/rerank-probe") {
-			// 重排器判别力自检：一个 cross-encoder 只有在「同义」和「完全无关」之间
-			// 拉得开分数时才有用。拉不开就说明模型和任务不匹配。
-			const PAIRS: ReadonlyArray<readonly [string, string, string]> = [
-				["同义改写", "怎么重置密码？", "忘记密码了怎么办？"],
-				["同主题不同问", "什么是递归？", "什么是闭包？"],
-				["完全无关", "什么是递归？", "美国第 44 任总统是谁？"],
-				["逐字相同", "什么是递归？", "什么是递归？"],
-			];
-			const rows: Array<{ tag: string; a: string; b: string; score: number | null }> = [];
-			for (const [tag, a, b] of PAIRS) rows.push({ tag, a, b, score: await encoders.rerank(a, b) });
-			const vals = rows.map(r => r.score).filter((v): v is number => typeof v === "number");
-			const spread = vals.length ? Math.max(...vals) - Math.min(...vals) : null;
+			/**
+			 * ④ 上线前的判别力自检 —— 直接用 SDK 的 `checkReranker`。
+			 *
+			 * **判据是 margin（正例最低 − 负例最高），不是跨度。** 先前这里自己算跨度，
+			 * 那条判据比 SDK 那个弱一档：一个把「完全无关」打得比「同义改写」还高的模型
+			 * （顺序整个反过来，毫无用处）只要分数摊得开就能过关。而 SDK 里那个函数
+			 * 就在旁边，还带着 shouldMatch 标注 —— 同一件事没有理由做两遍、还做差一点。
+			 */
+			if (!encoders.reranker) {
+				json(res, 200, { available: false, rows: [], margin: null, minMargin: MIN_RERANK_MARGIN, usable: false });
+				return;
+			}
+			const report = await checkReranker(encoders.reranker, RERANK_PROBES, MIN_RERANK_MARGIN);
 			json(res, 200, {
-				available: encoders.rerankAvailable,
-				rows,
-				spread,
-				usable: spread !== null && spread >= 0.15,
+				available: true,
+				minMargin: MIN_RERANK_MARGIN,
+				rows: report.rows.map((r, i) => ({ ...r, a: RERANK_PROBES[i].a, b: RERANK_PROBES[i].b })),
+				minPositive: report.minPositive,
+				maxNegative: report.maxNegative,
+				margin: report.margin,
+				spread: report.spread,
+				usable: report.usable,
+				thetaQ: lab.defaults.thetaQ,
 			});
 			return;
 		}
@@ -165,3 +190,20 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
 	console.log(`\n语义缓存验证台  →  http://localhost:${PORT}\n`);
 });
+
+/**
+ * 退出时关掉存储。**先前 `backing.close()` 从来没被调用过** —— 内存后端无所谓，
+ * 但 pgvector 的连接池和 Redis 的客户端会把进程挂住，Ctrl-C 之后要等超时才退。
+ */
+let closing = false;
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+	process.on(signal, () => {
+		if (closing) return;
+		closing = true;
+		server.close();
+		void backing
+			.close()
+			.catch((err: unknown) => console.error("关闭存储时出错：", err))
+			.finally(() => process.exit(0));
+	});
+}

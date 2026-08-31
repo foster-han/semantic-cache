@@ -12,6 +12,11 @@ export interface Chunk {
  * **传进来的一定是保留实体的原文**（见 CachePrompt.retrievalText）。
  * 如果这里跑的是匿名化之后的文本，回答侧校验对实体塌陷完全失明 ——
  * 两个不同的人会检出同一批片段，这一层就废了。
+ *
+ * **返回值必须按相关性降序**，`[0]` 是这次最会被据以回答的那一篇。⑥ 的算子固定
+ * 为 top-1，比的就是 `chunks[0]` —— 顺序错了这道闸测的就不是「旧答案和现在会据以
+ * 回答的那篇一不一致」，而阈值仍然照常算得出来，不会报错。你自己的检索层若返回的是
+ * 未排序的集合，请在这里排好再交出来。
  */
 export interface Retriever {
 	retrieve(retrievalText: string, context: Readonly<Record<string, string>>): Promise<Array<Chunk>>;

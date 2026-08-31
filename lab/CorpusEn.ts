@@ -1,4 +1,4 @@
-import type { ComposeChunk, CourseDoc, LabScenario } from "./types/Corpus.ts";
+import type { ComposeChunk, CourseDoc, LabScenario, RerankProbe } from "./types/Corpus.ts";
 
 /**
  * English mirror of the ML101 corpus. Same course, same failure classes,
@@ -119,6 +119,15 @@ export const DISTRACTORS: ReadonlyArray<string> = [
 	"What is the penalty for late homework?",
 	"Where do I ask questions?",
 	"When are grades released?",
+];
+
+/** ④ 的判别力探针。与中文那份一一对应，好让两种语言的 margin 直接比较。 */
+export const RERANK_PROBES: ReadonlyArray<RerankProbe> = [
+	{ label: "paraphrase (should MATCH)", a: "What is overfitting?", b: "What does overfitting mean?", shouldMatch: true },
+	{ label: "identical (should MATCH)", a: "What is overfitting?", b: "What is overfitting?", shouldMatch: true },
+	{ label: "near-antonym (should DIFFER)", a: "What is overfitting?", b: "What is underfitting?", shouldMatch: false },
+	{ label: "same topic (should DIFFER)", a: "What is overfitting?", b: "How do I tune regularisation strength?", shouldMatch: false },
+	{ label: "unrelated (should DIFFER)", a: "What is overfitting?", b: "When are grades released?", shouldMatch: false },
 ];
 
 export const SCENARIOS: ReadonlyArray<LabScenario> = [

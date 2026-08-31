@@ -18,6 +18,17 @@ export interface LabEncoders extends PairEncoder, RetrievalEncoder {
 	readonly note: string;
 	readonly rerankAvailable: boolean;
 	readonly retrievalModel: string;
+	/**
+	 * 三个角色各自用的是哪个模型。**结构化给出，不让页面去解析 `note`。**
+	 * 这三行是「现在跑的到底是什么」的一半答案（另一半是存储与生成端），
+	 * 页面顶部要逐行显示 —— 任务错配这类事，只有把三个角色摊开才看得见。
+	 */
+	readonly models: {
+		readonly pair: string;
+		readonly retrieval: string;
+		/** 没加载到重排器时为 null —— 那就是没有 ④ 这道闸 */
+		readonly rerank: string | null;
+	};
 	/** 无重排器时返回 null */
 	rerank(a: string, b: string): Promise<number | null>;
 	/** 供 SDK 使用的重排器接口；无重排器时为 undefined */
@@ -63,6 +74,7 @@ function stubEncoders(): LabEncoders {
 		note: "玩具相似度，仅供跑通流程；分数无统计意义",
 		rerankAvailable: false,
 		retrievalModel: "stub",
+		models: { pair: "stub", retrieval: "stub", rerank: null },
 		embedQuestions: embed,
 		embedQuery: embed,
 		embedPassage: embed,
@@ -73,6 +85,36 @@ function stubEncoders(): LabEncoders {
 }
 
 /* ---------- 工厂 ---------- */
+
+/**
+ * 降级要不要允许。**默认不允许。**
+ *
+ * 隔壁 `Generators.ts` 对同一个问题的处置是对的：「生成失败直接抛错，不退回 stub ——
+ * 两种分布混着标出来的 θa 比标不准更糟」。这里先前是反的：检索模型加载失败就退回句对
+ * 模型（正是「什么是过拟合 top-1 是批归一化」那次任务错配的配置），任何异常则整体退回
+ * stub —— `MODE=local` 却跑着玩具相似度，只在启动日志里留一行。两条都是静默降级，
+ * 而 FINDINGS 坑 #5 说的就是这件事。
+ *
+ * 真要在没有网络/模型的机器上跑通控制流，用 `MODE=stub` 显式说出来；
+ * 或者 `ALLOW_ENCODER_FALLBACK=1` 显式承担后果。
+ */
+const ALLOW_FALLBACK = process.env.ALLOW_ENCODER_FALLBACK === "1";
+
+/** 自己抛的装配错误，好让外层那个兜底 catch 认出来别再包一层 */
+class EncoderSetupError extends Error {}
+
+function fallbackOrThrow(what: string, err: unknown, consequence: string): void {
+	if (err instanceof EncoderSetupError) throw err;
+	const detail = `${what}：${String(err)}`;
+	if (!ALLOW_FALLBACK) {
+		throw new EncoderSetupError(
+			`${detail}\n${consequence}\n` +
+				"这里不静默降级 —— 降级之后跑出来的分数是另一个分布上的产物，比跑不起来更难发现。" +
+				"要玩具相似度请显式 MODE=stub；确实想降级请 ALLOW_ENCODER_FALLBACK=1。",
+		);
+	}
+	process.stdout.write(`⚠ ${detail}\n⚠ ${consequence}（ALLOW_ENCODER_FALLBACK=1，已按你的要求继续）\n`);
+}
 
 export async function createEncoders(): Promise<LabEncoders> {
 	if ((process.env.MODE ?? "local") === "stub") return stubEncoders();
@@ -90,7 +132,11 @@ export async function createEncoders(): Promise<LabEncoders> {
 			retrEx = await pipeline("feature-extraction", RETR_ID);
 			retrOk = true;
 		} catch (err) {
-			process.stdout.write(`检索模型加载失败，退回句对模型（检索质量会明显变差）：${String(err)}\n`);
+			fallbackOrThrow(
+				`检索模型 ${RETR_ID} 加载失败`,
+				err,
+				"退回句对模型做检索 = 任务错配：实测「什么是过拟合？」的 top-1 会变成「批归一化」（0.366），而程序一路不报错",
+			);
 		}
 		const usesE5Prefix = retrOk && /e5/iu.test(RETR_ID);
 
@@ -114,12 +160,36 @@ export async function createEncoders(): Promise<LabEncoders> {
 			return out.tolist() as Array<Array<number>>;
 		}
 
+		/**
+		 * cross-encoder 的分数。
+		 *
+		 * **必须看 logits 有几路。** 先前无条件取 `data[0]` 过 sigmoid：`ms-marco` 是
+		 * 单 logit 所以对，但 DESIGN 建议你换的那类「句对 / 重复问题」模型里有两分类的
+		 * （`[不相关, 相关]`），此时 `data[0]` 是**不相关**那一路 —— 分数方向整个反过来，
+		 * 而且不报错：模型正常加载、返回合法的 0~1、程序跑完。这正是这套东西一路在防的
+		 * 静默失效，所以两路走 softmax、其它路数直接抛。
+		 */
 		async function rerank(a: string, b: string): Promise<number | null> {
 			if (!ceModel || !ceTok) return null;
 			const inputs = await ceTok(a, { text_pair: b, padding: true, truncation: true });
 			const { logits } = await ceModel(inputs);
-			const raw = Number(logits.data[0]);
-			return 1 / (1 + Math.exp(-raw));
+			const values = Array.from(logits.data as ArrayLike<number>, Number);
+			// dims 形如 [batch, labels]；只喂了一对，所以最后一维就是路数
+			const dims = logits.dims as ReadonlyArray<number>;
+			const labels = dims.length > 0 ? dims[dims.length - 1] : values.length;
+			if (labels === 1) return 1 / (1 + Math.exp(-values[0]));
+			if (labels === 2) {
+				// softmax 的正类。减去 max 只为数值稳定
+				const top = Math.max(values[0], values[1]);
+				const a0 = Math.exp(values[0] - top);
+				const a1 = Math.exp(values[1] - top);
+				return a1 / (a0 + a1);
+			}
+			throw new Error(
+				`cross-encoder ${CE_ID} 输出 ${labels} 路 logits（dims ${JSON.stringify(dims)}），不知道哪一路是「相关」。` +
+					"单 logit 走 sigmoid、两分类走 softmax 取正类，其它情况必须由你明确指定 —— " +
+					"猜错的后果是分数方向反过来，而且一路不报错。",
+			);
 		}
 
 		return {
@@ -127,6 +197,11 @@ export async function createEncoders(): Promise<LabEncoders> {
 			rerankAvailable: ceModel !== null,
 			retrievalModel: retrOk ? RETR_ID : `${PAIR_ID}（回退）`,
 			note: `句对 ${PAIR_ID} | 检索 ${retrOk ? RETR_ID : `${PAIR_ID}（回退）`} | 重排 ${ceModel ? CE_ID : "无"}`,
+			models: {
+				pair: PAIR_ID,
+				retrieval: retrOk ? RETR_ID : `${PAIR_ID}（⚠ 回退，任务错配）`,
+				rerank: ceModel ? CE_ID : null,
+			},
 			embedQuestions: texts => run(pairEx, texts, ""),
 			embedQuery: texts => run(retrEx, texts, usesE5Prefix ? "query: " : ""),
 			embedPassage: texts => run(retrEx, texts, usesE5Prefix ? "passage: " : ""),
@@ -134,7 +209,11 @@ export async function createEncoders(): Promise<LabEncoders> {
 			reranker: ceModel ? { score: async (q, c) => (await rerank(q, c)) ?? 0 } : undefined,
 		};
 	} catch (err) {
-		process.stdout.write(`本地模型不可用，回退 stub 模式：${String(err)}\n`);
+		fallbackOrThrow(
+			"本地模型不可用",
+			err,
+			"MODE=local 却跑 stub 的玩具相似度（字符 Jaccard 的哈希投影），分数没有统计意义",
+		);
 		return stubEncoders();
 	}
 }

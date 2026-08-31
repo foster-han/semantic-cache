@@ -2,7 +2,7 @@
  * 存储接口一致性。
  *
  * `compareStores.ts` 比的是端到端结论，走的只有 `resolve` 那条路，`getById` 和
- * `evictBySource` 根本碰不到。这里直接对着 `CacheStore` 的十个方法跑同一串操作，
+ * `evictBySource` 根本碰不到。这里直接对着 `InspectableCacheStore` 的十个方法（热路径 8 个 + `all` / `clear`）跑同一串操作，
  * 两种后端的可观察结果必须逐项相同。
  *
  * 重点覆盖三处容易在真库上写错、而内存实现天然不会错的地方：
@@ -37,6 +37,33 @@ function entry(id: string, scope: string, hash: string, seed: number, sources: A
 		createdAt: 1_000 + seed,
 		expiresAt,
 		meta: { note: `m${id}` },
+	};
+}
+
+/**
+ * plan 条目：**没有答案向量、没有 sourceIds、没有 meta。**
+ *
+ * 这一支最容易在真库上分叉，因为三种后端对「空」的落法完全不同：pgvector 存不了
+ * 0 维向量所以落 NULL、Redis 落字符串 `"[]"`、内存就是空数组；`meta: undefined`
+ * 那边同理（NULL / 空串 / undefined）。往返回来必须都是同一个形状，否则
+ * 「换存储不改判定」在 plan 这一支就是空话 —— 而 `compareStores.ts` 走的场景集
+ * 全是 answer，永远碰不到它。
+ */
+function planEntry(id: string, scope: string, hash: string, seed: number): CacheEntry {
+	return {
+		id,
+		scope,
+		matchText: `工具问题 ${id}`,
+		matchHash: hash,
+		matchVector: vec(seed),
+		kind: "plan",
+		answer: "",
+		plan: { tool: "getGrade", assignment: "2" },
+		answerVector: [],
+		sourceIds: [],
+		sourceVersion: "",
+		createdAt: 1_000 + seed,
+		expiresAt: null,
 	};
 }
 
@@ -79,6 +106,19 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	const drift = Math.max(...(roundtrip?.matchVector ?? []).map((v, i) => Math.abs(v - expected[i])));
 	out.push(`往返 b 向量: ${drift <= 1e-7 ? "在 float4 分辨率内" : `偏差 ${drift.toExponential(2)} 超出 float4 分辨率`}`);
 
+	/* plan 条目的往返：空向量、空数组、缺省 meta 都必须原样回来 */
+	await store.put(planEntry("p", "course:1", "h-p", 7));
+	const plan = await store.getById("p");
+	out.push(
+		`往返 p(plan): kind=${plan?.kind} answer="${plan?.answer}" plan=${JSON.stringify(plan?.plan)} ` +
+			`answerVector=${JSON.stringify(plan?.answerVector)} sources=${JSON.stringify(plan?.sourceIds)} ` +
+			`version="${plan?.sourceVersion}" meta=${plan?.meta === undefined ? "undefined" : JSON.stringify(plan.meta)}`,
+	);
+	out.push(`byHash(course:1,h-p)=${(await store.getByHash("course:1", "h-p"))?.id ?? "null"}`);
+	// plan 条目照样要能被召回（它的 match_vector 是正常的，只有答案侧是空的）
+	out.push(`near(plan 也在)=${(await store.searchNearest("course:1", vec(7), 5)).some(c => c.entry.id === "p") ? "在" : "不在"}`);
+	await store.evict("p");
+
 	// 召回：过期的 d 不能出现；LIMIT 也不能被它挤掉一格
 	const near = await store.searchNearest("course:1", vec(2), 3);
 	out.push(`near=${near.map(c => `${c.entry.id}:${c.similarity.toFixed(6)}`).join(" ")}`);
@@ -102,10 +142,23 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	await store.put(entry("new", "course:1", "dup", 2, ["n1"], null));
 	out.push(`重复哈希 getByHash=${(await store.getByHash("course:1", "dup"))?.id ?? "null"}`);
 
-	/* id 重复必须抛错，不能静默丢弃也不能覆盖 */
+	/**
+	 * **同毫秒的兜底排序**：createdAt 相同时取 id 最大的那条。
+	 * 三种后端在这里的写法各不相同（内存 `e.id > best.id`、pgvector
+	 * `ORDER BY created_at DESC, id DESC`、Redis 靠 zset 同分时的字典序 + ZREVRANGE），
+	 * 而这条契约先前没有任何测试碰过 —— 三者一旦分叉，② 命中的就是不同的答案。
+	 */
+	await store.clear();
+	const sameMs = { ...entry("aaa", "course:1", "tie", 1, ["n1"], null), createdAt: 4_242 };
+	await store.put(sameMs);
+	await store.put({ ...sameMs, id: "zzz", answer: "同毫秒 大 id" });
+	await store.put({ ...sameMs, id: "mmm", answer: "同毫秒 中 id" });
+	out.push(`同毫秒 getByHash=${(await store.getByHash("course:1", "tie"))?.id ?? "null"}`);
+
+	/* id 重复必须抛错，不能静默丢弃也不能覆盖 —— 拿一个**库里已有**的 id 去写 */
 	let duplicateRejected = "没有抛错";
 	try {
-		await store.put(entry("old", "course:1", "other", 9, ["n1"], null));
+		await store.put(entry("zzz", "course:1", "other", 9, ["n1"], null));
 	} catch {
 		duplicateRejected = "抛错";
 	}

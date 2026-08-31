@@ -35,6 +35,16 @@
 
   .banner { border-radius:9px; padding:.6rem .9rem; font-family:var(--mono); font-size:12px; margin-bottom:1.5rem; border:1px solid var(--border); background:var(--surface); }
   .banner.warn { background:var(--warn-soft); border-color:var(--warn); color:var(--warn); }
+  /* 当前配置：四个互不相干的轴 + 标定，一眼看清「现在跑的是什么」 */
+  .axes { border:1px solid var(--border); background:var(--surface); border-radius:9px; padding:.7rem .95rem; margin-bottom:.7rem;
+          display:grid; grid-template-columns:max-content 1fr; gap:.45rem .9rem; font-size:12.5px; align-items:baseline; }
+  .axes dt { font-family:var(--mono); font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .axes dd { margin:0; }
+  .axes .v { font-weight:650; }
+  .axes .d { color:var(--muted); }
+  .axes .sub { display:block; color:var(--muted); font-family:var(--mono); font-size:11px; margin-top:.15rem; }
+  .axes .flag { color:var(--warn); font-weight:650; }
+  @media (max-width:640px) { .axes { grid-template-columns:1fr; gap:.15rem; } .axes dt { margin-top:.5rem; } }
 
   /* 实验卡 */
   .exp { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.05rem 1.15rem; margin-bottom:.85rem; }
@@ -83,6 +93,18 @@
   .scard b { display:block; font-size:13px; margin-bottom:.2rem; }
   .scard span { display:block; font-family:var(--mono); font-size:10.5px; color:var(--muted); line-height:1.5; }
 
+  /* 语料：一篇一个 tab。这个语料没有再切段，chunk 就是整篇文档，所以一篇=一段 */
+  .doctabs { display:flex; gap:.3rem; flex-wrap:wrap; margin-bottom:.5rem; }
+  .doctab { text-align:left; padding:.32rem .6rem; border-radius:7px; border:1px solid var(--border); background:var(--surface-2); cursor:pointer; font-size:12px; line-height:1.35; }
+  .doctab:hover { border-color:var(--accent); }
+  .doctab.on { border-color:var(--accent); background:var(--accent-soft); color:var(--accent-ink); font-weight:600; }
+  .doctab small { display:block; font-family:var(--mono); font-size:10px; color:var(--muted); font-weight:400; }
+  .doctab.on small { color:var(--accent); }
+  .doctab .v2 { color:var(--bad); font-weight:700; }
+  .docbody { border:1px solid var(--border); border-radius:9px; background:var(--surface-2); padding:.7rem .85rem; }
+  .docbody .meta { font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-bottom:.45rem; }
+  .docbody .body { white-space:pre-wrap; font-size:12.5px; line-height:1.6; max-height:22rem; overflow-y:auto; }
+
   .legend { display:flex; gap:.9rem; flex-wrap:wrap; font-size:11.5px; color:var(--muted); margin:0 0 .7rem; font-family:var(--mono); }
   .legend i { display:inline-block; width:.7rem; height:.7rem; border-radius:3px; margin-right:.25rem; vertical-align:-1px; }
 
@@ -130,13 +152,14 @@
   <h1>语义缓存验证台</h1>
   <p class="tagline">每个实验点一下，自动跑两遍完整场景集——一遍开着某道闸，一遍关掉——然后告诉你差在哪。<b>假命中数的差值，就是那道闸的价值。</b>如果差值是 0，说明那道闸在这个场景集上没用，它会如实这么写。</p>
 
-  <div id="banner" class="banner">加载中…</div>
+  <dl class="axes" id="axes"><dt>加载中</dt><dd class="d">…</dd></dl>
+  <div id="banner" class="banner" hidden></div>
 
   <h2>先做这个：重排器自检</h2>
-  <p class="h2sub">④ 那道闸只有在重排器能把「同义」和「完全无关」拉开分数时才有意义。拉不开就说明模型和任务不匹配——这时 ④ 的任何 bench 数字都不可信。<b>先跑这个，再看下面的实验。</b></p>
+  <p class="h2sub">④ 那道闸只有在重排器能把「同义」和「完全无关」拉开分数时才有意义。拉不开就说明模型和任务不匹配——这时 ④ 的任何 bench 数字都不可信。<b>先跑这个，再看下面的实验。</b>自检不通过时，下面 ④ 那张卡会被标注出来。</p>
   <div class="exp">
     <header>
-      <div><div class="t">当前重排器判别力</div><p class="q">四组难度递减的问题对，看分数跨度。跨度 &lt; 0.15 视为不可用。</p></div>
+      <div><div class="t">当前重排器判别力</div><p class="q">五组本课程的问题对（三组该低、两组该高），看 <b>margin = 正例最低 − 负例最高</b>。margin &lt; 0.15 视为任务错配。<br>看 margin 而不是跨度：跨度大但顺序反的模型毫无用处。</p></div>
       <button id="probeBtn">自检</button>
     </header>
     <div id="probeOut"></div>
@@ -185,9 +208,9 @@
         <div>
           <label class="fld">闸门开关（只影响上面的手动提问和「单条场景细看」，不影响对照实验）</label>
           <div class="toggles" id="toggles"></div>
-          <label class="fld">阈值</label>
+          <label class="fld">阈值<small id="calibNote" style="display:block;font-weight:400;color:var(--muted);margin-top:.25rem"></small></label>
           <div class="thr">
-            <div>θq <input type="number" id="thetaQ" step="0.01" min="0" max="1"></div>
+            <div>θq <input type="number" id="thetaQ" step="0.001" min="0" max="1" placeholder="未标定"></div>
             <div>召回下限 <input type="number" id="recallFloor" step="0.01" min="0" max="1"></div>
             <div>θa 高 <input type="number" id="thetaAHi" step="0.01" min="0" max="1"></div>
             <div>θa 低 <input type="number" id="thetaALo" step="0.01" min="0" max="1"></div>
@@ -205,12 +228,13 @@
       <div class="cols" style="margin-top:1.4rem">
         <div>
           <label class="fld">缓存内容</label>
-          <div class="tw"><table><thead><tr><th>#</th><th>scope</th><th>提问者</th><th>prompt（匿名化后，仅最近 25 条）</th></tr></thead><tbody id="cache"></tbody></table></div>
+          <div class="tw"><table><thead><tr><th>#</th><th>scope</th><th>载荷 · 依据</th><th>prompt（匿名化后，仅最近 25 条）</th></tr></thead><tbody id="cache"></tbody></table></div>
           <p class="mono" id="counters" style="color:var(--muted)"></p>
         </div>
         <div>
-          <label class="fld">语料</label>
-          <div class="tw"><table><thead><tr><th>id</th><th>单元</th><th>标题</th><th>版本</th></tr></thead><tbody id="docs"></tbody></table></div>
+          <label class="fld">语料（点标签换一篇，正文就是喂给检索的原文）</label>
+          <div class="doctabs" id="docTabs"></div>
+          <div class="docbody" id="docBody"><p class="empty">加载中…</p></div>
         </div>
       </div>
     </div>
@@ -230,10 +254,11 @@ const GATE_PLAIN = {
 
 const GATES = [
   { key:"gate1", label:"① Presidio 门控", desc:"检出实体就强制 user scope。开启后跨学生共享不再发生。" },
-  { key:"gate4", label:"④ Cross-encoder 重排", desc:"关掉就退化成纯余弦阈值。" },
+  { key:"gate4", label:"④ Cross-encoder 重排", desc:"没有这道闸时问题侧只由 ③ 的召回下限把关。" },
   { key:"gate5", label:"⑤ 语料版本比对", desc:"关掉后过期答案会照常返回。" },
   { key:"gate6", label:"⑥ 回答侧校验", desc:"关掉后占位符塌陷应当立刻放行。" },
   { key:"preAnonRetrieval", label:"⑥ 检索用保留实体的原文", desc:"关掉 → ⑥ 应当对实体塌陷失明。" },
+  { key:"declareRedacted", label:"如实声明已脱敏", desc:"声明后 SDK 拒绝把 answer 条目放进共享 scope —— 打开它并关掉 ① 会被当场拒绝，那是对的。" },
 ];
 
 const EXPERIMENTS = [
@@ -248,13 +273,20 @@ const EXPERIMENTS = [
 
   { key:"ce", title:"④ cross-encoder 重排值不值",
     q:"把余弦阈值调高就够了，还是真需要一个重排器？",
-    needsRerank:true,
-    a:{ label:"开着 ④ 重排", cfg:{} }, b:{ label:"关掉 ④（纯余弦阈值）", cfg:{ gate4:false } } },
+    // 显式开 ④，不吃默认值 —— 当前组合没有标定过的 θq 时默认是关着的，
+    // 那种情况下这张卡应当**被拒绝**（并说明原因），而不是两边跑出一样的数
+    a:{ label:"开着 ④ 重排", cfg:{ gate4:true } }, b:{ label:"关掉 ④（问题侧只剩召回下限）", cfg:{ gate4:false } } },
 
   { key:"gate1", title:"① 门控能不能替代 ⑥",
     q:"入口就按检出实体分流到 user scope，是不是就不用 ⑥ 了？",
     a:{ label:"开门控 · 关 ⑥", cfg:{ gate1:true, gate6:false } },
     b:{ label:"关门控 · 关 ⑥", cfg:{ gate1:false, gate6:false } } },
+
+  { key:"redact", title:"脱敏声明这道防线",
+    q:"上层如实声明「这条已脱敏」之后，把它放进全班共享的缓存会怎样？",
+    expect:"预期 B 被拒绝：脱敏之后两个学生塌成同一个缓存键，而答案里带着占位符 —— 跨主体复用必然张冠李戴。这不是概率问题，所以 SDK 直接抛错，而不是等 ⑥ 去兜。",
+    a:{ label:"声明脱敏 + ① 按学生隔离", cfg:{ declareRedacted:true, gate1:true } },
+    b:{ label:"声明脱敏 + 落进共享 scope", cfg:{ declareRedacted:true, gate1:false }, expectRejected:true } },
 
   { key:"prefilter", title:"pre-filter 比校验便宜",
     q:"把「学生当前章节」加进缓存的 pre-filter，能不能直接省掉一次校验？",
@@ -265,6 +297,7 @@ const EXPERIMENTS = [
 let DEF = {};
 let cfg = {};
 let GEN = null;   // 生成端 —— 决定要不要显示等待提示、要不要拦下实验卡
+let CALIB = { summary:"", borrowed:false, overridden:[] };
 let SCEN = [];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
@@ -318,16 +351,19 @@ function conclude(exp, A, B) {
   const improved = B.rows.filter(r => r.ok && !a[r.key].ok).map(r => r.label);
   const d = B.falseHit - A.falseHit;
 
+  // 有两张卡的 A/B 之差不是「开/关一道闸」（① 门控替代 ⑥、pre-filter 粒度），
+  // 所以措辞一律用 B 那一侧的标签，别硬说成「关掉之后」和「这道闸的价值」
+  const toB = `换成「${esc(exp.b.label)}」之后`;
   if (d > 0) {
-    return { cls:"good", html:`<b>关掉之后假命中 ${A.falseHit} → ${B.falseHit}。</b>多漏的是：${regressed.map(esc).join("、") || "（判定翻转但假命中数未变）"}。这 ${d} 条就是这道闸的价值。` };
+    return { cls:"good", html:`<b>${toB}假命中 ${A.falseHit} → ${B.falseHit}。</b>多漏的是：${regressed.map(esc).join("、") || "（判定翻转但假命中数未变）"}。这 ${d} 条就是 A 与 B 之间的差。` };
   }
   if (d === 0 && regressed.length === 0 && improved.length === 0) {
-    return { cls:"flat", html:`<b>两边一模一样，假命中都是 ${A.falseHit}。</b>在这个场景集上，这道闸没有产生任何差别——要么它确实没用，要么场景集里没有能触发它的案例。` };
+    return { cls:"flat", html:`<b>两边一模一样，假命中都是 ${A.falseHit}。</b>在这个场景集上这个差异没有产生任何后果——要么它确实没用，要么场景集里没有能触发它的案例。` };
   }
   if (d < 0) {
-    return { cls:"odd", html:`<b>关掉之后假命中反而下降（${A.falseHit} → ${B.falseHit}）。</b>与预期相反，值得查：${improved.map(esc).join("、")}。` };
+    return { cls:"odd", html:`<b>${toB}假命中反而下降（${A.falseHit} → ${B.falseHit}）。</b>与预期相反，值得查：${improved.map(esc).join("、")}。` };
   }
-  return { cls:"flat", html:`<b>假命中数没变（都是 ${A.falseHit}），但判定有翻转。</b>${regressed.length ? "关掉后变坏：" + regressed.map(esc).join("、") + "。" : ""}${improved.length ? "关掉后反而变好：" + improved.map(esc).join("、") + "。" : ""}` };
+  return { cls:"flat", html:`<b>假命中数没变（都是 ${A.falseHit}），但判定有翻转。</b>${regressed.length ? "B 侧变坏：" + regressed.map(esc).join("、") + "。" : ""}${improved.length ? "B 侧反而变好：" + improved.map(esc).join("、") + "。" : ""}` };
 }
 
 async function runExp(exp) {
@@ -339,11 +375,25 @@ async function runExp(exp) {
   try {
     const A = await post("/api/bench", { config: { ...DEF, ...exp.a.cfg } });
     const B = await post("/api/bench", { config: { ...DEF, ...exp.b.cfg } });
-    // SDK 拒绝一个配置也是有效结果 —— 如实报出来，别让它看起来像「两边一样」
+    // 配置被拒绝也是有效结果 —— 如实报出来，别让它看起来像「两边一样」。
+    // 有的实验**就是要**验证某个配置会被拒绝（脱敏那张卡），那种情况是通过而不是失败。
+    const expected = (side, res) => Boolean(exp[side].expectRejected) && Boolean(res.rejected);
+    if (expected("a", A) || expected("b", B)) {
+      const side = expected("b", B) ? "B" : "A";
+      const res = side === "B" ? B : A;
+      const other = side === "B" ? A : B;
+      out.innerHTML = `
+        <div class="concl good"><b>配置 ${side}（${esc(exp[side === "B" ? "b" : "a"].label)}）如预期被拒绝。</b>这是这张卡要证的事：必然出错的组合应当在构造时就被拦下，而不是等运行期看假命中。<br><span class="mono">${esc(res.reason ?? "未给出原因")}</span></div>
+        ${other.rejected ? `<div class="concl odd"><b>另一侧也被拒绝了，这不在预期内。</b><br><span class="mono">${esc(other.reason ?? "")}</span></div>`
+          : `<div class="sides">${sideHtml(side === "B" ? "配置 A" : "配置 B", side === "B" ? exp.a.label : exp.b.label, other)}</div>
+             <div class="concl flat">另一侧（隔离 scope）照常跑完：假命中 ${other.falseHit}，通过 ${other.total - other.falseHit - other.missed}/${other.total}。声明脱敏本身不妨碍缓存，只要 scope 是隔离的。</div>`}`;
+      renderState((other.rejected ? res.state : other.state) ?? res.state);
+      return;
+    }
     const bad = A.rejected ? { side:"A", label:exp.a.label, reason:A.reason }
               : B.rejected ? { side:"B", label:exp.b.label, reason:B.reason } : null;
     if (bad) {
-      out.innerHTML = `<div class="concl odd"><b>配置 ${bad.side}（${esc(bad.label)}）被 SDK 拒绝，这个对照没跑成。</b><br><span class="mono">${esc(bad.reason ?? "未给出原因")}</span></div>`;
+      out.innerHTML = `<div class="concl odd"><b>配置 ${bad.side}（${esc(bad.label)}）被拒绝，这个对照没跑成。</b><br><span class="mono">${esc(bad.reason ?? "未给出原因")}</span></div>`;
       renderState(B.state ?? A.state);
       return;
     }
@@ -355,6 +405,37 @@ async function runExp(exp) {
   } finally {
     btn.disabled = false; btn.textContent = "再跑一次";
   }
+}
+
+/**
+ * 自检的结论要回头作用到 ④ 那张卡上。
+ *
+ * 先前自检明明能测出「跨度 0.0013 不可用」，那张卡却照跑，然后输出
+ * 「两边一模一样，这道闸没用」—— 而真实原因是模型任务错配，两件事结论完全不同。
+ */
+function markCeCard(p) {
+  const card = $("exp-ce");
+  if (!card) return;
+  const hint = card.querySelector("[data-hint]");
+  const btn = card.querySelector("[data-run]");
+  if (!p.available) {
+    hint.textContent = "⚠ 当前没有可用的重排器，④ 这道闸不存在 —— 这张卡跑不出差别。要 npm start（真模型）才有意义。";
+    return;
+  }
+  if (!p.usable) {
+    hint.textContent = `⚠ 自检未通过（margin ${p.margin.toFixed(4)} < ${p.minMargin}）：这个重排器和「问题↔问题配对」任务不匹配。这张卡此时测的是一个错配模型的代价，不是「精排值不值」。`;
+    if (btn) btn.title = "自检未通过，结果只能这么读";
+    return;
+  }
+  if (p.thetaQ === null || p.thetaQ === undefined) {
+    hint.textContent = "⚠ 当前组合没有标定过的 θq —— 这张卡的 A 侧会被拒绝。跑 scripts/calibrate.ts 补一行标定，或显式 THETA_Q=。";
+    return;
+  }
+  if (p.thetaQ <= p.maxNegative) {
+    hint.textContent = `⚠ θq ${p.thetaQ} 低于负例最高分 ${p.maxNegative.toFixed(4)} —— ④ 会放过一切，这张卡两边必然一样。这不是「这道闸没用」，是阈值没落在分布里。`;
+    return;
+  }
+  hint.textContent = `自检通过（margin ${p.margin.toFixed(4)}），θq ${p.thetaQ} 落在两组之间 —— 这张卡的结果可以按字面读。`;
 }
 
 /* ---------- 单条场景 ---------- */
@@ -388,7 +469,6 @@ function traceHtml(r) {
         <div class="nm">${esc(t.name)}</div>
         <div class="plain">${esc(GATE_PLAIN[t.gate] || "")}</div>
         <div class="dt">${esc(t.detail)}</div>
-        ${t.extra ? `<div class="ex">${esc(t.extra)}</div>` : ""}
       </div>
       <div>${pill(t.verdict)}</div>
     </div>`).join("");
@@ -409,6 +489,35 @@ async function runScenario(sc) {
   renderResult(r, sc); renderState(r.state);
 }
 
+/**
+ * 当前配置。**编码器、语料、存储、生成端是四件独立的事**（README 里那四个轴），
+ * 任何一个记错都会让页面上的数字变成另一个分布上的产物 —— 所以四个都写出来，
+ * 加上这次用的是标定表里哪一行。
+ */
+function renderAxes(s) {
+  const m = s.models ?? {};
+  const row = (label, value, detail, sub) => `
+    <dt>${esc(label)}</dt>
+    <dd><span class="v">${value}</span>${detail ? ` <span class="d">${detail}</span>` : ""}${sub ? `<span class="sub">${sub}</span>` : ""}</dd>`;
+
+  const modelLines = s.mode === "stub"
+    ? `字符 Jaccard 的哈希投影，256 维`
+    : [`句对（③ 召回）　${esc(m.pair ?? "?")}`,
+       `检索（⑥ 支撑度）${esc(m.retrieval ?? "?")}`,
+       `重排（④ 精排）　${m.rerank ? esc(m.rerank) : "无 —— 没有这道闸"}`].join("<br>");
+
+  const genDetail = GEN.kind === "stub"
+    ? "拼接首个片段，非真生成"
+    : `真生成，未命中时每次约 ${(GEN.approxMsPerCall / 1000).toFixed(0)} 秒`;
+
+  $("axes").innerHTML =
+    row("编码器", `${esc(s.mode)}${s.mode === "stub" ? '<span class="flag"> ⚠</span>' : ""}`, `MODE=${esc(s.mode)}`, modelLines) +
+    row("语料", esc(s.corpus ?? "?"), `CORPUS_LANG=${esc(s.corpus ?? "?")}　课程 ${esc(s.course ?? "-")}　${(s.scenarios ?? []).length} 条场景`) +
+    row("存储", esc(s.store?.kind ?? "?"), "", esc(s.store?.note ?? "")) +
+    row("生成端", `${esc(GEN.kind)}${GEN.kind === "stub" ? '<span class="flag"> ⚠</span>' : ""}`, `GEN=${esc(GEN.kind)}　${genDetail}`, esc(GEN.note ?? "")) +
+    row("标定", CALIB.borrowed ? '<span class="flag">借用</span>' : "本组合", "", esc(CALIB.summary ?? ""));
+}
+
 /* ---------- 状态 ---------- */
 
 function renderToggles() {
@@ -418,6 +527,23 @@ function renderToggles() {
   for (const el of $("toggles").querySelectorAll("input")) {
     el.addEventListener("change", e => { cfg[e.target.dataset.k] = e.target.checked; });
   }
+  syncGate4Toggle();
+}
+
+/**
+ * 没有标定过的 θq 就没有 ④ 这道闸 —— 此时开关要禁掉并说明原因。
+ * 放它开着会得到一道恒放行的假闸：页面上看起来在工作，实际什么都不拦。
+ */
+function syncGate4Toggle() {
+  const box = $("toggles").querySelector('[data-k="gate4"]');
+  if (!box) return;
+  const noTheta = cfg.thetaQ === null || cfg.thetaQ === undefined;
+  box.disabled = noTheta;
+  if (noTheta) { box.checked = false; cfg.gate4 = false; }
+  const small = box.closest("label").querySelector("small");
+  small.textContent = noTheta
+    ? "当前组合没有标定过的 θq —— ④ 不存在。要开它：换 CE_MODEL= 后跑 scripts/calibrate.ts，或显式 THETA_Q= 一个值。"
+    : GATES.find(g => g.key === "gate4").desc;
 }
 
 // 上一次画出来的内容。整表无条件重绘会让页面每次提问都闪一下，
@@ -436,18 +562,42 @@ function renderState(s) {
     paintCache(s);
   }
   const c = s.counters;
-  $("counters").textContent = `提问 ${c.ask} · 精确命中 ${c.exact} · 直接复用 ${c.reuse} · 微调 ${c.tune} · 重生成 ${c.regen} · 驱逐 ${c.evict}`;
+  // 字段名必须和服务端的 LabCounters 一致：exact / reuse / refine / generated。
+  // 先前这里读的是 tune / regen / evict，三个都是 undefined，页面上就那么显示着。
+  $("counters").textContent = `提问 ${c.ask} · 精确命中 ${c.exact} · 直接复用 ${c.reuse} · 微调 ${c.refine} · 重新生成 ${c.generated}`;
 }
 
 function paintCache(s) {
   $("cache").innerHTML = s.cache.length
-    ? s.cache.slice(-25).reverse().map(e => `<tr><td class="mono">${e.id}</td><td class="mono">${esc(e.scope)}</td><td class="mono">${esc(e.by)}</td><td>${esc(e.prompt)}</td></tr>`).join("")
+    ? s.cache.slice(-25).reverse().map(e => `<tr><td class="mono">${e.id}</td><td class="mono">${esc(e.scope)}</td><td class="mono">${esc(e.kind)} · ${esc((e.sources ?? []).join(",") || "—")}</td><td>${esc(e.prompt)}</td></tr>`).join("")
     : `<tr><td colspan="4" class="empty">空</td></tr>`;
 }
 
+// 选中的那篇要跨重绘保留 —— 点「语料改版」之后还停在同一篇，才看得出正文哪里变了
+let docPick = null;
+
 function paintDocs(s) {
-  $("docs").innerHTML = s.docs.map(d =>
-    `<tr><td class="mono">${d.id}</td><td class="mono">${esc(d.unit)}</td><td>${esc(d.title)}</td><td class="mono">${d.version > 1 ? `<b style="color:var(--bad)">v${d.version}</b>` : `v${d.version}`}</td></tr>`).join("");
+  const docs = s.docs ?? [];
+  if (docs.length === 0) {
+    $("docTabs").innerHTML = "";
+    $("docBody").innerHTML = `<p class="empty">没有语料。</p>`;
+    return;
+  }
+  if (!docs.some(d => d.id === docPick)) docPick = docs[0].id;
+
+  $("docTabs").innerHTML = docs.map(d => `
+    <button class="doctab ${d.id === docPick ? "on" : ""}" data-doc="${esc(d.id)}">
+      ${esc(d.title)}
+      <small>${esc(d.unit)} · ${d.version > 1 ? `<span class="v2">v${d.version}</span>` : `v${d.version}`}</small>
+    </button>`).join("");
+  for (const b of $("docTabs").querySelectorAll("[data-doc]")) {
+    b.addEventListener("click", () => { docPick = b.dataset.doc; paintDocs(s); });
+  }
+
+  const d = docs.find(x => x.id === docPick);
+  $("docBody").innerHTML = `
+    <div class="meta">${esc(d.id)}　·　${esc(d.unit)}　·　${d.version > 1 ? `<span class="v2">v${d.version}（已改版）</span>` : `v${d.version}`}</div>
+    <div class="body">${esc(d.text ?? "（后端没发正文）")}</div>`;
 }
 
 async function boot() {
@@ -457,15 +607,28 @@ async function boot() {
   GEN = s.generator ?? { kind: "stub", note: "", approxMsPerCall: 0 };
 
   const stub = s.mode === "stub";
-  // 生成端和编码器是两件事，都得写出来 —— 先前页面只说编码器，
-  // 于是 GEN 还是 stub 时看不出「答案不是真生成的」。
-  const genLine = GEN.kind === "stub"
-    ? "　生成：stub（拼接片段，非真生成 —— ⑥ 的支撑度会偏高）"
-    : `　生成：${GEN.kind}（真生成，未命中时每次约 ${(GEN.approxMsPerCall / 1000).toFixed(0)} 秒）`;
-  $("banner").className = "banner" + (stub ? " warn" : "");
-  $("banner").textContent = (stub
-    ? "stub 模式 —— 玩具相似度（字符 Jaccard），分数没有统计意义，只用来跑通控制流。要看真数字：npm start"
-    : `模型：${s.note}${s.rerankAvailable ? "" : "　（重排器未加载，④ 会退化为纯余弦）"}`) + genLine;
+  CALIB = s.calibration ?? { summary:"", borrowed:false, overridden:[] };
+  renderAxes(s);
+
+  /**
+   * 横幅只留警告。**「现在跑的是什么」归上面那张配置表** ——
+   * 先前两件事挤在一行里：stub 模式下它只显示 stub 警告，于是模型和存储一个都看不到，
+   * 而存储后端根本没在页面上出现过（换 pgvector 还是 Redis 全靠记得自己设了哪个变量）。
+   */
+  const warnings = [];
+  if (stub) warnings.push("编码器是 stub —— 玩具相似度（字符 Jaccard 的哈希投影），分数没有统计意义，只用来跑通控制流。要看真数字：npm start");
+  if (!stub && !s.rerankAvailable) warnings.push("重排器没加载 —— 没有 ④ 这道闸（不会退化成拿 θq 去卡余弦）");
+  if (GEN.kind === "stub") warnings.push("生成端是 stub —— 答案是拼接检索到的首个片段，不是真生成，⑥ 的支撑度因此天然偏高，θa 的绝对值在它上面标不准");
+  if (CALIB.borrowed) warnings.push("阈值是借用的 —— 当前组合没标定过，见上面「标定」那行");
+  if ((CALIB.overridden ?? []).length > 0) warnings.push(`阈值被环境变量覆盖：${CALIB.overridden.join("、")}`);
+  $("banner").hidden = warnings.length === 0;
+  $("banner").className = "banner warn";
+  $("banner").style.whiteSpace = "pre-line";
+  $("banner").textContent = warnings.map(w => `⚠ ${w}`).join("\n");
+  // 阈值是哪一行标定出来的，得写在调阈值的那个框旁边 —— 不然改完不知道自己离开了什么语境
+  $("calibNote").textContent = CALIB.summary
+    ? `${CALIB.summary}${DEF.thetaQ === null ? "" : ""}`
+    : "";
 
   renderExps();
   if (GEN.kind !== "stub") {
@@ -478,10 +641,8 @@ async function boot() {
       if (btn) { btn.disabled = true; btn.title = "真生成下跑不完，改用 GEN=stub"; }
     }
   }
-  for (const e of EXPERIMENTS) {
-    const h = $(`exp-${e.key}`).querySelector("[data-hint]");
-    if (e.needsRerank && !s.rerankAvailable) h.textContent = "⚠ 当前没有可用的重排器，这个实验两边会跑出一样的结果。要 npm start（真模型）才有意义。";
-  }
+  if (!s.rerankAvailable) markCeCard({ available:false });
+  else if (DEF.thetaQ === null) markCeCard({ available:true, usable:true, margin:0, minMargin:0.15, maxNegative:0, thetaQ:null });
 
   $("c").innerHTML = s.units.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join("");
   $("scen").innerHTML = SCEN.map(sc => `
@@ -496,8 +657,14 @@ async function boot() {
   renderToggles();
   renderState(s);
   for (const k of ["thetaQ","recallFloor","thetaAHi","thetaALo"]) {
-    $(k).value = cfg[k];
-    $(k).addEventListener("change", e => { cfg[k] = Number(e.target.value); });
+    // θq 可以是 null（这个组合没标定过 ④）。空框就是 null，不是 0 ——
+    // Number("") 是 0，那会变成一道恒放行的假闸
+    $(k).value = cfg[k] === null || cfg[k] === undefined ? "" : cfg[k];
+    $(k).addEventListener("change", e => {
+      const raw = e.target.value.trim();
+      cfg[k] = raw === "" ? null : Number(raw);
+      if (k === "thetaQ") syncGate4Toggle();
+    });
   }
   $("scopeMode").value = cfg.scopeMode;
   $("scopeMode").addEventListener("change", e => { cfg.scopeMode = e.target.value; });
@@ -515,20 +682,25 @@ async function boot() {
     try {
       const p = await post("/api/rerank-probe");
       if (!p.available) {
-        $("probeOut").innerHTML = `<div class="concl flat"><b>当前没有可用的重排器。</b>stub 模式下 ④ 会退化成纯余弦阈值。要真跑：npm start</div>`;
+        $("probeOut").innerHTML = `<div class="concl flat"><b>当前没有可用的重排器。</b>没有重排器就是没有 ④ 这道闸（不会退化成拿 θq 去卡余弦）。要真跑：npm start</div>`;
+        markCeCard(p);
         return;
       }
       const rows = p.rows.map(r =>
-        `<tr><td>${esc(r.tag)}</td><td class="mono">${esc(r.a)}</td><td class="mono">${esc(r.b)}</td><td class="mono" style="font-variant-numeric:tabular-nums">${r.score.toFixed(4)}</td></tr>`).join("");
+        `<tr><td>${esc(r.label)}</td><td class="mono">${esc(r.a)}</td><td class="mono">${esc(r.b)}</td><td class="mono" style="font-variant-numeric:tabular-nums">${r.score.toFixed(4)}</td><td>${r.shouldMatch ? "该高" : "该低"}</td></tr>`).join("");
       const cls = p.usable ? "good" : "odd";
+      const nums = `正例最低 ${p.minPositive.toFixed(4)} · 负例最高 ${p.maxNegative.toFixed(4)} · <b>margin ${p.margin.toFixed(4)}</b>（门槛 ${p.minMargin}）`;
       const msg = p.usable
-        ? `<b>跨度 ${p.spread.toFixed(4)} —— 可用。</b>重排器能区分开这四组，④ 的 bench 数字可以参考。`
-        : `<b>跨度只有 ${p.spread.toFixed(4)} —— 不可用。</b>这个重排器对以上四组给出几乎相同的分数，说明它和「问题↔问题配对」这个任务不匹配（常见原因：用了 query→passage 的段落相关性模型，或者模型不支持这门语言）。<br>④ 的实验结果此时没有意义。换一个句对相似度训练的 cross-encoder：<code>CE_MODEL=... npm start</code>`;
+        ? `<b>可用。</b>${nums}。两组分得开，④ 的 bench 数字可以参考。`
+        : `<b>不可用。</b>${nums}。${p.margin <= 0
+              ? "正例的最低分没有超过负例的最高分 —— <b>顺序是错的或两组重叠</b>，任何单一 θq 都会同时犯两种错。"
+              : "两组虽然没重叠，但间距小于门槛，任何 θq 都摆在噪声里。"}<br>常见原因：用了 query→passage 的段落相关性模型（<code>ms-marco</code> 就是），或者模型不支持这门语言。<br>④ 的实验结果此时没有意义。换一个句对相似度训练的 cross-encoder：<code>CE_MODEL=... npm start</code>，然后跑 <code>scripts/calibrate.ts</code> 重标 θq。`;
       $("probeOut").innerHTML = `
         <div class="tw" style="margin-top:.8rem"><table>
-          <thead><tr><th>难度</th><th>A</th><th>B</th><th>重排分</th></tr></thead>
+          <thead><tr><th>难度</th><th>A</th><th>B</th><th>重排分</th><th>应当</th></tr></thead>
           <tbody>${rows}</tbody></table></div>
         <div class="concl ${cls}">${msg}</div>`;
+      markCeCard(p);
     } finally { btn.disabled = false; btn.textContent = "重新自检"; }
   });
 
@@ -570,6 +742,12 @@ async function ask() {
 
   try {
     const r = await post("/api/ask", { text: $("q").value, user: $("u").value, unit: $("c").value, config: cfg });
+    // 服务端拒绝了这个配置（例如 ④ 开着却没有标定过的 θq）—— 把原因显示出来，
+    // 别让它变成「判定：undefined」
+    if (r.error) {
+      out.innerHTML = `<div class="outcome wrong">这个配置不成立：${esc(String(r.error))}</div>`;
+      return;
+    }
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     // 命中缓存时不调 LLM —— 这个耗时差本身就是缓存在省的东西，值得显式写出来
     const hit = r.decision !== "regenerate";

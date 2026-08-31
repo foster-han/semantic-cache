@@ -6,10 +6,15 @@
  * 原文照抄,所以 ⑥ 的支撑度天然偏高(实测能到 0.98+)。**θa 的绝对值在 stub 上
  * 标不准**,这是文章里唯一还没被验证的那一环。
  *
- * `GEN=claude-cli` 用本机的 Claude Code 做真生成,专门用来回答那个问题:
- * 换成真 LLM 之后,支撑度分布会塌多少,现在这组 θa 还立不立得住。
+ * 三个真生成选项都在回答同一个问题:换成真 LLM 之后,支撑度分布会塌多少,
+ * 现在这组 θa 还立不立得住。
+ *
+ *   GEN=claude-cli   起一个 `claude -p` 进程,复用 Claude Code 登录,约 8.5 秒/次
+ *   GEN=api          直接打 Messages API,同一套凭据,约 1~2 秒/次
+ *   GEN=deepseek     直接打 DeepSeek HTTP,约 1~3 秒/次
  */
 import { spawn } from "node:child_process";
+import Anthropic from "@anthropic-ai/sdk";
 import type { CachedPayload, CachePrompt, Chunk } from "../sdk/src/index.ts";
 import { compose, refineSuffix } from "./Corpus.ts";
 import type { ComposeChunk } from "./types/Corpus.ts";
@@ -48,7 +53,7 @@ function runClaude(args: ReadonlyArray<string>, prompt: string, timeoutMs: numbe
 	});
 }
 
-export type GeneratorKind = "stub" | "claude-cli" | "deepseek";
+export type GeneratorKind = "stub" | "claude-cli" | "api" | "deepseek";
 
 export interface LabGenerator {
 	readonly kind: GeneratorKind;
@@ -148,6 +153,101 @@ function claudeCliGenerator(): LabGenerator {
 
 /* ---------- DeepSeek（OpenAI 兼容的 /chat/completions） ---------- */
 
+/* ---------- Messages API ---------- */
+
+/**
+ * 直接打 Messages API。**和 `GEN=claude-cli` 是同一套凭据，只是不再每次起进程。**
+ *
+ * 零参构造的 `new Anthropic()` 会依次解析 `ANTHROPIC_API_KEY` →
+ * `ANTHROPIC_AUTH_TOKEN` → `ant auth login` 存在 `~/.config/anthropic/` 的 OAuth
+ * profile。**所以这条路不需要 API key** —— 跑过一次 `ant auth login` 就够了，
+ * 这正是它比 `GEN=deepseek` 少一件事要配的地方。
+ *
+ * 三处和隔壁 DeepSeek 那条不一样、且不是风格差异的地方：
+ *
+ * 1. **不传 `temperature`。** Opus 5 / Sonnet 5 这一代已经把采样参数移除了，传了直接 400。
+ *    想让生成稳定就靠低 effort，不靠调温度。
+ * 2. **不自己写重试循环。** SDK 自带重试（429/5xx/连接错误，默认 2 次），
+ *    手写一层只会和它叠在一起，把退避算成两遍。
+ * 3. **thinking 保持默认开着，只把 effort 压到 low。** Opus 5 上显式关思考有两个坑：
+ *    工具调用会漏进可见文本、`<thinking>` 标签会泄漏。降 effort 一样省，而且没这些副作用。
+ */
+function apiGenerator(): LabGenerator {
+	const model = process.env.GEN_MODEL ?? "claude-opus-5";
+	const timeoutMs = Number(process.env.GEN_TIMEOUT_MS ?? 120_000);
+	const client = new Anthropic({ timeout: timeoutMs });
+
+	async function ask(user: string): Promise<string> {
+		let response: Anthropic.Message;
+		try {
+			response = await client.messages.create({
+				model,
+				// 答案就两三句，但 thinking 的 token 也算在这个上限里，留够余量
+				max_tokens: 4096,
+				output_config: { effort: "low" },
+				system: SYSTEM,
+				messages: [{ role: "user", content: user }],
+			});
+		} catch (err) {
+			// 「找不到凭据」是构造期就抛的普通 Error，不是 AuthenticationError（那是服务端 401），
+			// 两种都要认 —— 前者才是最常见的那一种：装了 Claude Code 不等于 SDK 能读到凭据
+			const message = String(err);
+			const noCredentials =
+				err instanceof Anthropic.AuthenticationError || /Could not resolve authentication method/iu.test(message);
+			const hint = noCredentials
+				? "SDK 找不到凭据。**Claude Code 自己的登录不算** —— SDK 读的是 `ant auth login` " +
+					"写在 ~/.config/anthropic/ 的 profile。跑一次 `ant auth login`（不需要 API key），" +
+					"或者 export ANTHROPIC_API_KEY。"
+				: err instanceof Anthropic.RateLimitError
+					? "被限流了，等一会儿再跑。"
+					: "";
+			throw new Error(
+				`Messages API 生成失败（GEN=api, model=${model}）。这里不退回 stub —— ` +
+					`两种分布混在一起标出来的 θa 比标不准更糟。${hint}原始错误：${message}`,
+			);
+		}
+
+		// 安全分类器可能拒答：HTTP 200，但 content 里没有答案。先看 stop_reason 再读 content
+		if (response.stop_reason === "refusal") {
+			throw new Error(
+				`Messages API 拒答（category=${response.stop_details?.category ?? "未知"}）。` +
+					`语料里出现了会触发分类器的内容，换一条用例，或者查一下 materials() 拼出来的东西。`,
+			);
+		}
+
+		const text = response.content
+			.filter((b): b is Anthropic.TextBlock => b.type === "text")
+			.map(b => b.text)
+			.join("")
+			.trim();
+		if (text === "") throw new Error(`Messages API 返回空内容（stop_reason=${String(response.stop_reason)}）`);
+		return text;
+	}
+
+	return {
+		kind: "api",
+		note: `messages api ${model} —— 真生成，不需要 API key（走 ant auth 的 profile 也行）`,
+		approxMsPerCall: 2_000,
+		async generate(prompt, chunks) {
+			const answer =
+				chunks.length === 0
+					? "（本课程下没有可用资料）"
+					: await ask(`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}`);
+			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
+		},
+		async refine(cachedAnswer, prompt, chunks) {
+			const answer = await ask(
+				`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}\n\n` +
+					`下面是之前给别的同学的答案，大体对但不一定贴合这次的资料。请**基于上面的资料**把它改得贴合，` +
+					`能沿用就沿用，不要从头重写：\n${cachedAnswer}`,
+			);
+			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
+		},
+	};
+}
+
+/* ---------- DeepSeek ---------- */
+
 /**
  * 直接打 HTTP，不经过任何 agent harness。
  *
@@ -242,10 +342,120 @@ function deepseekGenerator(): LabGenerator {
 	};
 }
 
+/* ---------- 去重 ---------- */
+
+/** 表满了就丢最早的。记忆化是为了省调用，不该反过来把内存吃了。 */
+const MEMO_LIMIT = 2_000;
+
+/**
+ * 同一个（问题 + 资料）只生成一次。
+ *
+ * 那 30 条干扰会在 13 条场景里各灌一遍 —— 390 次调用里只有 30 个不同的组合。
+ * 套上这一层，完整 bench 的真生成从 **416 次降到约 56 次**。
+ *
+ * **key 必须含片段原文，不能只含 id。** `bumpCorpus()` 改的是 syl 的正文而 id 不变；
+ * 只按 id 记忆化的话，改版之后那次生成会拿到改版前的答案 —— ⑤ 那两条用例会静默变绿，
+ * 而且是"测试通过了但机制没生效"这种最难发现的绿。
+ *
+ * key 覆盖的是**生成端真正送出去的东西**：现在三个真生成端送的都是
+ * `materials(chunks)` + `retrievalText`。哪天有生成端改送 `matchText`，这里必须跟着加，
+ * 否则两个不同的请求会共用一条缓存。
+ *
+ * 顺带一个副作用，而且是好的：真 LLM 有采样噪声，记忆化让同一组合在 A/B 两侧拿到
+ * **逐字相同**的答案，于是对照实验测出来的差值只剩闸门的贡献，不含生成噪声。
+ * 想反过来量一量那点噪声有多大，`GEN_MEMO=0` 关掉它。
+ */
+function memoize(inner: LabGenerator): LabGenerator {
+	const memo = new Map<string, Promise<CachedPayload>>();
+
+	/** id 和原文都进 key —— 只有 id 会漏掉语料改版 */
+	function fingerprint(chunks: ReadonlyArray<Chunk>): Array<string> {
+		return chunks.flatMap(c => [c.id, c.text]);
+	}
+
+	function once(key: string, run: () => Promise<CachedPayload>): Promise<CachedPayload> {
+		const hit = memo.get(key);
+		if (hit) return hit;
+		// 存 promise 而不是结果，顺带把并发的重复请求也合并掉。
+		// 但**失败的不能留在表里** —— 一次网络抖动会把这个 key 永久钉死在错误上。
+		const pending = run().catch((err: unknown) => {
+			memo.delete(key);
+			throw err;
+		});
+		if (memo.size >= MEMO_LIMIT) {
+			const oldest = memo.keys().next();
+			if (!oldest.done) memo.delete(oldest.value);
+		}
+		memo.set(key, pending);
+		return pending;
+	}
+
+	return {
+		kind: inner.kind,
+		note: `${inner.note}｜同一组合只生成一次`,
+		approxMsPerCall: inner.approxMsPerCall,
+		generate(prompt, chunks) {
+			return once(JSON.stringify(["generate", prompt.retrievalText, ...fingerprint(chunks)]), () =>
+				inner.generate(prompt, chunks),
+			);
+		},
+		refine(cachedAnswer, prompt, chunks) {
+			return once(JSON.stringify(["refine", cachedAnswer, prompt.retrievalText, ...fingerprint(chunks)]), () =>
+				inner.refine(cachedAnswer, prompt, chunks),
+			);
+		},
+	};
+}
+
 export function createGenerator(): LabGenerator {
 	const wanted = process.env.GEN ?? "stub";
-	if (wanted === "claude-cli") return claudeCliGenerator();
-	if (wanted === "deepseek") return deepseekGenerator();
-	if (wanted !== "stub") throw new Error(`GEN=${wanted} 无法识别。只能是 stub / claude-cli / deepseek。`);
+	// stub 不套记忆化 —— 它本来就是确定性的，而且免费，包一层只是多一份内存
+	const wrap = (g: LabGenerator): LabGenerator => (process.env.GEN_MEMO === "0" ? g : memoize(g));
+	if (wanted === "claude-cli") return wrap(claudeCliGenerator());
+	if (wanted === "api") return wrap(apiGenerator());
+	if (wanted === "deepseek") return wrap(deepseekGenerator());
+	if (wanted !== "stub") throw new Error(`GEN=${wanted} 无法识别。只能是 stub / claude-cli / api / deepseek。`);
 	return stubGenerator();
+}
+
+/**
+ * 把生成端包成「同输入同输出」的纯函数。
+ *
+ * 实测：一次 26 条场景的 bench 要 832 次生成，但**只有 73 个不同的输入** ——
+ * 那 30 条干扰缓存每个场景都重灌一遍，输入一字不差，最热的一条重复 27 次。
+ * 91% 的调用是在重复付同一笔钱。
+ *
+ * 这不只是省钱。对照实验要比的是「开/关某道闸」，生成本身应当是**固定函数**；
+ * 同一份输入在 A 配置和 B 配置下给出不同答案，那个差值里就混进了采样噪声。
+ * 去重之后 A/B 反而更干净。
+ *
+ * 键里带片段原文，所以「语料改版」自动失效 —— 改版后 chunk 变了，键就变了。
+ * 手动提问不走这里：那边要看的是真实行为，包括同一个问题两次答得不一样。
+ */
+export function memoizeGenerator(inner: LabGenerator): LabGenerator {
+	const cache = new Map<string, Promise<CachedPayload>>();
+	const keyOf = (prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): string =>
+		`${prompt.retrievalText}\u0000${chunks.map(c => `${c.id}:${c.text}`).join("\u0000")}`;
+
+	return {
+		...inner,
+		note: `${inner.note}（同输入去重）`,
+		generate(prompt, chunks) {
+			const key = keyOf(prompt, chunks);
+			const hit = cache.get(key);
+			if (hit) return hit;
+			const run = inner.generate(prompt, chunks);
+			cache.set(key, run);
+			return run;
+		},
+		// refine 的输入还包含「旧答案」—— 一起进键
+		refine(cachedAnswer, prompt, chunks) {
+			const key = `refine\u0000${cachedAnswer}\u0000${keyOf(prompt, chunks)}`;
+			const hit = cache.get(key);
+			if (hit) return hit;
+			const run = inner.refine(cachedAnswer, prompt, chunks);
+			cache.set(key, run);
+			return run;
+		},
+	};
 }

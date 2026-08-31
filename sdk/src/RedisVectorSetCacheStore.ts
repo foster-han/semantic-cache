@@ -18,6 +18,11 @@ import type { RedisExecutor } from "./types/RedisExecutor.ts";
  *    资料 id 反查、没有 scope 计数。所以这里额外维护 5 个结构（见 keys），
  *    并且**写路径全部走 Lua**——多结构写一半崩掉留下的孤儿索引，是这条路上
  *    唯一会静默给出错答案的失效方式，MULTI 在连接池下还挡不住它。
+ * 2.5 **全量操作分批。** Redis 是单线程的，一个 Lua 脚本跑多久，整个实例就阻塞多久。
+ *    `all()` / `purgeExpired()` / `clear()` 扫的是全部 scope（不像召回有 scope 兜着），
+ *    所以它们按 `batchSize` 切片，一批一个脚本。**原子性保留在真正需要它的粒度上**：
+ *    单条条目的「本体 + 5 个索引」始终在同一个脚本里删完，不会留下孤儿索引；
+ *    跨批则不是原子的 —— 中途失败留下的是「删了一部分」，那是维护操作可以接受的。
  * 3. **过期不能用 Redis 原生 TTL。** 接口要求过期条目「读路径看不见，但 `all()`
  *    要看得见」，而 `PEXPIREAT` 是真删，`all()` 就再也看不见了；何况 `now` 是注入
  *    的，假时钟根本驱动不了原生 TTL。所以 `expires_at` 落成参与 `FILTER` 的普通
@@ -53,6 +58,13 @@ export interface RedisVectorSetCacheStoreOptions {
 	 * 而且召回集就是真召回集。开了近似之后带 `FILTER` 的检索可能返回不足 `limit` 条。
 	 */
 	readonly ann?: boolean;
+	/**
+	 * 全量操作（`all` / `purgeExpired` / `clear`）每批处理多少条。默认 500。
+	 *
+	 * 调大省往返，调小缩短单个 Lua 脚本占住 Redis 的时长 —— 这两者之间没有普适的
+	 * 最优值，取决于你能容忍多长的阻塞，所以留成选项。
+	 */
+	readonly batchSize?: number;
 	readonly now?: () => number;
 }
 
@@ -183,16 +195,16 @@ return 'OK'
 `;
 
 /**
- * 删除。`evict` / `evictBySource` / `clearScope` / `clear` 四个入口都走它 ——
- * 差别只在「这批 id 从哪来」，所以枚举也放进脚本里，整批删除因此是原子的。
+ * 删一批 id。`evict` / `evictBySource` / `clearScope` / `clear` 四个入口都走它 ——
+ * 差别只在「这批 id 从哪来」，枚举留在 TS 侧（那样才能分批），删除留在这里。
+ *
+ * **一条条目的本体加 5 个索引，始终在同一个脚本里删完**：多结构写一半崩掉留下的
+ * 孤儿索引，是这条路上唯一会静默给出错答案的失效方式。
  */
 const SCRIPT_EVICT = `
-local ids
-if ARGV[2] == 'set' then ids = redis.call('SMEMBERS', ARGV[3])
-elseif ARGV[2] == 'zset' then ids = redis.call('ZRANGE', ARGV[3], 0, -1)
-else ids = {} for i = 3, #ARGV do ids[#ids + 1] = ARGV[i] end end
 local n = 0
-for _, id in ipairs(ids) do
+for i = 2, #ARGV do
+  local id = ARGV[i]
   local ek = ARGV[1] .. ':e:' .. id
   local m = redis.call('HMGET', ek, 'scope', 'match_hash', 'source_ids')
   if m[1] then
@@ -208,26 +220,24 @@ end
 return n
 `;
 
-/** 过期清理：拿 all zset 的全量，逐条判 expires_at，到点的收集起来交给删除逻辑 */
+/** 过期清理：只删这一批里真的到点的。id 从 TS 侧分批送进来。 */
 const SCRIPT_PURGE = `
-local ids = redis.call('ZRANGE', KEYS[2], 0, -1)
-local dead = {}
-for _, id in ipairs(ids) do
-  local exp = redis.call('HGET', ARGV[1] .. ':e:' .. id, 'expires_at')
-  if exp and exp ~= '' and tonumber(exp) <= tonumber(ARGV[2]) then dead[#dead + 1] = id end
-end
 local n = 0
-for _, id in ipairs(dead) do
+for i = 3, #ARGV do
+  local id = ARGV[i]
   local ek = ARGV[1] .. ':e:' .. id
-  local m = redis.call('HMGET', ek, 'scope', 'match_hash', 'source_ids')
-  if m[1] then
-    redis.call('VREM', KEYS[1], id)
-    redis.call('DEL', ek)
-    redis.call('ZREM', KEYS[2], id)
-    redis.call('ZREM', ARGV[1] .. ':h:' .. m[1] .. ':' .. m[2], id)
-    redis.call('SREM', ARGV[1] .. ':scope:' .. m[1], id)
-    for _, s in ipairs(cjson.decode(m[3])) do redis.call('SREM', ARGV[1] .. ':src:' .. s, id) end
-    n = n + 1
+  local exp = redis.call('HGET', ek, 'expires_at')
+  if exp and exp ~= '' and tonumber(exp) <= tonumber(ARGV[2]) then
+    local m = redis.call('HMGET', ek, 'scope', 'match_hash', 'source_ids')
+    if m[1] then
+      redis.call('VREM', KEYS[1], id)
+      redis.call('DEL', ek)
+      redis.call('ZREM', KEYS[2], id)
+      redis.call('ZREM', ARGV[1] .. ':h:' .. m[1] .. ':' .. m[2], id)
+      redis.call('SREM', ARGV[1] .. ':scope:' .. m[1], id)
+      for _, s in ipairs(cjson.decode(m[3])) do redis.call('SREM', ARGV[1] .. ':src:' .. s, id) end
+      n = n + 1
+    end
   end
 end
 return n
@@ -250,9 +260,12 @@ end
 return nil
 `;
 
-/** `all()` 要的是原始状态，**含已过期未清理的**，顺序同 pgvector 的 `ORDER BY created_at, id` */
+/**
+ * `all()` 要的是原始状态，**含已过期未清理的**，顺序同 pgvector 的 `ORDER BY created_at, id`。
+ * 一次只取 `[ARGV[2], ARGV[3]]` 这一段 —— 全量在 TS 侧拼。
+ */
 const SCRIPT_ALL = `
-local ids = redis.call('ZRANGE', KEYS[1], 0, -1)
+local ids = redis.call('ZRANGE', KEYS[1], tonumber(ARGV[2]), tonumber(ARGV[3]))
 local out = {}
 for _, id in ipairs(ids) do
   out[#out + 1] = redis.call('HMGET', ARGV[1] .. ':e:' .. id, ${LUA_FIELDS})
@@ -294,6 +307,11 @@ export function createRedisVectorSetCacheStore(
 	assertNamespace(namespace);
 	const { redis, dimensions } = options;
 	const now = options.now ?? (() => Date.now());
+	const batchSize = options.batchSize ?? 500;
+
+	if (!Number.isInteger(batchSize) || batchSize <= 0) {
+		throw new Error(`batchSize 必须是正整数，收到 ${String(options.batchSize)}`);
+	}
 
 	if (!Number.isInteger(dimensions.match) || dimensions.match <= 0) {
 		throw new Error(`match 向量维度必须是正整数，收到 ${String(dimensions.match)}`);
@@ -325,10 +343,35 @@ export function createRedisVectorSetCacheStore(
 		return redis.sendCommand(["EVAL", script, String(keyList.length), ...keyList, ...argv]);
 	}
 
-	/** 删除的四个入口只差「这批 id 从哪来」，枚举放进脚本里，整批因此是原子的 */
-	async function evictBy(mode: "ids" | "set" | "zset", rest: ReadonlyArray<string>): Promise<number> {
-		const done = await evalScript(SCRIPT_EVICT, [keys.vector, keys.all], [namespace, mode, ...rest]);
-		return Number(done ?? 0);
+	function batches(ids: ReadonlyArray<string>): Array<Array<string>> {
+		const out: Array<Array<string>> = [];
+		for (let i = 0; i < ids.length; i += batchSize) out.push(ids.slice(i, i + batchSize));
+		return out;
+	}
+
+	/** 全量 id，分批读出来。边读边删会让 zset 的下标漂移，所以读写分成两趟。 */
+	async function listAllIds(): Promise<Array<string>> {
+		const out: Array<string> = [];
+		for (let start = 0; ; start += batchSize) {
+			const page = asArray(await redis.sendCommand(["ZRANGE", keys.all, String(start), String(start + batchSize - 1)]));
+			for (const id of page) out.push(asText(id));
+			if (page.length < batchSize) return out;
+		}
+	}
+
+	/** 一个 scope / 一篇资料下的 id。单个集合的规模有 scope 兜着，一次读完即可。 */
+	async function listSetIds(setKey: string): Promise<Array<string>> {
+		return asArray(await redis.sendCommand(["SMEMBERS", setKey])).map(asText);
+	}
+
+	/** 删除的四个入口只差「这批 id 从哪来」；删除本身分批，每批一个原子脚本 */
+	async function deleteIds(ids: ReadonlyArray<string>): Promise<number> {
+		let removed = 0;
+		for (const group of batches(ids)) {
+			const done = await evalScript(SCRIPT_EVICT, [keys.vector, keys.all], [namespace, ...group]);
+			removed += Number(done ?? 0);
+		}
+		return removed;
 	}
 
 	/** 向量分量交出去之前一律转成字符串，非有限值落 0（同内存实现对零向量的处理） */
@@ -450,37 +493,46 @@ export function createRedisVectorSetCacheStore(
 		},
 
 		async evict(id) {
-			await evictBy("ids", [id]);
+			await deleteIds([id]);
 		},
 
 		async evictBySource(sourceId) {
-			return evictBy("set", [keys.source(sourceId)]);
+			return deleteIds(await listSetIds(keys.source(sourceId)));
 		},
 
 		async purgeExpired() {
-			const done = await evalScript(SCRIPT_PURGE, [keys.vector, keys.all], [namespace, String(now())]);
-			return Number(done ?? 0);
+			const deadline = String(now());
+			let removed = 0;
+			for (const group of batches(await listAllIds())) {
+				const done = await evalScript(SCRIPT_PURGE, [keys.vector, keys.all], [namespace, deadline, ...group]);
+				removed += Number(done ?? 0);
+			}
+			return removed;
 		},
 
 		async clearScope(scope) {
-			return evictBy("set", [keys.scope(scope)]);
+			return deleteIds(await listSetIds(keys.scope(scope)));
 		},
 
 		async clear() {
-			await evictBy("zset", [keys.all]);
+			await deleteIds(await listAllIds());
 			// 逐条删完这两个 key 本该已经自动消失，兜底一次，免得留下空壳挡住维度校验
 			await redis.sendCommand(["DEL", keys.vector, keys.all]);
 		},
 
 		async all() {
 			// 和内存实现一样，**不过滤过期条目** —— 这是给 UI 和断言看的原始状态
-			const rows = asArray(await evalScript(SCRIPT_ALL, [keys.all], [namespace]));
 			const out: Array<CacheEntry> = [];
-			for (const row of rows) {
-				const entry = toEntry(asArray(row));
-				if (entry !== null) out.push(entry);
+			for (let start = 0; ; start += batchSize) {
+				const rows = asArray(
+					await evalScript(SCRIPT_ALL, [keys.all], [namespace, String(start), String(start + batchSize - 1)]),
+				);
+				for (const row of rows) {
+					const entry = toEntry(asArray(row));
+					if (entry !== null) out.push(entry);
+				}
+				if (rows.length < batchSize) return out;
 			}
-			return out;
 		},
 	};
 }

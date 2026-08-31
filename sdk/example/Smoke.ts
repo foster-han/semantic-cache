@@ -4,6 +4,11 @@
  * 假模型的"向量"是词袋哈希投影 —— 分数没有语义意义，但足以让每道闸真正
  * 被触发一次，验证接线正确。真模型下的行为要用 evaluate() 在你自己的
  * 数据上量。
+ *
+ * **它会断言，而且失败时退出码非 0。** 先前这个脚本只打印，连「没有拒绝 ——
+ * 不变式失效了」都照样退 0 —— 那样它进不了 CI，只能靠人眼看输出，
+ * 而人眼恰恰看不出「这一行本该是 exact 却写着 generated」。
+ * 细粒度的断言在 `../test/` 里，这里守的是端到端接线。
  */
 import { createSemanticCache } from "../src/SemanticCache.ts";
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
@@ -104,9 +109,18 @@ function ask(matchText: string, retrievalText: string, ctx: Record<string, strin
 	return cache.resolve({ matchText, retrievalText, context: ctx }, generate);
 }
 
-function line(tag: string, r: Awaited<ReturnType<typeof ask>>) {
+function line<T extends Awaited<ReturnType<typeof ask>>>(tag: string, r: T): T {
 	const gates = r.trace.map(t => `${t.gate}:${t.verdict}`).join(" ");
 	console.log(`${tag.padEnd(26)} ${r.outcome.padEnd(10)} 首要依据 ${String(r.sourceIds[0]).padEnd(11)} | ${gates}`);
+	return r;
+}
+
+let failures = 0;
+/** 断言但不中断 —— 一次跑完看到所有失效点，比第一条就退出有用 */
+function must(condition: boolean, what: string): void {
+	if (condition) return;
+	failures += 1;
+	console.error(`  ✖ 不变式失效：${what}`);
 }
 
 /* 0. 上线前：判别力自检 */
@@ -119,17 +133,21 @@ assertDiscriminates(report);
 
 console.log("\n--- 灌一条，再问同义 ---");
 line("播种 过拟合", await ask("什么是过拟合？", "什么是过拟合？"));
-line("② 精确命中", await ask("什么是过拟合？", "什么是过拟合？"));
+const exact = line("② 精确命中", await ask("什么是过拟合？", "什么是过拟合？"));
+must(exact.outcome === "exact", `逐字相同的第二次提问该是 exact，实际 ${exact.outcome}`);
 
 console.log("\n--- ⑤ 资料改版 ---");
 line("播种 期中范围", await ask("期中考试考几章？", "期中考试考几章？"));
 docs.set("syl", { text: "期中范围扩大到第一至第九章，改为开卷。", version: 2 });
-line("改版后再问", await ask("期中考试考几章？", "期中考试考几章？"));
+const bumped = line("改版后再问", await ask("期中考试考几章？", "期中考试考几章？"));
+must(bumped.exitedAt === 5, `语料改版后该被 ⑤ 拦下，实际 exitedAt=${String(bumped.exitedAt)}`);
+must(bumped.outcome === "generated", "被 ⑤ 拦下之后该走完整生成");
 
 console.log("\n--- ⑥ 实体塌陷（匿名化后两条字面相同）---");
 await store.clear();
 line("播种 Alice", await ask("<PERSON_1> 的作业二扣了多少？", "alice 的作业二扣了多少？"));
-line("探测 Bob", await ask("<PERSON_1> 的作业二扣了多少？", "bob 的作业二扣了多少？"));
+const bob = line("探测 Bob", await ask("<PERSON_1> 的作业二扣了多少？", "bob 的作业二扣了多少？"));
+must(bob.sourceIds[0] !== "rec:alice", "Bob 拿到了 Alice 的答案 —— ⑥ 没拦住占位符塌陷");
 
 console.log("\n--- 同上，但检索误用匿名化文本（硬前提被破坏）---");
 await store.clear();
@@ -139,7 +157,9 @@ line("探测 Bob", await ask("<PERSON_1> 的作业二扣了多少？", "<PERSON_
 console.log("\n--- ① 门控：检出 PII 就个人隔离 ---");
 await store.clear();
 line("Alice(pii)", await ask("<PERSON_1> 的作业二扣了多少？", "alice 的作业二扣了多少？", { pii: "1", userId: "u1" }));
-line("Bob(pii)", await ask("<PERSON_1> 的作业二扣了多少？", "bob 的作业二扣了多少？", { pii: "1", userId: "u2" }));
+const bobIsolated = line("Bob(pii)", await ask("<PERSON_1> 的作业二扣了多少？", "bob 的作业二扣了多少？", { pii: "1", userId: "u2" }));
+must(bobIsolated.outcome === "generated", "① 门控开着时两个学生不该共用缓存");
+must(bobIsolated.sourceIds[0] === "rec:bob", `Bob 的答案该依据 rec:bob，实际 ${String(bobIsolated.sourceIds[0])}`);
 
 console.log("\n--- 工具分支：缓存计划而非结果，实体做参数 ---");
 await store.clear();
@@ -166,7 +186,10 @@ for (const who of ["alice", "bob"]) {
 	);
 	const plan = r.payload.kind === "plan" ? JSON.stringify(r.payload.plan) : "(answer)";
 	console.log(`${who.padEnd(8)} ${r.outcome.padEnd(10)} plan=${plan} | ${r.trace.map(t => `${t.gate}:${t.verdict}`).join(" ")}`);
+	must(r.payload.kind === "plan", "工具分支返回的载荷该是 plan");
+	if (who === "bob") must(r.outcome === "exact", `第二个学生该命中同一条 plan 模板，实际 ${r.outcome}`);
 }
+must((await store.all()).length === 1, "两个学生应当共用同一条 plan 条目");
 console.log("→ 两个学生共用同一条 plan 缓存，实体在执行时填参 + 授权。塌陷在这一支是收益不是风险。");
 
 console.log("\n--- 同样配置但缓存的是 answer → SDK 拒绝 ---");
@@ -176,7 +199,7 @@ try {
 		{ matchText: "<PERSON_1> 的作业二得了多少分？", retrievalText: "alice 的作业二得了多少分？", redacted: true, context: { userId: "alice" } },
 		generate,
 	);
-	console.log("没有拒绝 —— 不变式失效了");
+	must(false, "脱敏 × 共享 scope × answer 没有被拒绝");
 } catch (err) {
 	console.log("拒绝:", String((err as Error).message).slice(0, 60), "…");
 }
@@ -193,6 +216,8 @@ await store.clear();
 /* 1. 匹配：空缓存必然 miss，⑥ 还没走到所以 chunks 是 null */
 const cold = await cache.lookup({ matchText: "什么是过拟合？", retrievalText: "什么是过拟合？", context: {} });
 console.log(`lookup(冷)      ${cold.outcome.padEnd(8)} exitedAt=${cold.exitedAt} chunks=${cold.chunks === null ? "null（需自己检索）" : cold.chunks.length}`);
+must(cold.outcome === "miss", "空缓存必然 miss");
+must(cold.chunks === null, "没走到 ⑥ 时 chunks 必须是 null，否则调用方会以为不用自己检索");
 
 /* 2. 写入：票据来自刚才那次 lookup —— scope 不用再解，向量不用再编 */
 const chunks = await retriever.retrieve("什么是过拟合？", {});
@@ -209,16 +234,22 @@ console.log(
 /* 3. 获取：按 id 拿回同一条 */
 const got = await cache.get(written.id);
 console.log(`get(${written.id})  ${got ? "命中" : "没有"}　matchText=${got?.matchText ?? "-"}`);
+must(got !== null, "刚写进去的条目该能按 id 取回");
+must(written.expiresAt !== null, "给了 ttlMs 就该有过期时间");
+must(written.meta?.requestId === "r-1", "meta 该原样存下来");
 
 /* 4. 再匹配：这次该命中，而且 ⑥ 已经检索过，chunks 可以直接拿去用 */
 const warm = await cache.lookup({ matchText: "过拟合是什么意思？", retrievalText: "过拟合是什么意思？", context: {} });
 console.log(
 	`lookup(热)      ${warm.outcome.padEnd(8)} entryId=${warm.entryId} 支撑度=${warm.support?.toFixed(4) ?? "-"} chunks=${warm.chunks?.length ?? "null"}`,
 );
+must(warm.outcome === "reuse", `同义提问该命中，实际 ${warm.outcome}`);
+must(warm.chunks !== null && warm.support !== null, "走到过 ⑥ 就该把片段和支撑度带出来");
 
 /* 5. 失效：老师改了 n5，这一批立刻失效，不必等 ⑤ 在读时发现 */
 const dropped = await cache.invalidateSource("n5");
 console.log(`invalidateSource(n5)  删掉 ${dropped} 条　剩余 ${(await store.all()).length} 条`);
+must(dropped === 1 && (await store.all()).length === 0, "按资料 id 批量失效该把那一条删掉");
 
 /* 6. 批量写入：两次编码灌完 N 条，不是 2N 次 */
 const seeded = await cache.writeMany(
@@ -229,6 +260,7 @@ const seeded = await cache.writeMany(
 	})),
 );
 console.log(`writeMany       灌入 ${seeded.length} 条　共 ${(await store.all()).length} 条`);
+must(seeded.length === 3 && (await store.all()).length === 3, "批量写入该落 3 条");
 
 /* 7. 批量删除与按 scope 清空 */
 await cache.evict(seeded.slice(0, 2).map(e => e.id));
@@ -244,8 +276,16 @@ for (const [tag, bad] of [
 ] as const) {
 	try {
 		await cache.write(bad, { kind: "answer", answer: "x", sourceIds: ["n5"] }, { ticket: ticketFor过拟合 });
-		console.log(`${tag.padEnd(14)} 没有拒绝 —— 不变式失效了`);
+		must(false, `票据配错 prompt（${tag}）没有被拒绝`);
 	} catch (err) {
 		console.log(`${tag.padEnd(14)} 拒绝: ${String((err as Error).message).slice(0, 46)}…`);
 	}
+}
+
+console.log("");
+if (failures > 0) {
+	console.error(`✖ ${failures} 条不变式失效。`);
+	process.exitCode = 1;
+} else {
+	console.log("✔ 全部不变式成立。");
 }
