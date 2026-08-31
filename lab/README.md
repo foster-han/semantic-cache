@@ -1,0 +1,133 @@
+# 验证台
+
+跑一门课的语料与带标注用例，用对照实验检验（或推翻）《语义缓存的精度层》里的论断。
+判定逻辑全部来自 `../sdk` —— **跑验证台就是在跑 SDK**，这里不再有第二套实现。
+
+```bash
+npm install
+npm start          # 中文语料，真模型（首次约 300MB 下载）
+npm run start:en   # 英文语料
+npm run stub       # 零依赖秒起，但分数无统计意义
+npm run typecheck
+# → http://localhost:7788
+```
+
+## 存储后端
+
+默认内存 —— `npm run stub` 要能零依赖秒起，这是硬要求。给了连接串就走真库，
+pgvector 和 Redis 二选一：
+
+```bash
+# pgvector
+createdb semcache && psql -d semcache -c 'CREATE EXTENSION vector'
+npm run start:pg           # 真模型 + pgvector
+npm run stub:pg            # stub + pgvector
+
+# Redis 8（vectorset 是内核自带的，不用装 Redis Stack）
+npm run start:redis        # 真模型 + Redis，默认 redis://localhost:6379/2
+npm run stub:redis         # stub + Redis
+```
+
+| 变量 | 作用 |
+|---|---|
+| `SEMCACHE_DB` | pgvector 连接串。设了就走 pgvector |
+| `SEMCACHE_REDIS` | Redis 连接串。设了就走 vectorset。和上一个同时设会直接报错 |
+| `STORE` | `memory` / `pgvector` / `redis`，显式覆盖上面的推断 |
+| `SEMCACHE_TABLE` | pgvector 的表名，默认 `semantic_cache` |
+| `SEMCACHE_NS` | Redis 的 key 前缀，默认 `semcache` |
+| `SEMCACHE_ANN` | `1` 走近似（pg 建 HNSW / Redis 不加 `TRUTH`）；默认 scope 内精确 KNN |
+
+Redis 那边有三处和 pgvector 不一样、且不是换个写法就能绕开的：
+
+- **`VADD` 默认 Q8 量化**，必须显式 `NOQUANT` 才是 float32。不加就过不了精度判据
+- **过期不能用原生 TTL**。`PEXPIREAT` 是真删，`all()` 就再也看不见已过期未清理的条目；
+  何况 `now` 是注入的，假时钟驱动不了原生 TTL。所以 `expires_at` 是参与 `FILTER` 的普通数值
+- **`VSIM` 的分数是 `(1 + 余弦) / 2`**，取 `2 * score - 1` 才等于 `VectorMath.cosine`
+
+向量集只解决 `searchNearest` 一个方法，其余靠自己维护的五个二级索引（entry hash、
+all zset、scope+hash zset、scope set、source set）。写路径因此全走 Lua ——
+多结构写一半崩掉留下的孤儿索引，是这条路上唯一会静默给出错答案的失效方式。
+
+向量列的维度从编码器上量出来（stub 256 维、e5-small 384 维），不写死 ——
+换 `MODE` 而表还是老的会在建表阶段就报错，不会等到插入时才炸。
+
+两个验证脚本，都要求两种后端同时在场：
+
+```bash
+npm run compare-stores            # 同一份场景集，两种后端的结论必须逐行一致
+npm run compare-stores:redis
+npm run store-conformance         # 直接对着 CacheStore 的十个方法比可观察结果
+npm run store-conformance:redis   # 换 SEMCACHE_NS，别和真跑的缓存共用前缀
+```
+
+`compare-stores` 只走 `resolve` 那条路；`getById`、`evictBySource`、`clearScope`、
+`purgeExpired`、以及「重复哈希取哪一条」「重复 id 该不该抛」都碰不到，
+所以才有第二个脚本。它同时把一条真实差异写成了判据：**`vector` 列是 float4**，
+向量往返只能保证在单精度分辨率内（约 6e-8），不是逐位相同。
+
+## 页面从上到下就是使用顺序
+
+1. **重排器自检** —— 先跑。跨度 < 0.15 说明模型和任务不匹配，此时 ④ 的任何数字都不可信。
+2. **对照实验** —— 每张卡自动跑两遍完整场景集（开/关某道闸），并排显示假命中数并生成结论。
+3. **单条场景细看** —— 逐闸判定与分数。
+4. **手动探索** —— 自己出题、改开关、调阈值。默认收起。
+
+## 场景（一门课 ML101，13 条）
+
+老师上传本学期资料，学生针对这门课提问。**没有跨课程问答**——一个学生只在一门课里。
+
+| 类别 | 用例 | 期望拦截 |
+|---|---|---|
+| 同义改写 ×3 | 过拟合 / 学习率 / 交叉验证 | 应复用 |
+| 近义反义 ×3 | 过拟合-欠拟合 / 精确率-召回率 / L1-L2 | ③④ |
+| 同词不同指 ×2 | 归一化（特征缩放 vs 批归一化）、收敛（优化 vs EM） | ⑥ |
+| 实体塌陷 ×2 | Hinton-LeCun / Vapnik-Breiman 提出了什么方法 | ⑥ |
+| 语料改版 ×2 | 老师改大纲：期中范围、评分构成 | ⑤ |
+| 对照组 ×1 | 两个远主题 | ③④ |
+
+另有 30 条干扰缓存，跑用例前先灌进去 —— 不灌的话召回永远只有 1 条候选，④ 没有候选可排。
+
+**个人成绩不在语料里。**「李四的作业二得了多少分」是结构化查询 + 授权检查，
+应由意图路由送去工具，不该进 RAG 与缓存。实体塌陷的合法载体是**学科内容里的人名**。
+
+## 最新实测（英文，真模型，13 条）
+
+模型：句对 `paraphrase-multilingual-MiniLM-L12-v2` · 检索 `multilingual-e5-small` · 重排 `ms-marco-MiniLM-L-6-v2`
+阈值：θq 0.979 / θa高 0.923 / θa低 0.910（由 `scripts/calibrate.ts` 在本语料上标定）
+
+| 配置 | 假命中 | 通过 | 复用 |
+|---|---|---|---|
+| 全闸打开 | **0** | 13/13 | 3 |
+| 关掉 ⑥ | **4** | 9/13 | 7 |
+| 关掉「⑥ 用保留实体的原文检索」 | 1 | 12/13 | 5 |
+| 关掉 ④ 精排 | **0** | 13/13 | **5** |
+
+关掉 ⑥ 多漏的四条正是它该管的两类：同词不同指 ×2、实体塌陷 ×2。
+代价是复用次数从 3 涨到 7 —— **精度归零换来命中率减半**。
+
+第四行是有效对照（SDK 已删掉「无精排就拿 θq 卡余弦」那条退化路径）：
+**精排零精度收益，却砍掉 2 次合法复用 —— 在这个测试集上是纯负收益。**
+与探针结论一致：`ms-marco` 对问题配对任务错配，θq 0.979 把同义改写也一起拒了。
+
+第三行这一轮**量化不可靠**：两条实体用例期望文档不同，匿名化后随机撞中一条。
+形态上仍显示失明，但要更多实体用例才能给出稳定差值。
+
+## 判据
+
+**答案的首要依据（`sourceIds[0]`）是不是那篇资料**，不是「有没有复用」。
+
+- 有干扰缓存后，命中另一条**内容正确**的缓存也是成功
+- 必须落在首要依据上：只要期望文档出现在 top-k 里就算过，会把
+  「复用了过拟合的答案给问欠拟合的学生」判成通过
+
+**已知盲区**：两个概念住在同一篇资料里时（L1/L2 同属一节、precision/recall 同属一节），
+这个判据看不出错，④ 的价值因此被系统性低估。
+
+## 诚实的边界
+
+- stub 模式的分数是字符 Jaccard 的哈希投影，**别拿它的 bench 数字说事**
+- 13 条是手工构造的，不是真实流量分布。能证伪，不能证明生产精度——那要 100–500 条真实标注
+- 「生成」是拼接检索到的首个片段并换序换壳，不是真 LLM。⑥ 的支撑度因此天然偏高，
+  能读的是**相对差值**，不是绝对阈值
+- 默认重排器 `ms-marco` 是**故意留着的坏例子**（中文饱和、任务也不匹配），
+  好让自检卡有东西可挡。真跑 ④ 的精度请用 `CE_MODEL=` 换句对相似度模型

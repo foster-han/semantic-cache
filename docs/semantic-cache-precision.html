@@ -1,0 +1,731 @@
+<title>语义缓存的精度层</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+SC:wght@400;500;600;700&display=swap">
+
+<style>
+  :root {
+    --ground: #F4F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #FAFBFC;
+    --border: #E1E5EA;
+    --border-strong: #CBD2DA;
+    --ink: #191D24;
+    --muted: #5C6470;
+    --accent: #0E7A6E;
+    --accent-ink: #0B5E55;
+    --accent-soft: #E3F1EF;
+    --chosen: #0E7A6E;
+    --chosen-soft: #E3F1EF;
+    --rejected: #A34457;
+    --rejected-soft: #F6E7EA;
+    --warn: #8F5F0E;
+    --warn-soft: #F6EEDE;
+    --shadow: 0 1px 2px rgba(20,30,40,.04), 0 8px 24px rgba(20,30,40,.05);
+
+    --sans: "IBM Plex Sans", "IBM Plex Sans SC", ui-sans-serif, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "IBM Plex Sans SC", ui-monospace, SFMono-Regular, monospace;
+
+    --maxw: 74ch;
+    --step--1: clamp(.82rem, .8rem + .1vw, .88rem);
+    --step-0: 1.0625rem;
+    --step-1: 1.28rem;
+    --step-2: 1.62rem;
+    --step-3: clamp(2rem, 1.7rem + 1.4vw, 2.7rem);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #111419;
+      --surface: #191D24;
+      --surface-2: #1E232B;
+      --border: #2B313B;
+      --border-strong: #3A424E;
+      --ink: #E9ECF1;
+      --muted: #98A1AF;
+      --accent: #2FB3A2;
+      --accent-ink: #6FD4C6;
+      --accent-soft: #15302C;
+      --chosen: #2FB3A2;
+      --chosen-soft: #15302C;
+      --rejected: #D98496;
+      --rejected-soft: #331E23;
+      --warn: #D4A24A;
+      --warn-soft: #322916;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #111419;
+    --surface: #191D24;
+    --surface-2: #1E232B;
+    --border: #2B313B;
+    --border-strong: #3A424E;
+    --ink: #E9ECF1;
+    --muted: #98A1AF;
+    --accent: #2FB3A2;
+    --accent-ink: #6FD4C6;
+    --accent-soft: #15302C;
+    --chosen: #2FB3A2;
+    --chosen-soft: #15302C;
+    --rejected: #D98496;
+    --rejected-soft: #331E23;
+    --warn: #D4A24A;
+    --warn-soft: #322916;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: var(--step-0);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: clamp(1.4rem, 1rem + 3vw, 4rem) clamp(1.1rem, .6rem + 3vw, 3rem) 5rem;
+  }
+
+  h1, h2, h3 { font-family: var(--sans); font-weight: 600; line-height: 1.25; text-wrap: balance; margin: 0; }
+  h1 { font-size: var(--step-3); font-weight: 700; letter-spacing: -.02em; }
+  h2 { font-size: var(--step-2); letter-spacing: -.015em; margin-top: 3.4rem; }
+  h3 { font-size: var(--step-1); margin-top: 2.2rem; }
+  p { margin: 1rem 0; }
+  a { color: var(--accent-ink); }
+  a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 1rem;
+  }
+  .lede { font-size: 1.16rem; color: var(--muted); margin: 1.2rem 0 0; max-width: var(--maxw); }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.4rem;
+    font-family: var(--mono); font-size: var(--step--1);
+    color: var(--muted); margin-top: 1.8rem;
+    border-top: 1px solid var(--border); padding-top: 1.1rem;
+  }
+  .meta b { color: var(--ink); font-weight: 500; }
+
+  header { margin-bottom: 1rem; }
+
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 1.6rem 1.7rem;
+    margin: 2.6rem 0 1rem;
+  }
+  .verdict .tag {
+    font-family: var(--mono); font-size: var(--step--1);
+    letter-spacing: .12em; text-transform: uppercase; color: var(--accent-ink);
+  }
+  .verdict h2 { margin: .5rem 0 .3rem; font-size: 1.5rem; }
+  .verdict p { margin: .5rem 0; }
+  .verdict p:last-child { margin-bottom: 0; }
+
+  section { max-width: var(--maxw); }
+  section.wide { max-width: 100%; }
+
+  ul.clean { list-style: none; margin: 1.2rem 0; padding: 0; display: grid; gap: .7rem; }
+  ul.clean li { position: relative; padding-left: 1.5rem; }
+  ul.clean li::before {
+    content: ""; position: absolute; left: .1rem; top: .62em;
+    width: 7px; height: 7px; border-radius: 2px; background: var(--accent);
+  }
+  ul.clean li b { font-weight: 600; }
+
+  .criteria { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .9rem; margin: 1.4rem 0; max-width: 100%; }
+  .criteria .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.2rem; box-shadow: var(--shadow); }
+  .criteria .num { font-family: var(--mono); font-size: var(--step--1); color: var(--accent-ink); }
+  .criteria h4 { margin: .35rem 0 .3rem; font-size: 1.02rem; font-weight: 600; }
+  .criteria p { margin: 0; font-size: .95rem; color: var(--muted); line-height: 1.5; }
+
+  .tablewrap { overflow-x: auto; margin: 1.4rem 0; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; background: var(--surface); font-size: .93rem; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: .7rem .85rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  thead th {
+    font-family: var(--mono); font-size: .74rem; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500; background: var(--surface-2); position: sticky; top: 0;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td b { font-weight: 600; }
+  .row-chosen td { background: var(--chosen-soft); }
+  .row-chosen td:first-child { box-shadow: inset 3px 0 0 var(--chosen); }
+
+  .chip { display: inline-flex; align-items: center; gap: .3rem; font-family: var(--mono); font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; padding: .18rem .5rem; border-radius: 999px; white-space: nowrap; }
+  .chip.chosen { background: var(--chosen-soft); color: var(--chosen); border: 1px solid var(--chosen); }
+  .chip.reject { background: var(--rejected-soft); color: var(--rejected); border: 1px solid transparent; }
+  .chip.maybe { background: var(--warn-soft); color: var(--warn); border: 1px solid transparent; }
+
+  pre { margin: 1.2rem 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.2rem; overflow-x: auto; box-shadow: var(--shadow); }
+  code { font-family: var(--mono); font-size: .86rem; }
+  pre code { color: var(--ink); line-height: 1.62; }
+  p code, li code, td code, figcaption code { background: var(--accent-soft); color: var(--accent-ink); padding: .08em .38em; border-radius: 5px; font-size: .82em; }
+  .kw { color: var(--accent-ink); font-weight: 500; }
+  .cm { color: var(--muted); font-style: italic; }
+  .del { color: var(--rejected); }
+
+  .note { border-left: 3px solid var(--border-strong); padding: .2rem 0 .2rem 1.1rem; color: var(--muted); margin: 1.3rem 0; font-size: .96rem; }
+
+  figure { margin: 1.8rem 0; max-width: 100%; }
+  .figbox { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 1.2rem 1rem; }
+  figure svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  figcaption { font-size: .9rem; color: var(--muted); margin-top: .8rem; max-width: var(--maxw); }
+
+  /* diagram tokens */
+  .dg .bx { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
+  .dg .bx-a { fill: var(--chosen-soft); stroke: var(--chosen); stroke-width: 1.2; }
+  .dg .bx-r { fill: var(--rejected-soft); stroke: var(--rejected); stroke-width: 1.2; }
+  .dg .lbl { fill: var(--ink); font-family: var(--sans); font-size: 13.5px; font-weight: 600; }
+  .dg .sub { fill: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+  .dg .ann { fill: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+  .dg .ln { stroke: var(--border-strong); stroke-width: 1.4; fill: none; }
+  .dg .ok { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+  .dg .no { stroke: var(--rejected); stroke-width: 1.4; fill: none; }
+  .dg .okt { fill: var(--accent-ink); font-family: var(--mono); font-size: 10.5px; }
+  .dg .not { fill: var(--rejected); font-family: var(--mono); font-size: 10.5px; }
+  .dg .mk-n { fill: var(--border-strong); }
+  .dg .mk-a { fill: var(--accent); }
+  .dg .mk-r { fill: var(--rejected); }
+  .dg .axis { stroke: var(--border-strong); stroke-width: 1.2; }
+  .dg .thr { stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 4 3; opacity: .55; }
+  .dg .r-none { fill: var(--surface-2); }
+  .dg .r-ok { fill: var(--chosen-soft); }
+  .dg .r-mid { fill: var(--warn-soft); }
+  .dg .r-no { fill: var(--rejected-soft); }
+  .dg .rlbl { fill: var(--ink); font-family: var(--sans); font-size: 13px; font-weight: 600; }
+  .dg .rsub { fill: var(--muted); font-family: var(--mono); font-size: 10.5px; }
+  .dg .pt-a { fill: var(--accent); }
+  .dg .pt-r { fill: var(--rejected); }
+  .dg .ptn { fill: var(--surface); font-family: var(--mono); font-size: 10px; font-weight: 500; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 3rem 0; max-width: var(--maxw); }
+  .footer { max-width: var(--maxw); margin-top: 3.5rem; padding-top: 1.4rem; border-top: 1px solid var(--border); font-size: .9rem; color: var(--muted); }
+  .footer a { color: var(--accent-ink); }
+  .srcs { display: grid; gap: .35rem; margin: .8rem 0 0; padding: 0; list-style: none; font-size: .86rem; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Architecture Decision Record · jolli · 续篇</p>
+  <h1>语义缓存的精度层</h1>
+  <p class="lede">上一篇选定了 Redis + pgvector 的两层缓存，也留下一句没有展开的话——「语义缓存是概率型缓存，每次命中都带『可能错』的概率」。这一篇讲怎么把那个概率压到能上线：不是把余弦阈值调高，而是四道各管一类失效的闸。</p>
+  <div class="meta">
+    <span>范围 <b>LLM 响应缓存的正确性</b></span>
+    <span>承接 <b>语义缓存后端选型</b></span>
+    <span>状态 <b>提案</b></span>
+  </div>
+</header>
+
+<div class="verdict">
+  <span class="tag">Decision</span>
+  <h2>精度不是一个阈值，是四道各管一类失效的闸</h2>
+  <ul class="clean">
+    <li><b>问题侧要不要精排，取决于你有没有任务匹配的模型。</b>句对相似度训练的重排器才对；拿段落检索的重排器来比「问题↔问题」是任务错配——实测端到端是<b>负收益</b>（零精度提升，砍掉 2 次合法复用）</li>
+    <li><b>过期靠语料版本比对，不靠相似度。</b>余弦分不出「同主题」和「仍成立」——讲上学期大纲的旧答案，和更新后的大纲片段，余弦依然很高</li>
+    <li><b>回答侧校验抓的是「问题侧看不出差别、检索结果却不同」的那一类</b>——实体塌陷与同词不同指都在其中。13 条用例上关掉它，假命中从 <b>0 升到 4</b>，代价是复用次数从 3 涨到 7</li>
+    <li><b>支撑度用哪个算子，比阈值定在哪更要紧。</b>对 top-1 片段比，不是对 top-k 取 max、也不是取重心——而且标定与实现必须用同一个算子，否则标出来的阈值根本不适用</li>
+  </ul>
+  <p class="note" style="margin-bottom:0">前提：先吃满零假命中风险的省钱手段。语义缓存在成本杠杆里排第四顺位，也是唯一一个会给用户错答案的。</p>
+</div>
+
+<section>
+  <h2>先说顺位：语义缓存不是第一个该动的杠杆</h2>
+  <p>上一篇把「缓存后端选哪个」讨论透了，但没讨论「缓存是不是该先动的那件事」。把成本杠杆按<b>风险</b>排一遍，语义缓存排在最后：</p>
+</section>
+
+<section class="wide">
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>杠杆</th><th>省什么</th><th>假命中风险</th><th>前置条件</th><th>顺位</th></tr>
+      </thead>
+      <tbody>
+        <tr class="row-chosen">
+          <td><b>Provider prompt caching</b></td>
+          <td>每次调用的<b>输入</b> token</td>
+          <td><b>无</b> — 字节前缀精确匹配</td>
+          <td>出口透传 <code>cache_control</code></td>
+          <td><span class="chip chosen">先做</span></td>
+        </tr>
+        <tr class="row-chosen">
+          <td><b>L0 精确缓存</b></td>
+          <td>整次调用（字面重复）</td>
+          <td><b>无</b> — 哈希相等</td>
+          <td>已在上一篇落定</td>
+          <td><span class="chip chosen">先做</span></td>
+        </tr>
+        <tr class="row-chosen">
+          <td><b>头部问题策展 QA</b></td>
+          <td>整次调用，且答案质量更高</td>
+          <td><b>无</b> — 人工审过</td>
+          <td>需要策展流程与责任人</td>
+          <td><span class="chip chosen">先做</span></td>
+        </tr>
+        <tr>
+          <td><b>语义缓存</b></td>
+          <td>整次调用（长尾改写）</td>
+          <td><b>有</b> — 概率型</td>
+          <td>本文这四道闸</td>
+          <td><span class="chip maybe">第四</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h3>Prompt caching 为什么排第一</h3>
+  <p>辅导场景的请求形状，恰好是前缀缓存的教科书案例：一大块固定的 system 指令加课程上下文，后面接每次都变的检索片段和问题。缓存读约 <b>0.1×</b> 输入价；写入 5 分钟 TTL 是 <b>1.25×</b>、1 小时 TTL 是 <b>2×</b>——<b>两次请求就回本</b>（1 小时 TTL 需三次）。而它是字节级前缀匹配，不存在「差不多就算命中」这回事，假命中风险为零。</p>
+  <p class="note"><b>一个会静默烧钱的陷阱：</b>断点必须打在<b>共享前缀的末尾</b>，不能打在整个 prompt 末尾。打错位置的话，每次请求都写一条新条目、永远读不回来，纯付 1.25× 的写入溢价。判断方法只有一个：看 <code>cache_read_input_tokens</code> 是不是长期为零。</p>
+  <h3>策展 QA：上一篇自己写了，然后走过去了</h3>
+  <p>上一篇在讨论 RAGFlow 时留了一句：「真要给高频重复问题便宜地出好答案，正解往往不是缓存，而是 RAG over 一个可策展的 QA 知识库」。辅导产品的问题分布是课程绑定、高度可预测的——头部那几十个问题策展一次、审过一遍、确定性返回，比概率型缓存更便宜也更准。语义缓存该去吃的是长尾，不是头部。</p>
+</section>
+
+<section>
+  <h2>还有一类问题根本不该进这条管线</h2>
+  <p>「李四的作业二得了多少分」不是 RAG 问题。它是一次<b>结构化查询 + 授权检查</b>，正确路径是意图路由送去工具、由授权层判定学生 A 无权查学生 B——LLM 和缓存都不该看见它。把个人数据放进可检索语料本身就是架构错误；PII 门控和回答校验都只是在替这个错误打补丁。</p>
+  <p>而这类问题<b>同样需要语义缓存</b>，只是缓存的东西不同：贵的是 LLM 判断「该调哪个工具、传什么参数」，工具调用本身很便宜。所以这一支<b>缓存计划，不缓存结果</b>——实体是计划里的<b>参数</b>，执行时用当前请求的实体填、当场做授权。</p>
+  <div class="note"><b>于是占位符塌陷在这一支从灾难变成了收益。</b>「张三的…」和「李四的…」脱敏后塌成同一个键，正好共用同一条 <code>getGrade(student=$1, assignment=2)</code> 计划，塌得越彻底命中率越高。危险的从来不是塌陷本身，而是<b>缓存了含实体特定内容的答案</b>。<br><br>所以判据不该是「有没有脱敏」，该是<b>缓存的是什么</b>：answer 条目脱敏后不能跨主体共享，plan 条目可以且应该。</div>
+
+  <h2>只看问题相似度，会漏掉三类失效</h2>
+  <p>把 bi-encoder 的余弦分当唯一判据，等于假设「问题像 ⇒ 答案能复用」。这个假设在三个地方破掉，而且破法各不相同——这正是为什么一个阈值调不出来。</p>
+</section>
+
+<section class="wide">
+  <div class="criteria">
+    <div class="card">
+      <div class="num">失效 A</div>
+      <h4>意图之差</h4>
+      <p>公开评测记录了：只在<b>时间范围、极性、分析意图</b>上不同的 query，余弦常常超过 0.95。「这学期的截止日期」和「上学期的截止日期」在 bi-encoder 眼里几乎是同一句话。</p>
+    </div>
+    <div class="card">
+      <div class="num">失效 B</div>
+      <h4>语料改版</h4>
+      <p>课程大纲、讲义、评分标准换了版本，缓存里的旧答案引用的还是上一版。问题本身没变，变的是它底下的语料——问题侧再怎么比都看不出来。</p>
+    </div>
+    <div class="card">
+      <div class="num">失效 C</div>
+      <h4>占位符塌陷</h4>
+      <p>上一篇的 <code>&lt;PERSON_1&gt;</code> 问题：匿名化之后两条 prompt <b>字面完全相同</b>。相似度是 1.0，不是 0.95——任何问题侧方法在这里都是自信地错。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p>三类失效需要三种不同的证据：A 需要更强的<b>语义判别力</b>，B 需要<b>语料的版本事实</b>，C 需要<b>被匿名化销毁的实体信息</b>。指望一个余弦阈值同时管住三件事，只能得到一个既漏又误的中间值。</p>
+</section>
+
+<hr>
+
+<section class="wide">
+  <h2>六道闸</h2>
+  <p style="max-width:var(--maxw)">整条读路径是一串闸门，每道闸只放行它有把握的那部分，失败的一律汇到同一条回落轨——完整生成。注意第 ③ 道：召回必须取 top-5 而不是 top-1，否则第 ④ 道无处可插。</p>
+
+  <figure>
+    <div class="figbox">
+      <svg class="dg" viewBox="0 0 900 640" role="img" aria-label="语义缓存读路径的六道闸：Presidio 门控定 scope、L0 精确匹配、向量召回 top-5、cross-encoder 重排、语料版本比对、回答侧校验；后四道任一失败都回落到完整 RAG 生成。">
+        <defs>
+          <marker id="mk-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path class="mk-n" d="M0,1 L9,5 L0,9 z"></path>
+          </marker>
+          <marker id="mk-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path class="mk-a" d="M0,1 L9,5 L0,9 z"></path>
+          </marker>
+          <marker id="mk-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path class="mk-r" d="M0,1 L9,5 L0,9 z"></path>
+          </marker>
+        </defs>
+
+        <!-- gate 1 -->
+        <rect class="bx" x="210" y="24" width="300" height="52" rx="8"></rect>
+        <text class="lbl" x="228" y="46">① Presidio 门控 · 定 scope</text>
+        <text class="sub" x="228" y="64">检出实体 → user 域，否则 course 域</text>
+        <line class="ln" x1="360" y1="76" x2="360" y2="112" marker-end="url(#mk-n)"></line>
+
+        <!-- gate 2 -->
+        <rect class="bx" x="210" y="116" width="300" height="52" rx="8"></rect>
+        <text class="lbl" x="228" y="138">② L0 精确匹配 · Redis</text>
+        <text class="sub" x="228" y="156">归一化请求哈希</text>
+        <line class="ok" x1="206" y1="142" x2="156" y2="142" marker-end="url(#mk-a)"></line>
+        <rect class="bx-a" x="20" y="116" width="130" height="52" rx="8"></rect>
+        <text class="lbl" x="85" y="140" text-anchor="middle">命中返回</text>
+        <text class="sub" x="85" y="158" text-anchor="middle">微秒级</text>
+        <line class="ln" x1="360" y1="168" x2="360" y2="204" marker-end="url(#mk-n)"></line>
+
+        <!-- gate 3 -->
+        <rect class="bx" x="210" y="208" width="300" height="52" rx="8"></rect>
+        <text class="lbl" x="228" y="230">③ 向量召回 · pgvector</text>
+        <text class="sub" x="228" y="248">top-5，不是 top-1</text>
+        <line class="no" x1="510" y1="234" x2="700" y2="234"></line>
+        <text class="not" x="605" y="226" text-anchor="middle">无候选</text>
+        <line class="ln" x1="360" y1="260" x2="360" y2="296" marker-end="url(#mk-n)"></line>
+
+        <!-- gate 4 -->
+        <rect class="bx" x="210" y="300" width="300" height="52" rx="8"></rect>
+        <text class="lbl" x="228" y="322">④ Cross-encoder 重排</text>
+        <text class="sub" x="228" y="340">句对模型 · 15–30ms · 主精度闸</text>
+        <text class="ann" x="196" y="330" text-anchor="end">抓 · 意图之差</text>
+        <line class="no" x1="510" y1="326" x2="700" y2="326"></line>
+        <text class="not" x="605" y="318" text-anchor="middle">重排分低</text>
+        <line class="ln" x1="360" y1="352" x2="360" y2="388" marker-end="url(#mk-n)"></line>
+
+        <!-- gate 5 -->
+        <rect class="bx" x="210" y="392" width="300" height="52" rx="8"></rect>
+        <text class="lbl" x="228" y="414">⑤ 语料版本比对</text>
+        <text class="sub" x="228" y="432">确定性，非相似度</text>
+        <text class="ann" x="196" y="422" text-anchor="end">抓 · 语料改版</text>
+        <line class="no" x1="510" y1="418" x2="700" y2="418"></line>
+        <text class="not" x="605" y="410" text-anchor="middle">版本不符 · evict</text>
+        <line class="ln" x1="360" y1="444" x2="360" y2="480" marker-end="url(#mk-n)"></line>
+
+        <!-- gate 6 -->
+        <rect class="bx" x="210" y="484" width="300" height="52" rx="8"></rect>
+        <text class="lbl" x="228" y="506">⑥ 回答侧校验</text>
+        <text class="sub" x="228" y="524">旧答案 ↔ 本次检索片段</text>
+        <text class="ann" x="196" y="514" text-anchor="end">抓 · 实体塌陷</text>
+        <line class="no" x1="510" y1="510" x2="700" y2="510"></line>
+        <text class="not" x="605" y="502" text-anchor="middle">不被支撑 · evict</text>
+        <line class="ok" x1="360" y1="536" x2="360" y2="572" marker-end="url(#mk-a)"></line>
+
+        <!-- outcome -->
+        <rect class="bx-a" x="210" y="576" width="300" height="52" rx="8"></rect>
+        <text class="lbl" x="228" y="598">置信带分档</text>
+        <text class="sub" x="228" y="616">直接复用 / 微调复用</text>
+
+        <!-- fallback rail -->
+        <line class="no" x1="700" y1="234" x2="700" y2="572" marker-end="url(#mk-r)"></line>
+        <rect class="bx-r" x="620" y="576" width="260" height="52" rx="8"></rect>
+        <text class="lbl" x="638" y="598">完整 RAG</text>
+        <text class="sub" x="638" y="616">检索 + 生成 + 写回缓存</text>
+      </svg>
+    </div>
+    <figcaption>四道精度闸各自拦一类失效，任一失败都汇到同一条回落轨。第 ⑤ ⑥ 道在回落前还要 <code>evict</code> 旧条目——不删的话，下次同类查询会重复付一遍校验成本却仍然失效。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>④ Cross-encoder 重排：值不值，取决于模型任务匹不匹配</h2>
+  <p>bi-encoder 把问题和缓存条目<b>各自独立</b>编码成向量再比余弦——它从来没有同时看过这两句话。cross-encoder 反过来，把两句拼在一起送进模型，让注意力直接在两者之间跑。差别就在这里：极性、时间范围、分析意图这些「一个词的差别」，bi-encoder 摊平在向量里看不见，cross-encoder 看得见。</p>
+</section>
+
+<section class="wide">
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>做法</th><th>precision@1</th><th>假命中率</th><th>读路径开销</th><th>写路径开销</th><th>结论</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>只调高余弦阈值</td><td>受 bi-encoder 天花板限制</td><td>降但同时砍掉真命中</td><td>0</td><td>0</td><td><span class="chip reject">不够</span></td>
+        </tr>
+        <tr class="row-chosen"><td><b>top-5 召回 + <u>句对</u> cross-encoder 重排</b></td><td>段落重排基准上 <b>96–98%</b><br><span style="color:var(--muted);font-size:.9em">问题配对上无公开数字</span></td><td>段落重排基准上 <b>降 60–80%</b></td><td>15–30ms（MiniLM-L6-v2）</td><td>0</td><td><span class="chip chosen">选用</span></td></tr>
+        <tr><td>top-5 召回 + <b>段落</b>重排器</td><td colspan="4">任务错配 —— 实测在中文上饱和（跨度 0.0013），英文上分数压缩在 0.03 以下</td><td><span class="chip reject">别用</span></td></tr>
+        <tr><td>LLM-as-judge 校验</td><td>最高</td><td>最低</td><td>一次 LLM 调用</td><td>0</td><td><span class="chip maybe">仅离线标定</span></td></tr>
+        <tr><td>回答摘要 ↔ 片段余弦</td><td>对失效 A、B 无效</td><td>只降失效 C</td><td>一次点积</td><td><b>一次 LLM 调用</b>（生成摘要）</td><td><span class="chip reject">别当主判据</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <p class="note">最后一行值得说明，因为它是这份提案的第一版方案，被自己推翻了。「摘要 ↔ 片段余弦」的成本论述有个洞：读路径确实零 LLM 调用，但<b>写路径每次 miss 都要生成一次摘要</b>，而 miss 恰恰是本来就最贵的那条路径。更要命的是它测的是「同主题」不是「仍成立」——失效 B 里，旧答案和新片段主题完全一致。</p>
+
+  <h3>但「加个 cross-encoder」这句话不够</h3>
+  <p>写完这篇之后我搭了个本地原型跑这套流程，第一次用真模型就翻车了：对照组「什么是递归？」的缓存被「什么是闭包？」命中。逐闸看下来，是 ④ 放的水——重排器给这两句打了 <b>0.998</b>。</p>
+  <p>拿四组难度递减的问题对去探它，问题就清楚了：</p>
+
+  <div class="tablewrap" style="max-width:100%">
+    <table style="min-width:520px">
+      <thead><tr><th>问题对</th><th>中文 sigmoid</th><th>英文 sigmoid</th></tr></thead>
+      <tbody>
+        <tr><td>同义改写</td><td>0.9988</td><td>0.0296</td></tr>
+        <tr><td>同主题不同问</td><td>0.9984</td><td>0.0001</td></tr>
+        <tr><td>完全无关</td><td>0.9975</td><td>0.0000</td></tr>
+        <tr class="row-chosen"><td><b>跨度</b></td><td><b>0.0013</b></td><td><b>~0.03</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>两件事，第二件更要紧：</p>
+  <ul class="clean">
+    <li><b>中文上完全饱和。</b>这个重排器是英文训练的，中文输入下输出恒为 ~1.0，跨度 0.0013——没有任何判别力</li>
+    <li><b>即使在英文上，任务也是错的。</b>排序方向对（同义 &gt; 无关），但绝对值全压在 0.03 以下。因为 <code>ms-marco</code> 是 <b>query→passage</b> 的相关性模型，而语义缓存要比的是 <b>query→已缓存的 query</b>——那是句对相似度，不是段落检索。任何固定 θq 在这种压缩分布上，要么切掉全部要么放过全部</li>
+  </ul>
+  <p>所以上面那些 96–98% 的公开数字，是<b>段落重排</b>基准上的，不能直接搬到问题配对上。任务匹配的选择是<b>句对 / 重复问题</b>训练的 cross-encoder——GPTCache 的 evaluator 用的正是 Quora 问题对训练的模型，这个细节此前被我读漏了。</p>
+
+  <div class="note"><b>由此得到一条该写进上线清单的规则：信任任何重排器之前，先测它的判别力。</b>给它三组难度递减的问题对（同义 / 同主题不同问 / 完全无关），看分数跨度。跨度小于 0.15 就说明模型和任务不匹配，此时这一层的任何离线标定结果都是无效的——你标定的是一个常数。这一步花不了十分钟，能省掉一整轮白跑的标定。</div>
+
+  <h3>端到端实测：这个重排器是负收益</h3>
+  <p>探针层面的证据是硬的：英文问题对上，<b>纯余弦 margin −0.2936</b>（L1/L2 该拦的 0.9214，比 cross-validation 该复用的 0.6278 还高，任何单一阈值必然同时犯两种错），加上重排器之后 <b>margin +0.0344</b>——把不可分变成了勉强可分。</p>
+  <p>但端到端跑 13 条用例，结论反过来：</p>
+
+  <div class="tablewrap" style="max-width:100%">
+    <table style="min-width:520px">
+      <thead><tr><th>配置</th><th>假命中</th><th>通过</th><th>复用次数</th></tr></thead>
+      <tbody>
+        <tr><td>④ 精排开（θq 0.979）</td><td>0</td><td>13/13</td><td><b>3</b></td></tr>
+        <tr class="row-chosen"><td>④ 精排关（问题侧只剩召回下限）</td><td>0</td><td>13/13</td><td><b>5</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><b>一条假命中都没多拦，却砍掉了 2 次合法复用。</b>原因和探针结果是一致的：<code>ms-marco</code> 对「问题↔问题」任务错配，把同义改写也压到了 θq 之下。</p>
+
+  <p class="note">这个对照本身也修过一次。第一版是无效的：关掉精排时代码退化成「拿 θq 去卡召回余弦」，而 0.979 是重排器的 sigmoid 尺度，套到余弦上严到荒谬。<b>阈值属于打分器，不属于流水线</b>——后来把这条退化路径整个删掉，「没有重排器就是没有这道闸」，对照才有效。</p>
+
+  <div class="note"><b>三段话一起才是诚实的：</b>① 探针层面，重排器把不可分变成了勉强可分；② 端到端，它砍掉 2 次合法复用、零精度收益，是纯负收益；③ 但测试集有已知盲区——三条近义反义用例里有两条的两个概念<b>住在同一篇讲义里</b>（L1/L2 同属一节，precision/recall 也是），把 L1 的答案复用给问 L2 的学生，「首要依据」这个判据看不出错，④ 的潜在价值因此被系统性低估。<br><br>所以准确的说法是：<b>用一个任务错配的重排器，④ 是负收益；换成句对相似度训练的模型会怎样，没有验证过。</b>「④ 是主精度杠杆」这句话目前只有探针证据。</div>
+
+  <h3>上一篇有一行需要改</h3>
+  <p>落地架构那段 SQL 直接 <code>LIMIT 1</code> 取最近邻一条，等于在结构上放弃了重排层——没有候选集，就没有东西可排。</p>
+  <pre><code><span class="cm">-- 上一篇：只取最近邻一条，重排无处可插</span>
+SELECT response, embedding &lt;=&gt; $3 AS distance
+FROM   semantic_cache
+WHERE  tenant_id = $1 AND model = $2 AND expires_at &gt; now()
+ORDER  BY embedding &lt;=&gt; $3
+LIMIT  <span class="del">1</span>;   <span class="cm">← 改成 5</span>
+
+<span class="cm">-- 改后：召回 5 条交给重排器，精度从 bi-encoder 的天花板上抬起来</span>
+<span class="cm">-- 应用层不再直接判 distance，改判重排分</span>
+LIMIT  <span class="kw">5</span>;</code></pre>
+
+  <p class="note"><b>顺带一处张力，建议量一次再定。</b>上一篇的判据 02 是「每次 miss 都写一条，是持续的高频单条写」，却选了 pgvector 里插入最贵的 HNSW（每次插入要走图、更新邻居）。而 <code>WHERE tenant_id + model + expires_at</code> 过滤之后，候选常常只剩几千行——这个规模下顺序扫描算 <code>&lt;=&gt;</code> 是亚毫秒<b>且精确</b>的。HNSW 在这张表上有可能是净负收益，值得在真实数据量上量一次再决定要不要建。</p>
+</section>
+
+<hr>
+
+<section class="wide">
+  <h2>置信带：一个阈值不够，要两维</h2>
+  <p style="max-width:var(--maxw)">重排分高，只说明「问的是同一件事」；还要问「那个旧答案现在还立得住吗」。两个维度切出四个区域，而不是一条线切出命中/不命中——中间那条带就是「微调复用」的容身之处：旧答案加新片段做一次<b>短</b>生成，token 远少于从零生成。</p>
+
+  <figure>
+    <div class="figbox">
+      <svg class="dg" viewBox="0 0 660 470" role="img" aria-label="二维置信带分区图：横轴是 cross-encoder 重排分，纵轴是回答侧校验分。重排分低时一律走完整 RAG；重排分高时按回答侧校验分分成直接复用、微调复用、evict 重生成三档。图中标出三个真实案例的落点。">
+        <!-- regions -->
+        <rect class="r-none" x="90" y="50" width="300" height="300"></rect>
+        <rect class="r-ok"   x="390" y="50" width="180" height="90"></rect>
+        <rect class="r-mid"  x="390" y="140" width="180" height="75"></rect>
+        <rect class="r-no"   x="390" y="215" width="180" height="135"></rect>
+
+        <!-- thresholds -->
+        <line class="thr" x1="390" y1="50" x2="390" y2="350"></line>
+        <line class="thr" x1="390" y1="140" x2="570" y2="140"></line>
+        <line class="thr" x1="390" y1="215" x2="570" y2="215"></line>
+
+        <!-- axes -->
+        <line class="axis" x1="90" y1="350" x2="570" y2="350"></line>
+        <line class="axis" x1="90" y1="50" x2="90" y2="350"></line>
+
+        <!-- region labels -->
+        <text class="rlbl" x="240" y="192" text-anchor="middle">不匹配</text>
+        <text class="rsub" x="240" y="212" text-anchor="middle">走完整 RAG · 写入新条目</text>
+
+        <text class="rlbl" x="402" y="84">直接复用</text>
+        <text class="rsub" x="402" y="103">原样返回</text>
+
+        <text class="rlbl" x="402" y="170">微调复用</text>
+        <text class="rsub" x="402" y="189">旧答案 + 新片段短生成</text>
+
+        <text class="rlbl" x="402" y="262">重新生成</text>
+        <text class="rsub" x="402" y="281">evict 旧条目，再走完整 RAG</text>
+
+        <!-- threshold ticks -->
+        <text class="ann" x="390" y="368" text-anchor="middle">θq</text>
+        <text class="ann" x="580" y="144">θa 高</text>
+        <text class="ann" x="580" y="219">θa 低</text>
+
+        <!-- points -->
+        <circle class="pt-a" cx="498" cy="86" r="9"></circle>
+        <text class="ptn" x="498" y="90" text-anchor="middle">A</text>
+        <circle class="pt-a" cx="546" cy="305" r="9"></circle>
+        <text class="ptn" x="546" y="309" text-anchor="middle">B</text>
+        <circle class="pt-r" cx="452" cy="101" r="9"></circle>
+        <text class="ptn" x="452" y="105" text-anchor="middle">C</text>
+
+        <!-- axis titles -->
+        <text class="rsub" x="330" y="392" text-anchor="middle">④ Cross-encoder 重排分（问题侧）</text>
+        <text class="rsub" x="-200" y="26" transform="rotate(-90)" text-anchor="middle">⑥ 回答侧校验分</text>
+
+        <!-- legend -->
+        <circle class="pt-a" cx="98" cy="415" r="7"></circle>
+        <text class="ptn" x="98" y="418" text-anchor="middle">A</text>
+        <text class="ann" x="114" y="419">同义改写「忘记密码」/「密码怎么找回」 → 直接复用</text>
+
+        <circle class="pt-a" cx="98" cy="437" r="7"></circle>
+        <text class="ptn" x="98" y="440" text-anchor="middle">B</text>
+        <text class="ann" x="114" y="441">占位符塌陷 Bond / Obama：重排分 1.0，靠回答侧拦下</text>
+
+        <circle class="pt-r" cx="98" cy="459" r="7"></circle>
+        <text class="ptn" x="98" y="462" text-anchor="middle">C</text>
+        <text class="not" x="114" y="463">大纲改版：这一层看不出，必须由 ⑤ 语料版本层拦</text>
+      </svg>
+    </div>
+    <figcaption>案例 <b>B</b> 是这张图最该被看见的地方：两条 prompt 匿名化后字面相同，横轴打满，只有纵轴能把它推进 evict 区。案例 <b>C</b> 则是这张图的<b>边界</b>——旧答案和新大纲主题一致，两个轴都很高，会被判成直接复用。它得靠第 ⑤ 道闸，不靠相似度。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>⑤ 语料版本：过期不该问相似度</h2>
+  <p>失效 B 的本质不是「答案和语料不像」，而是「答案是<b>另一个版本</b>的语料生成的」。这是一个可以直接查的事实，不需要推断——所以别用相似度去猜它。</p>
+  <ul class="clean">
+    <li><b>写入时记账</b> —— 缓存条目存下当时命中的 <code>source_chunk_ids</code> 和 <code>corpus_version</code></li>
+    <li><b>读取时比对</b> —— 版本号不等于当前 scope 的语料版本，直接判失效并 evict，不算相似度</li>
+    <li><b>更新时批量失效</b> —— 课程材料重新入库就是一次事件，一句 <code>DELETE</code> 把该 scope 下旧版本的条目全清掉</li>
+    <li><b>TTL 仍然保留</b> —— 上一篇的 <code>expires_at</code> 是兜底，管的是「没有任何事件但答案就是老了」那部分</li>
+  </ul>
+  <p class="note">这条也是行业里 RAG 缓存失效的标准做法：TTL 打底、文档更新事件驱动、corpus version tag 做判据。没有人用相似度判过期，因为它判不出来。</p>
+</section>
+
+<section>
+  <h2>⑥ 回答侧校验：治「问题侧看不出差别」的那一类</h2>
+  <p>上一篇新增的那一节把跨学生串答案的<b>入口</b>堵住了：Presidio 检出实体就强制 user-scope，占位符选会话随机，跨学生命中只发生在压根没有 PII 的那批 prompt 上。这是确定性的门控，是第一道防线。</p>
+  <p>但门控是按「有没有检出实体」判的，而检测器有漏检；一旦漏了一个实体，两条本该分开的 prompt 就在 <code>&lt;PERSON_1&gt;</code> 上塌成同一条。这时候<b>问题侧已经没有任何信息可用了</b>——两个字符串一模一样，cross-encoder 给 1.0，余弦给 1.0。信息在匿名化那一步就被销毁了。</p>
+
+  <h3>唯一还活着的证据：这次检索到了什么</h3>
+  <p>生成之前当然没有「当前答案」，但有一个便宜且已经要算的东西——<b>这次检索到的文档片段</b>。用它当「当前答案语境」，问题就从「新旧答案像不像」变成了「<b>旧答案还被现在的语料支撑吗</b>」。</p>
+  <p>学生②问的是 Obama，检索命中的是 Obama 相关片段；缓存里那条旧答案的向量说的是「虚构角色 / 007 特工」。两者相似度极低 → 判失效 → evict → 走完整生成。实体信息虽然从问题里被抹掉了，却<b>从检索结果里绕回来了</b>。</p>
+
+  <h3>三条边界，缺一条这层就白做</h3>
+  <ul class="clean">
+    <li><b>检索必须在匿名化之前。</b>如果检索也跑在匿名化后的文本上，两个学生检出的是同一批片段，这一层完全失明——它拦不住任何东西。这是整层成立的硬前提</li>
+    <li><b>不替代 Presidio 门控。</b>门控确定性、在入口挡；这层概率型、在出口兜。纵深防御的第二道，不是第一道的替代品</li>
+    <li><b>不当通用精度杠杆，也不当过期检测。</b>那是第 ④ 和第 ⑤ 道闸的活。派它去干那两件事，就会得到本文开头推翻的那个方案</li>
+  </ul>
+
+  <h3>它实际抓住了什么（实测）</h3>
+  <p>13 条用例、全闸打开时假命中 <b>0</b>；单独关掉 ⑥ 升到 <b>4</b>。多漏的那四条分成两类，而它们有一个共同点：</p>
+  <ul class="clean">
+    <li><b>实体塌陷 ×2</b> —— 「Hinton 提出了什么方法」与「LeCun 提出了什么方法」，匿名化后字面相同</li>
+    <li><b>同词不同指 ×2</b> —— 「归一化」在特征工程章是特征缩放、在网络章是批归一化；「收敛」在优化章与 EM 章各指一事</li>
+  </ul>
+  <p>共同点是：<b>问题侧看不出任何差别，检索结果却完全不同。</b>这才是 ⑥ 的准确定位——不是"专治实体塌陷"，实体塌陷只是这一类里最刺眼的一个例子。凡是「问题文本相同或极近、但语境把答案指向了别处」，都归它。</p>
+  <p class="note">代价要一起写：开着 ⑥ 复用 3 次，关掉复用 7 次。<b>精度归零的代价是命中率减半。</b>这个取舍必须在你自己的流量上量，不能照搬。</p>
+
+  <h3>支撑度怎么算 —— 算子比阈值更要紧</h3>
+  <p>「旧答案是否仍被检索片段支撑」这句话要落成一个具体算子，而三种写法差别巨大。我先后写错两次：</p>
+  <div class="tablewrap" style="max-width:100%">
+    <table style="min-width:560px">
+      <thead><tr><th>算子</th><th>语义</th><th>失效方式</th></tr></thead>
+      <tbody>
+        <tr><td>对 top-k 取<b>重心</b></td><td>「和这批片段整体像不像」</td><td>片段少时无关的也被捞进来，平均后信号被稀释</td></tr>
+        <tr><td>对 top-k 取 <b>max</b></td><td>「有某个片段撑得住旧答案」</td><td><b>旧答案自己的来源片段常常还在 top-k 里</b>，跟自己比当然高分，max 被它顶起来</td></tr>
+        <tr class="row-chosen"><td>对 <b>top-1</b> 比</td><td>「旧答案和现在会据以回答的那篇一不一致」</td><td>—— 选用</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>取 max 那次的教训特别具体：问「Breiman 提出了什么方法」，检索回来的三篇里仍含 Vapnik 那篇，而缓存答案正是从它生成的，于是支撑度被自己的来源顶到高位，塌陷放行。</p>
+  <div class="note"><b>更隐蔽的是它会让标定失效。</b>我标定时拿「答案 ↔ 单篇文档」比、实现却取 top-k 的 max——<b>标定与实现不是同一个算子，标出来的阈值根本不适用</b>。而后果不是报错，是我把「课内跨章这两条谁也拦不住」写成了机制的固有边界，直到换成 top-1 才发现它们一直是拦得住的。<br><br>阈值标错了还有征兆（假命中率降不下来）；算子选错了会让标定本身失去意义，然后你把自己的实现缺陷当成机制的性质。</div>
+
+  <h3>成本：存答案向量，不存摘要</h3>
+  <p>写入时<b>直接 embed 答案原文</b>（或前 N token），不生成摘要——省掉每次 miss 一次 LLM 调用，只多一次 embedding。读路径则是已存向量与本次片段向量的一次点积，接近零边际成本。整层换来的是：把「静默返回错答案」换成「多花一次检索」。</p>
+</section>
+
+<hr>
+
+<section>
+  <h2>读路径</h2>
+  <pre><code><span class="kw">函数</span> 应答(query, user, course):
+    scope ← Presidio.检出实体(query) ? user 域 : course 域        <span class="cm">① 门控</span>
+
+    <span class="kw">若</span> 命中 ← L0.精确查(hash(归一化(query)), scope):             <span class="cm">② 字面重复</span>
+        <span class="kw">返回</span> 命中.answer
+
+    候选 ← 向量库.近邻(embed(query), scope, top_k = <span class="kw">5</span>)          <span class="cm">③ 召回，不是 1</span>
+    <span class="kw">若</span> 候选 为空: <span class="kw">返回</span> 完整生成(query, scope)
+
+    最佳 ← 重排器.打分(query, 候选).取最高                        <span class="cm">④ cross-encoder</span>
+    <span class="kw">若</span> 最佳.分 &lt; θq: <span class="kw">返回</span> 完整生成(query, scope)
+
+    <span class="kw">若</span> 最佳.corpus_version ≠ 当前语料版本(scope):               <span class="cm">⑤ 确定性判据</span>
+        缓存.驱逐(最佳)
+        <span class="kw">返回</span> 完整生成(query, scope)
+
+    片段 ← 检索(query.保留实体原文, scope)                        <span class="cm">⑥ 注意：匿名化之前</span>
+    支撑度 ← 余弦(最佳.answer_embedding, 片段.向量重心)            <span class="cm">   本次请求内复用这批片段</span>
+
+    <span class="kw">若</span> 支撑度 ≥ θa_高: <span class="kw">返回</span> 最佳.answer                        <span class="cm">直接复用</span>
+    <span class="kw">若</span> 支撑度 ≥ θa_低: <span class="kw">返回</span> 短生成(最佳.answer, 片段)           <span class="cm">微调复用</span>
+    缓存.驱逐(最佳)
+    <span class="kw">返回</span> 完整生成(query, scope, 片段)
+
+<span class="kw">函数</span> 完整生成(query, scope, 片段 = 无):
+    片段 ← 片段 ?? 检索(query.保留实体原文, scope)
+    答案 ← LLM(prompt(片段, query))
+    缓存.写入(答案, embed(答案), 片段.ids, 当前语料版本(scope), scope)  <span class="cm">无摘要生成</span>
+    <span class="kw">返回</span> 答案</code></pre>
+</section>
+
+<section>
+  <h2>表结构增量</h2>
+  <p>不新建表，在上一篇的 <code>semantic_cache</code> 上加列。scope 相关列沿用 E7-2 已有的定义。</p>
+  <pre><code>ALTER TABLE semantic_cache
+  ADD COLUMN answer_embedding vector(1536),   <span class="cm">-- ⑥ 答案原文向量，不是摘要</span>
+  ADD COLUMN source_chunk_ids TEXT[],         <span class="cm">-- ⑤ 写入时命中的片段</span>
+  ADD COLUMN corpus_version   TEXT,           <span class="cm">-- ⑤ 语料版本快照</span>
+  ADD COLUMN hit_count        INT NOT NULL DEFAULT 0,
+  ADD COLUMN last_verified_at TIMESTAMPTZ;    <span class="cm">-- 观测：上次通过 ⑤⑥ 的时间</span>
+
+<span class="cm">-- ⑤ 语料改版时批量失效：一句 DELETE，不用逐条算相似度</span>
+CREATE INDEX ON semantic_cache (scope, scope_id, corpus_version);</code></pre>
+  <p class="note"><code>answer_embedding</code> <b>不建向量索引</b>。它只被「已经被重排选中的那一条」用到，是<b>点查</b>不是检索——建 HNSW 只会给这张高频写入的表再加一份维护成本。</p>
+  <p class="note"><b>算子要写进契约，别留给实现者猜。</b>支撑度 = <code>cosine(answer_embedding, embed_passage(top_1_chunk))</code>，对 <b>top-1</b> 片段比。同样重要的是：<code>answer_embedding</code> 必须由<b>检索模型的 passage 侧</b>编码，才能和检索片段落在同一个向量空间——用句对模型编码答案、用检索模型编码片段，算出来的余弦没有任何意义。</p>
+</section>
+
+<section>
+  <h2>阈值怎么定，怎么灰度</h2>
+  <p>上一篇说了「阈值别拍脑袋，用真实历史 query 离线标定」，这里给流程。行业做法可以照搬：</p>
+  <ul class="clean">
+    <li><b>取样标注</b> —— 从生产日志抽 <b>100–500 条</b>真实 query，人工标注每条「正确的缓存行为」应该是什么</li>
+    <li><b>画曲线定阈值</b> —— 在这批数据上跑出 precision / recall 曲线。生产阈值普遍落在 <b>0.7–0.95</b>，具体值取决于语料和 embedding 模型，没有可移植的默认值</li>
+    <li><b>上线门槛</b> —— <b>precision ≥ 95%</b> 再放量。两类错误代价不对称：miss 只是浪费一次调用，假命中是给学生错答案</li>
+    <li><b>Shadow mode 先行</b> —— 先只记录判定结果、不真的复用，用真实流量对齐离线标定，再逐步放开</li>
+    <li><b>三个阈值分开标</b> —— θq（重排）、θa 高、θa 低 各自标定。θa 低那条决定「微调复用」这条带有多宽，标错了要么白花短生成的钱，要么放过该重生成的条目</li>
+  </ul>
+  <h3>上线后要盯的</h3>
+  <p>命中率不是主指标，<b>假命中率</b>才是。至少要能分开看：④ 重排拒绝率、⑤ 版本失效率、⑥ 回答侧拒绝率。三条曲线的形状会直接告诉你哪类失效在涨——⑤ 陡增说明语料在频繁改版，⑥ 陡增则要去查 Presidio 的漏检率。</p>
+</section>
+
+<hr>
+
+<section>
+  <h2>沉淀下来的判断</h2>
+  <ul class="clean">
+    <li><b>一个阈值管不了三类失效。</b>意图之差要判别力，语料改版要版本事实，实体塌陷要被销毁的信息——证据类型都不同，硬凑成一个余弦分只能得到一个既漏又误的中间值</li>
+    <li><b>能查事实的地方别用相似度推断。</b>语料版本是可以直接比对的事实，用余弦去猜它，恰好在「同主题但不同版本」这个最常见的情形上失明</li>
+    <li><b>成本论述要把写路径算进去。</b>「读路径零 LLM 调用」听起来漂亮，但如果写路径每次 miss 多一次生成，省的钱正好花在最贵的那条路上</li>
+    <li><b>纵深防御不等于重复防御。</b>Presidio 门控和回答侧校验都在处理跨学生串答案，但一个在入口确定性地挡、一个在出口概率性地兜。能说清各自不管什么，这层才有存在意义</li>
+    <li><b>一个任务错配的打分器，比没有这个打分器更糟。</b>它不是"效果差一点"，是既不提升精度又砍掉合法命中——加一层之前先证明它在你的数据上能拉开分</li>
+    <li><b>算子选错比阈值标错更隐蔽。</b>阈值错了假命中率降不下来，还有征兆；算子错了会让标定本身失去意义，然后你把自己的实现缺陷写成机制的固有边界。标定与实现必须是同一个算子</li>
+    <li><b>阈值属于打分器，不属于流水线。</b>换掉一个打分器，它的阈值必须一起重标。拿重排器尺度的阈值去卡余弦，会造出一个看起来正常、实则严到荒谬的对照实验</li>
+    <li><b>先看数据该不该在这条管线里。</b>个人数据不进可检索语料，工具类问题缓存计划而非结果——很多看似需要缓存层解决的安全问题，其实是路由与数据布局的问题</li>
+    <li><b>先吃满零风险的省钱手段。</b>prompt caching、精确缓存、头部策展都不会给出错答案。语义缓存是唯一带假命中的那层，它该最后上，也该被要求给出精度证据</li>
+  </ul>
+</section>
+
+<div class="footer">
+  <p><b>本文的第 ④ ⑥ 节与表结构一节都经过本地原型验证并因此被修正过</b>：原型跑通了 ⑤ ⑥ 两层的预期行为（关掉 ⑥ 后占位符塌陷立刻放行；把检索改到匿名化之后，⑥ 只对实体塌陷失明而对课程语境仍有效），但在 ④ 上发现了上面那个任务错配。⑥ 的实现过程中先后改正三处：语料指纹应按<b>引用文档</b>而非整门课来算；支撑度的算子从重心改成 max、再改成 <b>top-1</b>（前两次都会让塌陷漏网，且第二次让我误把实现缺陷当成机制边界）；答案向量必须由检索模型的 passage 侧编码。<br><br>最终一轮英文实测（13 条用例，单门课，含 30 条干扰缓存）：全闸打开假命中 <b>0</b>、复用 3；关掉 ⑥ 假命中 <b>4</b>、复用 7。测试集有已知盲区：两个概念住在同一篇资料里时，「首要依据」这个判据看不出错，④ 的价值因此被系统性低估。</p>
+  <p>本文承接《为 jolli 选一个语义缓存后端》，只补该文未展开的正确性部分；占位符编号策略与 FERPA 合规的论证以该文为准，此处不重复。文中 cross-encoder、阈值区间与 prompt caching 的数字取自下列公开来源，jolli 自己的取值需按上文流程在真实流量上标定。</p>
+  <ul class="srcs">
+    <li><a href="https://github.com/zilliztech/gptcache">GPTCache — 语义缓存的参考实现与 similarity evaluator 设计</a></li>
+    <li><a href="https://arxiv.org/pdf/2403.02694">MeanCache: User-Centric Semantic Caching for LLM Web Services</a></li>
+    <li><a href="https://redis.io/blog/10-techniques-for-semantic-cache-optimization/">Redis — 10 techniques to optimize your semantic cache</a></li>
+    <li><a href="https://redis-ai-research-redis.static.hf.space/posts/evaluating-langcache-on-your-data.html">Redis AI Research — Evaluating LangCache on your data</a></li>
+    <li><a href="https://arxiv.org/pdf/2607.04281">Risk-Constrained Freshness-Aware Semantic Caching for Open-Web RAG</a></li>
+    <li><a href="https://arxiv.org/pdf/2510.08109">VersionRAG: Version-Aware Retrieval-Augmented Generation</a></li>
+    <li><a href="https://apxml.com/courses/optimizing-rag-for-production/chapter-4-end-to-end-rag-performance/caching-strategies-rag">RAG Caching Strategies — 失效与语料版本</a></li>
+  </ul>
+</div>
+
+</div>

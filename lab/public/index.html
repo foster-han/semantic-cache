@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>语义缓存验证台</title>
+<style>
+  :root {
+    --ground:#F4F6F8; --surface:#fff; --surface-2:#FAFBFC; --border:#E1E5EA; --border-strong:#CBD2DA;
+    --ink:#191D24; --muted:#5C6470;
+    --accent:#0E7A6E; --accent-ink:#0B5E55; --accent-soft:#E3F1EF;
+    --bad:#A34457; --bad-soft:#F6E7EA;
+    --warn:#8F5F0E; --warn-soft:#F6EEDE;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#111419; --surface:#191D24; --surface-2:#1E232B; --border:#2B313B; --border-strong:#3A424E;
+      --ink:#E9ECF1; --muted:#98A1AF;
+      --accent:#2FB3A2; --accent-ink:#6FD4C6; --accent-soft:#15302C;
+      --bad:#D98496; --bad-soft:#331E23;
+      --warn:#D4A24A; --warn-soft:#322916;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans); font-size:14px; line-height:1.62; }
+  .wrap { max-width:1100px; margin:0 auto; padding:1.8rem 1.2rem 5rem; }
+
+  h1 { font-size:1.55rem; margin:0 0 .3rem; letter-spacing:-.015em; }
+  .tagline { color:var(--muted); margin:0 0 1.3rem; max-width:64ch; }
+  h2 { font-size:1.08rem; margin:2.4rem 0 .3rem; letter-spacing:-.005em; }
+  h2:first-of-type { margin-top:1.6rem; }
+  .h2sub { color:var(--muted); font-size:13px; margin:0 0 1rem; max-width:70ch; }
+
+  .banner { border-radius:9px; padding:.6rem .9rem; font-family:var(--mono); font-size:12px; margin-bottom:1.5rem; border:1px solid var(--border); background:var(--surface); }
+  .banner.warn { background:var(--warn-soft); border-color:var(--warn); color:var(--warn); }
+
+  /* 实验卡 */
+  .exp { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.05rem 1.15rem; margin-bottom:.85rem; }
+  .exp header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; }
+  .exp .t { font-weight:650; font-size:1rem; }
+  .exp .q { color:var(--muted); font-size:13px; margin:.18rem 0 0; }
+  .exp .hint { font-family:var(--mono); font-size:11.5px; color:var(--warn); margin-top:.4rem; }
+  .exp .sides { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; margin-top:.85rem; }
+  @media (max-width:720px) { .exp .sides { grid-template-columns:1fr; } }
+  .side { border:1px solid var(--border); border-radius:9px; padding:.65rem .75rem; background:var(--surface-2); }
+  .side .lb { font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }
+  .side .nm { font-size:13px; font-weight:600; margin:.15rem 0 .45rem; }
+  .side .fig { font-family:var(--mono); font-size:13px; }
+  .side .fig b { font-size:20px; font-variant-numeric:tabular-nums; }
+  .dots { display:flex; gap:.28rem; margin-top:.5rem; flex-wrap:wrap; }
+  .dot { width:1.45rem; height:1.45rem; border-radius:6px; display:grid; place-items:center; font-size:11px; font-family:var(--mono); cursor:default; }
+  .dot.ok { background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent); }
+  .dot.no { background:var(--bad-soft); color:var(--bad); border:1px solid var(--bad); }
+  .concl { margin-top:.8rem; padding:.6rem .8rem; border-radius:8px; font-size:13px; border-left:3px solid var(--border-strong); background:var(--surface-2); }
+  .concl.good { border-left-color:var(--accent); }
+  .concl.flat { border-left-color:var(--warn); }
+  .concl.odd { border-left-color:var(--bad); }
+  .concl b { font-weight:650; }
+
+  button { font:inherit; padding:.42rem .8rem; border-radius:7px; border:1px solid var(--border-strong); background:var(--surface-2); color:var(--ink); cursor:pointer; white-space:nowrap; }
+  button:hover:not(:disabled) { border-color:var(--accent); color:var(--accent-ink); }
+  button:disabled { opacity:.5; cursor:default; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.primary:hover:not(:disabled) { opacity:.9; color:#fff; }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+
+  /* 场景细看 */
+  details { background:var(--surface); border:1px solid var(--border); border-radius:12px; margin-bottom:.85rem; }
+  summary { cursor:pointer; padding:.8rem 1.1rem; font-weight:650; font-size:.98rem; list-style:none; display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+  summary::-webkit-details-marker { display:none; }
+  summary::after { content:"展开"; font-family:var(--mono); font-size:11px; color:var(--muted); font-weight:400; }
+  details[open] summary::after { content:"收起"; }
+  summary:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; border-radius:12px; }
+  .dbody { padding:0 1.1rem 1.1rem; }
+  .dnote { color:var(--muted); font-size:12.5px; margin:0 0 .9rem; }
+
+  .scen { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:.5rem; margin-bottom:1rem; }
+  .scard { text-align:left; padding:.6rem .7rem; border-radius:9px; border:1px solid var(--border-strong); background:var(--surface-2); cursor:pointer; }
+  .scard:hover { border-color:var(--accent); }
+  .scard b { display:block; font-size:13px; margin-bottom:.2rem; }
+  .scard span { display:block; font-family:var(--mono); font-size:10.5px; color:var(--muted); line-height:1.5; }
+
+  .legend { display:flex; gap:.9rem; flex-wrap:wrap; font-size:11.5px; color:var(--muted); margin:0 0 .7rem; font-family:var(--mono); }
+  .legend i { display:inline-block; width:.7rem; height:.7rem; border-radius:3px; margin-right:.25rem; vertical-align:-1px; }
+
+  .gate { display:grid; grid-template-columns:1.9rem 1fr auto; gap:.6rem; padding:.6rem .75rem; border:1px solid var(--border); border-radius:9px; margin-bottom:.4rem; background:var(--surface-2); align-items:start; }
+  .gate .n { font-family:var(--mono); font-size:13px; color:var(--muted); }
+  .gate .nm { font-weight:600; font-size:13.5px; }
+  .gate .plain { color:var(--muted); font-size:11.5px; }
+  .gate .dt { font-size:12.5px; margin-top:.15rem; }
+  .gate .ex { font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:.28rem; word-break:break-all; }
+  .pill { font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; padding:.14rem .45rem; border-radius:99px; white-space:nowrap; border:1px solid transparent; }
+  .p-pass,.p-hit { background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+  .p-exit { background:var(--bad-soft); color:var(--bad); border-color:var(--bad); }
+  .p-would { background:var(--warn-soft); color:var(--warn); border-color:var(--warn); }
+  .p-off,.p-miss { background:var(--surface); color:var(--muted); border-style:dashed; border-color:var(--border-strong); }
+  .gate.g-exit { border-color:var(--bad); }
+  .gate.g-would { border-color:var(--warn); }
+
+  .outcome { font-size:13.5px; padding:.6rem .85rem; border-radius:9px; margin-bottom:.8rem; border:1px solid var(--border); }
+  .outcome.right { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .outcome.wrong { background:var(--bad-soft); border-color:var(--bad); color:var(--bad); }
+  .answer { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:.7rem .85rem; white-space:pre-wrap; font-size:13px; margin-top:.3rem; }
+  label.fld { display:block; font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:.85rem 0 .25rem; }
+  input[type=text], select { width:100%; max-width:26rem; padding:.42rem .6rem; border:1px solid var(--border-strong); border-radius:7px; background:var(--surface-2); color:var(--ink); font:inherit; }
+  input[type=number] { width:5rem; padding:.28rem .4rem; border:1px solid var(--border-strong); border-radius:6px; background:var(--surface-2); color:var(--ink); font-family:var(--mono); font-size:12px; }
+  .toggles { display:grid; gap:.42rem; }
+  .tg { display:flex; gap:.5rem; align-items:flex-start; font-size:13px; cursor:pointer; }
+  .tg input { margin:.32rem 0 0; flex:none; }
+  .tg small { display:block; color:var(--muted); font-size:11.5px; line-height:1.45; }
+  .thr { display:flex; flex-wrap:wrap; gap:.5rem 1rem; }
+  .thr div { display:flex; align-items:center; gap:.4rem; font-family:var(--mono); font-size:11.5px; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td { text-align:left; padding:.38rem .5rem; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:500; }
+  tbody tr:last-child td { border-bottom:none; }
+  .tw { overflow-x:auto; }
+  .mono { font-family:var(--mono); font-size:11.5px; }
+  .empty { color:var(--muted); font-size:13px; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; }
+  @media (max-width:800px) { .cols { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>语义缓存验证台</h1>
+  <p class="tagline">每个实验点一下，自动跑两遍完整场景集——一遍开着某道闸，一遍关掉——然后告诉你差在哪。<b>假命中数的差值，就是那道闸的价值。</b>如果差值是 0，说明那道闸在这个场景集上没用，它会如实这么写。</p>
+
+  <div id="banner" class="banner">加载中…</div>
+
+  <h2>先做这个：重排器自检</h2>
+  <p class="h2sub">④ 那道闸只有在重排器能把「同义」和「完全无关」拉开分数时才有意义。拉不开就说明模型和任务不匹配——这时 ④ 的任何 bench 数字都不可信。<b>先跑这个，再看下面的实验。</b></p>
+  <div class="exp">
+    <header>
+      <div><div class="t">当前重排器判别力</div><p class="q">四组难度递减的问题对，看分数跨度。跨度 &lt; 0.15 视为不可用。</p></div>
+      <button id="probeBtn">自检</button>
+    </header>
+    <div id="probeOut"></div>
+  </div>
+
+  <h2>对照实验</h2>
+  <p class="h2sub">从第一个开始点就行。每个实验独立，顺序无所谓。</p>
+  <div class="row" style="margin-bottom:1rem"><button class="primary" id="runAll">全部跑一遍</button><span class="mono" id="allStatus" style="color:var(--muted)"></span></div>
+  <div id="exps"></div>
+
+  <details open>
+    <summary>单条场景细看 —— 想知道某一条具体是怎么被拦下的</summary>
+    <div class="dbody">
+      <p class="dnote">点一个场景，自动完成「清空 → 播种 → （必要时语料改版）→ 探测」，下面显示探测那一次逐道闸的判定。开关在最后一个折叠区里改。</p>
+      <div class="scen" id="scen"></div>
+      <div class="legend">
+        <span><i style="background:var(--accent)"></i>放行 / 命中</span>
+        <span><i style="background:var(--bad)"></i>在这里拦下</span>
+        <span><i style="background:var(--warn)"></i>本会拦下，但闸关着</span>
+        <span><i style="background:var(--border-strong)"></i>未启用 / 未命中</span>
+      </div>
+      <div id="outcome"></div>
+      <div id="trace"><p class="empty">还没跑。点上面任意一个场景。</p></div>
+      <div id="answerBox"></div>
+    </div>
+  </details>
+
+  <details>
+    <summary>手动探索 —— 自己出题、改闸门、调阈值</summary>
+    <div class="dbody">
+      <div class="cols">
+        <div>
+          <label class="fld" for="q">问题</label>
+          <input type="text" id="q" value="怎么重置密码？">
+          <label class="fld" for="u">学生</label>
+          <select id="u"><option>s1</option><option>s2</option><option>s3</option><option>s4</option></select>
+          <label class="fld" for="c">学生当前学到哪一章</label>
+          <select id="c"></select>
+          <div class="row" style="margin-top:.9rem">
+            <button class="primary" id="ask">提问</button>
+            <button id="bump">语料改版</button>
+            <button id="reset">清空缓存</button>
+          </div>
+        </div>
+        <div>
+          <label class="fld">闸门开关（只影响上面的手动提问和「单条场景细看」，不影响对照实验）</label>
+          <div class="toggles" id="toggles"></div>
+          <label class="fld">阈值</label>
+          <div class="thr">
+            <div>θq <input type="number" id="thetaQ" step="0.01" min="0" max="1"></div>
+            <div>召回下限 <input type="number" id="recallFloor" step="0.01" min="0" max="1"></div>
+            <div>θa 高 <input type="number" id="thetaAHi" step="0.01" min="0" max="1"></div>
+            <div>θa 低 <input type="number" id="thetaALo" step="0.01" min="0" max="1"></div>
+          </div>
+          <label class="fld" for="scopeMode">缓存 pre-filter 粒度</label>
+          <select id="scopeMode">
+            <option value="course">course（全班共享一个缓存）</option>
+            <option value="unit">unit（再按学生当前章节切开）</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="cols" style="margin-top:1.4rem">
+        <div>
+          <label class="fld">缓存内容</label>
+          <div class="tw"><table><thead><tr><th>#</th><th>scope</th><th>提问者</th><th>prompt（匿名化后，仅最近 25 条）</th></tr></thead><tbody id="cache"></tbody></table></div>
+          <p class="mono" id="counters" style="color:var(--muted)"></p>
+        </div>
+        <div>
+          <label class="fld">语料</label>
+          <div class="tw"><table><thead><tr><th>id</th><th>单元</th><th>标题</th><th>版本</th></tr></thead><tbody id="docs"></tbody></table></div>
+        </div>
+      </div>
+    </div>
+  </details>
+
+</div>
+
+<script type="module">
+const GATE_PLAIN = {
+  1: "检出人名就把这个学生的缓存单独隔开",
+  2: "问法一模一样时直接返回，微秒级",
+  3: "找出语义最近的几条缓存（top-5，不是 top-1）",
+  4: "把问题和缓存条目拼在一起送模型打分，比各自编码再算余弦准",
+  5: "比对语料版本号——确定性判据，不算相似度",
+  6: "看旧答案还能不能被这次检索到的片段撑住",
+};
+
+const GATES = [
+  { key:"gate1", label:"① Presidio 门控", desc:"检出实体就强制 user scope。开启后跨学生共享不再发生。" },
+  { key:"gate4", label:"④ Cross-encoder 重排", desc:"关掉就退化成纯余弦阈值。" },
+  { key:"gate5", label:"⑤ 语料版本比对", desc:"关掉后过期答案会照常返回。" },
+  { key:"gate6", label:"⑥ 回答侧校验", desc:"关掉后占位符塌陷应当立刻放行。" },
+  { key:"preAnonRetrieval", label:"⑥ 检索用保留实体的原文", desc:"关掉 → ⑥ 应当对实体塌陷失明。" },
+];
+
+const EXPERIMENTS = [
+  { key:"g6", title:"⑥ 回答侧校验有没有必要",
+    q:"问题侧已经有重排了，还需要在答案上再校验一次吗？",
+    a:{ label:"开着 ⑥", cfg:{} }, b:{ label:"关掉 ⑥", cfg:{ gate6:false } } },
+
+  { key:"prean", title:"⑥ 的硬前提：检索必须在匿名化之前",
+    q:"如果检索也跑在匿名化后的文本上，⑥ 还拦得住吗？",
+    expect:"预期是「选择性失效」——只漏占位符塌陷，课程语境仍该拦得住。要是整体失效，说明别的地方坏了。",
+    a:{ label:"检索用保留实体的原文", cfg:{} }, b:{ label:"检索用匿名化后的文本", cfg:{ preAnonRetrieval:false } } },
+
+  { key:"ce", title:"④ cross-encoder 重排值不值",
+    q:"把余弦阈值调高就够了，还是真需要一个重排器？",
+    needsRerank:true,
+    a:{ label:"开着 ④ 重排", cfg:{} }, b:{ label:"关掉 ④（纯余弦阈值）", cfg:{ gate4:false } } },
+
+  { key:"gate1", title:"① 门控能不能替代 ⑥",
+    q:"入口就按检出实体分流到 user scope，是不是就不用 ⑥ 了？",
+    a:{ label:"开门控 · 关 ⑥", cfg:{ gate1:true, gate6:false } },
+    b:{ label:"关门控 · 关 ⑥", cfg:{ gate1:false, gate6:false } } },
+
+  { key:"prefilter", title:"pre-filter 比校验便宜",
+    q:"把「学生当前章节」加进缓存的 pre-filter，能不能直接省掉一次校验？",
+    a:{ label:"pre-filter = course + unit", cfg:{ scopeMode:"unit", gate6:false } },
+    b:{ label:"pre-filter = course（全班一个缓存）", cfg:{ scopeMode:"course", gate6:false } } },
+];
+
+let DEF = {};
+let cfg = {};
+let SCEN = [];
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+async function post(path, body) {
+  const res = await fetch(path, { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body ?? {}) });
+  return res.json();
+}
+
+/* ---------- 对照实验 ---------- */
+
+function renderExps() {
+  $("exps").innerHTML = EXPERIMENTS.map(e => `
+    <div class="exp" id="exp-${e.key}">
+      <header>
+        <div>
+          <div class="t">${esc(e.title)}</div>
+          <p class="q">${esc(e.q)}</p>
+          ${e.expect ? `<p class="q" style="color:var(--accent-ink)">${esc(e.expect)}</p>` : ""}
+          <div class="hint" data-hint></div>
+        </div>
+        <button data-run="${e.key}">跑这个</button>
+      </header>
+      <div data-out></div>
+    </div>`).join("");
+  for (const b of $("exps").querySelectorAll("[data-run]")) {
+    b.addEventListener("click", () => runExp(EXPERIMENTS.find(x => x.key === b.dataset.run)));
+  }
+}
+
+function sideHtml(tag, label, res) {
+  // 判据是「答案的首要依据是不是那篇资料」，所以 tooltip 要比的是文档 id，不是 reuse/regenerate
+  const dots = res.rows.map(r => {
+    const how = r.got === "reuse" ? "复用" : "重新生成";
+    const where = r.exitedAt ? `，第 ${r.exitedAt} 道闸拦下` : "";
+    const title = `${r.label}：应该依据 ${r.expectDoc}，实际 ${r.primarySource ?? "无"}（${how}${where}）`;
+    return `<span class="dot ${r.ok ? "ok" : "no"}" title="${esc(title)}">${r.ok ? "✓" : "✗"}</span>`;
+  }).join("");
+  return `<div class="side">
+    <div class="lb">${tag}</div>
+    <div class="nm">${esc(label)}</div>
+    <div class="fig">假命中 <b style="color:${res.falseHit ? "var(--bad)" : "var(--accent)"}">${res.falseHit}</b>　·　漏命中 ${res.missed}</div>
+    <div class="dots">${dots}</div>
+  </div>`;
+}
+
+function conclude(exp, A, B) {
+  const byKey = rows => Object.fromEntries(rows.map(r => [r.key, r]));
+  const a = byKey(A.rows), b = byKey(B.rows);
+  const regressed = A.rows.filter(r => r.ok && !b[r.key].ok).map(r => r.label);
+  const improved = B.rows.filter(r => r.ok && !a[r.key].ok).map(r => r.label);
+  const d = B.falseHit - A.falseHit;
+
+  if (d > 0) {
+    return { cls:"good", html:`<b>关掉之后假命中 ${A.falseHit} → ${B.falseHit}。</b>多漏的是：${regressed.map(esc).join("、") || "（判定翻转但假命中数未变）"}。这 ${d} 条就是这道闸的价值。` };
+  }
+  if (d === 0 && regressed.length === 0 && improved.length === 0) {
+    return { cls:"flat", html:`<b>两边一模一样，假命中都是 ${A.falseHit}。</b>在这个场景集上，这道闸没有产生任何差别——要么它确实没用，要么场景集里没有能触发它的案例。` };
+  }
+  if (d < 0) {
+    return { cls:"odd", html:`<b>关掉之后假命中反而下降（${A.falseHit} → ${B.falseHit}）。</b>与预期相反，值得查：${improved.map(esc).join("、")}。` };
+  }
+  return { cls:"flat", html:`<b>假命中数没变（都是 ${A.falseHit}），但判定有翻转。</b>${regressed.length ? "关掉后变坏：" + regressed.map(esc).join("、") + "。" : ""}${improved.length ? "关掉后反而变好：" + improved.map(esc).join("、") + "。" : ""}` };
+}
+
+async function runExp(exp) {
+  const el = $(`exp-${exp.key}`);
+  const btn = el.querySelector("[data-run]");
+  const out = el.querySelector("[data-out]");
+  btn.disabled = true; btn.textContent = "跑着…";
+  out.innerHTML = `<p class="empty" style="margin:.8rem 0 0">跑两遍完整场景集…</p>`;
+  try {
+    const A = await post("/api/bench", { config: { ...DEF, ...exp.a.cfg } });
+    const B = await post("/api/bench", { config: { ...DEF, ...exp.b.cfg } });
+    // SDK 拒绝一个配置也是有效结果 —— 如实报出来，别让它看起来像「两边一样」
+    const bad = A.rejected ? { side:"A", label:exp.a.label, reason:A.reason }
+              : B.rejected ? { side:"B", label:exp.b.label, reason:B.reason } : null;
+    if (bad) {
+      out.innerHTML = `<div class="concl odd"><b>配置 ${bad.side}（${esc(bad.label)}）被 SDK 拒绝，这个对照没跑成。</b><br><span class="mono">${esc(bad.reason ?? "未给出原因")}</span></div>`;
+      renderState(B.state ?? A.state);
+      return;
+    }
+    const c = conclude(exp, A, B);
+    out.innerHTML = `
+      <div class="sides">${sideHtml("配置 A", exp.a.label, A)}${sideHtml("配置 B", exp.b.label, B)}</div>
+      <div class="concl ${c.cls}">${c.html}</div>`;
+    renderState(B.state);
+  } finally {
+    btn.disabled = false; btn.textContent = "再跑一次";
+  }
+}
+
+/* ---------- 单条场景 ---------- */
+
+function pill(v) {
+  const map = { pass:"p-pass", hit:"p-hit", exit:"p-exit", "would-exit":"p-would", off:"p-off", miss:"p-miss" };
+  const txt = { "would-exit":"本会拦下", off:"未启用", pass:"放行", hit:"命中", exit:"在这里拦下", miss:"未命中" };
+  return `<span class="pill ${map[v] || "p-off"}">${txt[v] || v}</span>`;
+}
+
+function renderResult(r, sc) {
+  const names = { reuse:"直接复用缓存", tune:"微调后复用", regenerate:"重新生成" };
+  if (sc) {
+    const got = r.decision === "regenerate" ? "regenerate" : "reuse";
+    const ok = got === sc.expect;
+    $("outcome").innerHTML = `<div class="outcome ${ok ? "right" : "wrong"}">
+      ${ok ? "✓ 判对了" : "✗ 判错了"}　—　应该 <b>${sc.expect === "reuse" ? "复用" : "重新生成"}</b>，实际 <b>${names[r.decision]}</b>${r.exitedAt ? `（第 ${r.exitedAt} 道闸拦下）` : ""}
+    </div>`;
+  } else {
+    $("outcome").innerHTML = `<div class="outcome">判定：<b>${names[r.decision]}</b>${r.exitedAt ? `　（第 ${r.exitedAt} 道闸拦下）` : ""}${r.entryId ? `　命中条目 #${r.entryId}` : ""}</div>`;
+  }
+  $("trace").innerHTML = r.trace.map(t => `
+    <div class="gate ${t.verdict === "exit" ? "g-exit" : t.verdict === "would-exit" ? "g-would" : ""}">
+      <div class="n">${["","①","②","③","④","⑤","⑥"][t.gate]}</div>
+      <div>
+        <div class="nm">${esc(t.name)}</div>
+        <div class="plain">${esc(GATE_PLAIN[t.gate] || "")}</div>
+        <div class="dt">${esc(t.detail)}</div>
+        ${t.extra ? `<div class="ex">${esc(t.extra)}</div>` : ""}
+      </div>
+      <div>${pill(t.verdict)}</div>
+    </div>`).join("");
+  $("answerBox").innerHTML = `<label class="fld">返回给学生的答案</label><div class="answer">${esc(r.answer)}</div>`;
+}
+
+async function runScenario(sc) {
+  // 播种 → 改版 → 探测 全部在服务端一次做完，跑在场景自己的缓存上。
+  // 先前这里第一步是 /api/reset，会把手动探索攒下的条目一起清掉 ——
+  // 于是「问一句、再问同义的一句」看起来永远不命中。清理只该由「重置」按钮触发。
+  const r = await post("/api/scenario", { key: sc.key, config: cfg });
+  $("q").value = sc.probe.text; $("u").value = sc.probe.user; $("c").value = sc.probe.unit ?? "";
+  renderResult(r, sc); renderState(r.state);
+}
+
+/* ---------- 状态 ---------- */
+
+function renderToggles() {
+  $("toggles").innerHTML = GATES.map(g => `
+    <label class="tg"><input type="checkbox" data-k="${g.key}" ${cfg[g.key] ? "checked" : ""}>
+    <span><b>${g.label}</b><small>${g.desc}</small></span></label>`).join("");
+  for (const el of $("toggles").querySelectorAll("input")) {
+    el.addEventListener("change", e => { cfg[e.target.dataset.k] = e.target.checked; });
+  }
+}
+
+function renderState(s) {
+  $("cache").innerHTML = s.cache.length
+    ? s.cache.slice(-25).reverse().map(e => `<tr><td class="mono">${e.id}</td><td class="mono">${esc(e.scope)}</td><td class="mono">${esc(e.by)}</td><td>${esc(e.prompt)}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="empty">空</td></tr>`;
+  $("docs").innerHTML = s.docs.map(d =>
+    `<tr><td class="mono">${d.id}</td><td class="mono">${esc(d.unit)}</td><td>${esc(d.title)}</td><td class="mono">${d.version > 1 ? `<b style="color:var(--bad)">v${d.version}</b>` : `v${d.version}`}</td></tr>`).join("");
+  const c = s.counters;
+  $("counters").textContent = `提问 ${c.ask} · 精确命中 ${c.exact} · 直接复用 ${c.reuse} · 微调 ${c.tune} · 重生成 ${c.regen} · 驱逐 ${c.evict}`;
+}
+
+async function boot() {
+  const s = await (await fetch("/api/state")).json();
+  DEF = s.defaults; cfg = { ...s.defaults }; SCEN = s.scenarios;
+
+  const stub = s.mode === "stub";
+  $("banner").className = "banner" + (stub ? " warn" : "");
+  $("banner").textContent = stub
+    ? "stub 模式 —— 玩具相似度（字符 Jaccard），分数没有统计意义，只用来跑通控制流。要看真数字：npm start"
+    : `模型：${s.note}${s.rerankAvailable ? "" : "　（重排器未加载，④ 会退化为纯余弦）"}`;
+
+  renderExps();
+  for (const e of EXPERIMENTS) {
+    const h = $(`exp-${e.key}`).querySelector("[data-hint]");
+    if (e.needsRerank && !s.rerankAvailable) h.textContent = "⚠ 当前没有可用的重排器，这个实验两边会跑出一样的结果。要 npm start（真模型）才有意义。";
+  }
+
+  $("c").innerHTML = s.units.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join("");
+  $("scen").innerHTML = SCEN.map(sc => `
+    <button class="scard" data-k="${sc.key}">
+      <b>${esc(sc.label)}</b>
+      <span>播种：${esc(sc.seed.text)}〔${esc(sc.seed.unit ?? "-")}〕<br>探测：${esc(sc.probe.text)}〔${esc(sc.probe.unit ?? "-")}〕<br>应该：${sc.expect === "reuse" ? "复用" : "重新生成"}${sc.caveat ? "<br>⚠ " + esc(sc.caveat) : ""}</span>
+    </button>`).join("");
+  for (const b of $("scen").querySelectorAll(".scard")) {
+    b.addEventListener("click", () => runScenario(SCEN.find(x => x.key === b.dataset.k)));
+  }
+
+  renderToggles();
+  renderState(s);
+  for (const k of ["thetaQ","recallFloor","thetaAHi","thetaALo"]) {
+    $(k).value = cfg[k];
+    $(k).addEventListener("change", e => { cfg[k] = Number(e.target.value); });
+  }
+  $("scopeMode").value = cfg.scopeMode;
+  $("scopeMode").addEventListener("change", e => { cfg.scopeMode = e.target.value; });
+
+  $("ask").addEventListener("click", ask);
+  $("q").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
+  $("bump").addEventListener("click", async () => renderState((await post("/api/bump")).state));
+  $("reset").addEventListener("click", async () => {
+    renderState(await post("/api/reset"));
+    $("trace").innerHTML = '<p class="empty">已清空。</p>'; $("outcome").innerHTML = ""; $("answerBox").innerHTML = "";
+  });
+
+  $("probeBtn").addEventListener("click", async () => {
+    const btn = $("probeBtn"); btn.disabled = true; btn.textContent = "跑着…";
+    try {
+      const p = await post("/api/rerank-probe");
+      if (!p.available) {
+        $("probeOut").innerHTML = `<div class="concl flat"><b>当前没有可用的重排器。</b>stub 模式下 ④ 会退化成纯余弦阈值。要真跑：npm start</div>`;
+        return;
+      }
+      const rows = p.rows.map(r =>
+        `<tr><td>${esc(r.tag)}</td><td class="mono">${esc(r.a)}</td><td class="mono">${esc(r.b)}</td><td class="mono" style="font-variant-numeric:tabular-nums">${r.score.toFixed(4)}</td></tr>`).join("");
+      const cls = p.usable ? "good" : "odd";
+      const msg = p.usable
+        ? `<b>跨度 ${p.spread.toFixed(4)} —— 可用。</b>重排器能区分开这四组，④ 的 bench 数字可以参考。`
+        : `<b>跨度只有 ${p.spread.toFixed(4)} —— 不可用。</b>这个重排器对以上四组给出几乎相同的分数，说明它和「问题↔问题配对」这个任务不匹配（常见原因：用了 query→passage 的段落相关性模型，或者模型不支持这门语言）。<br>④ 的实验结果此时没有意义。换一个句对相似度训练的 cross-encoder：<code>CE_MODEL=... npm start</code>`;
+      $("probeOut").innerHTML = `
+        <div class="tw" style="margin-top:.8rem"><table>
+          <thead><tr><th>难度</th><th>A</th><th>B</th><th>重排分</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+        <div class="concl ${cls}">${msg}</div>`;
+    } finally { btn.disabled = false; btn.textContent = "重新自检"; }
+  });
+
+  $("runAll").addEventListener("click", async () => {
+    const btn = $("runAll"); btn.disabled = true;
+    for (let i = 0; i < EXPERIMENTS.length; i++) {
+      $("allStatus").textContent = `${i + 1} / ${EXPERIMENTS.length}…`;
+      await runExp(EXPERIMENTS[i]);
+    }
+    $("allStatus").textContent = "跑完了";
+    btn.disabled = false;
+  });
+}
+
+async function ask() {
+  const r = await post("/api/ask", { text: $("q").value, user: $("u").value, unit: $("c").value, config: cfg });
+  renderResult(r, null); renderState(r.state);
+}
+
+boot();
+</script>
+</body>
+</html>

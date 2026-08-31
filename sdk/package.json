@@ -1,0 +1,11 @@
+{
+	"name": "@jolli.ai/semantic-cache",
+	"version": "0.1.0",
+	"description": "分层语义缓存：把「问题像不像」和「旧答案还成不成立」分成各管一类失效的闸，并强制每个模型角色先过判别力自检",
+	"type": "module",
+	"main": "./src/index.ts",
+	"exports": { ".": "./src/index.ts" },
+	"files": ["src"],
+	"license": "UNLICENSED",
+	"private": true
+}

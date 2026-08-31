@@ -1,0 +1,25 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"allowImportingTsExtensions": true,
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"lib": [
+			"ES2022"
+		],
+		"types": [
+			"node"
+		]
+	},
+	// scripts/ 下只列了新写的那个。calibrate.ts 等几个早于 strict 模式，
+	// 一并纳入会带出一堆与本次改动无关的报错 —— 那是单独一件事。
+	"include": [
+		"*.ts",
+		"types/*.ts",
+		"scripts/compareStores.ts",
+		"scripts/storeConformance.ts"
+	]
+}
