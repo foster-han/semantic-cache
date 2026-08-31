@@ -70,7 +70,7 @@ MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm s
 | `GEN_TIMEOUT_MS` | `120000` | 单次超时 |
 | `DEEPSEEK_API_KEY` | 无 | `GEN=deepseek` 必需 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | 换兼容端点 |
-| `CALIB_SAMPLES` | stub 1 / 其余 3 | `calibrate.ts` 每条用例采样几次（对 DeepSeek 目前是空转，见 FINDINGS） |
+| `CALIB_SAMPLES` | stub 1 / 其余 3 | `calibrate.ts` 每条用例采样几次。采样退化（N 次逐位相同）时脚本会打 **⚠ 采样无效** —— DeepSeek 在 temp 0.2 下就是这种情况 |
 | `GEN_MEMO` | `1` | bench 与场景回放对**同输入**只生成一次。`0` 关掉，用来看生成端自身的抖动 |
 
 三个生成端的取舍：

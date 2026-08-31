@@ -7,7 +7,8 @@ const qs = ["什么是过拟合？", "过拟合是什么意思？", "什么是�
 const dv = await enc.embedPassage(DOCS.map(d => d.text));
 const qv = await enc.embedQuery(qs);
 let hitTop1 = 0;
-const want = { 0:"过拟合",1:"过拟合",2:"欠拟合",3:"梯度下降",4:"交叉验证",5:"精确率与召回率",6:"精确率与召回率",7:null };
+// 每个问题期望检出哪一篇（null = 没有唯一正解，只看排序）
+const want: ReadonlyArray<string | null> = ["过拟合", "过拟合", "欠拟合", "梯度下降", "交叉验证", "精确率与召回率", "精确率与召回率", null];
 for (let i = 0; i < qs.length; i++) {
   const r = DOCS.map((d, j) => ({ t: d.title, s: cosine(qv[i], dv[j]) })).sort((a,b)=>b.s-a.s).slice(0,3);
   const ok = want[i] === null ? "?" : (r[0].t === want[i] ? "ok" : "XX");

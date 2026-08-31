@@ -2,8 +2,13 @@
 import { createEncoders, cosine } from "../Models.ts";
 import { compose as composeAnswer, DOCS, LANGUAGE, RERANK_PROBES } from "../Corpus.ts";
 import { createGenerator } from "../Generators.ts";
+import type { CourseDoc } from "../types/Corpus.ts";
 const enc = await createEncoders();
-const byId = id => DOCS.find(d => d.id === id);
+const byId = (id: string): CourseDoc => {
+	const doc = DOCS.find(d => d.id === id);
+	if (!doc) throw new Error(`标定用例引用了不存在的文档：${id}`);
+	return doc;
+};
 
 /**
  * **标定必须和运行路径用同一个生成端。** 分叉过一次，代价是英文语料下阈值高过了
@@ -21,10 +26,11 @@ const generator = createGenerator();
  */
 const SAMPLES = Number(process.env.CALIB_SAMPLES ?? (generator.kind === "stub" ? 1 : 3));
 
-const answerCache = new Map();
-async function compose(d, sample = 0) {
+const answerCache = new Map<string, string>();
+async function compose(d: CourseDoc, sample = 0): Promise<string> {
   const key = `${d.id}#${sample}`;
-  if (answerCache.has(key)) return answerCache.get(key);
+  const cached = answerCache.get(key);
+	if (cached !== undefined) return cached;
   if (generator.kind === "stub") {
     const text = composeAnswer([d]);
     answerCache.set(key, text);
@@ -34,14 +40,15 @@ async function compose(d, sample = 0) {
   const q = LANGUAGE === "en" ? `What is ${d.title}?` : `${d.title}是什么？`;
   const payload = await generator.generate(
     { matchText: q, retrievalText: q, context: {} },
-    [{ id: d.id, text: d.text, score: 1, title: d.title, version: d.version }],
+    [{ id: d.id, text: d.text, score: 1 }],
+    sample,
   );
   const text = payload.kind === "answer" ? payload.answer : "";
   answerCache.set(key, text);
   return text;
 }
 
-const median = xs => {
+const median = (xs: ReadonlyArray<number>): number => {
   const a = [...xs].sort((x, y) => x - y);
   const m = a.length >> 1;
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
@@ -55,14 +62,15 @@ const PROBES = RERANK_PROBES.map(p => [p.label, p.a, p.b, p.shouldMatch]);
 
 console.log(`\n== 语言 ${LANGUAGE} ==\n`);
 console.log("① 重排器判别力（问题↔问题）");
-const rr = [];
+const rr: Array<{ s: number | null; want: boolean }> = [];
 for (const [tag, a, b, want] of PROBES) {
-  const s = await enc.rerank(a, b);
-  rr.push({ s, want });
-  console.log("   ", tag.padEnd(28), s === null ? "无重排器" : s.toFixed(4));
+  const s = await enc.rerank(String(a), String(b));
+  rr.push({ s, want: Boolean(want) });
+  console.log("   ", String(tag).padEnd(28), s === null ? "无重排器" : s.toFixed(4));
 }
 if (rr[0].s !== null) {
-  const pos = rr.filter(r => r.want).map(r => r.s), neg = rr.filter(r => !r.want).map(r => r.s);
+  const scored = rr.filter((r): r is { s: number; want: boolean } => r.s !== null);
+  const pos = scored.filter(r => r.want).map(r => r.s), neg = scored.filter(r => !r.want).map(r => r.s);
   const margin = Math.min(...pos) - Math.max(...neg);
   console.log(`    → 正例最低 ${Math.min(...pos).toFixed(4)} | 负例最高 ${Math.max(...neg).toFixed(4)} | margin ${margin.toFixed(4)} → ${margin >= 0.15 ? "可用" : "**不可用**"}`);
   if (margin > 0) console.log(`    → 建议 θq ≈ ${((Math.min(...pos) + Math.max(...neg)) / 2).toFixed(3)}`);
@@ -144,10 +152,19 @@ const uniqueDocs = new Set(spec.map(x => x[1])).size;
 if (generator.kind !== "stub") console.log(`    （真生成，${spec.length} 条用例 / ${uniqueDocs} 篇文档 × ${SAMPLES} 采样 ≈ ${Math.round(generator.approxMsPerCall * uniqueDocs * SAMPLES / 1000)} 秒）`);
 if (SAMPLES > 1) console.log(`    每条用例采样 ${SAMPLES} 次，取中位数 —— 随机生成端下单次结果测的是噪声`);
 
-const reuse = [], block = [];
+const reuse: Array<number> = [];
+const block: Array<number> = [];
+/**
+ * 采样有效性自检。
+ *
+ * DeepSeek 在 temperature 0.2 下同 prompt 同输出，实测同一轮内 3 次采样一字不差 ——
+ * 那时 `CALIB_SAMPLES` 是空转，显示出来的 `x~x` 区间是假的「已采样」。
+ * 与其让人误以为噪声被压掉了，不如把这件事直接说出来。
+ */
+let degenerate = 0;
 for (const [tag, answerDoc, chunkDoc] of spec) {
   const chunkText = byId(chunkDoc).text;
-  const scores = [];
+  const scores: Array<number> = [];
   for (let k = 0; k < SAMPLES; k++) {
     const answer = await compose(byId(answerDoc), k);
     const [av, cv2] = await enc.embedPassage([answer, chunkText]);
@@ -155,7 +172,9 @@ for (const [tag, answerDoc, chunkDoc] of spec) {
   }
   const m = median(scores);
   (tag.startsWith("该复用") ? reuse : block).push(m);
-  const spread = SAMPLES > 1 ? `  （${SAMPLES} 次：${Math.min(...scores).toFixed(4)}~${Math.max(...scores).toFixed(4)}）` : "";
+  const lo = Math.min(...scores), hi = Math.max(...scores);
+  if (SAMPLES > 1 && hi - lo < 1e-9) degenerate += 1;
+  const spread = SAMPLES > 1 ? `  （${SAMPLES} 次：${lo.toFixed(4)}~${hi.toFixed(4)}）` : "";
   console.log("   ", tag.padEnd(12), `${answerDoc}→${chunkDoc}`.padEnd(11), m.toFixed(4) + spread);
 }
 // **用中位数，不用 min/max。** 极值统计量对单个坏样本最敏感 —— 生成端一旦是随机的，
@@ -164,4 +183,13 @@ const lo = median(reuse), hi = median(block);
 const worst = Math.min(...reuse), best = Math.max(...block);
 console.log(`    → 该复用中位 ${lo.toFixed(4)} | 该拦下中位 ${hi.toFixed(4)} | margin ${(lo-hi).toFixed(4)} → ${lo>hi?"可分":"**重叠**"}`);
 console.log(`    → 最坏情况：该复用最低 ${worst.toFixed(4)} vs 该拦下最高 ${best.toFixed(4)}${worst>best?"":"　**这两组在最坏情况下重叠 —— 任何单一阈值都会同时犯两种错**"}`);
+if (SAMPLES > 1 && degenerate === spec.length) {
+  console.log(
+    `    ⚠ **采样无效**：${SAMPLES} 次全部逐位相同，CALIB_SAMPLES 在这个生成端上是空转。\n` +
+      `      同 prompt 同输出（如 DeepSeek 的 temperature 0.2）时它压不掉任何噪声 ——\n` +
+      `      要看抖动请整脚本跑多轮，或换一个会随 seed 变的生成端。`,
+  );
+} else if (SAMPLES > 1 && degenerate > 0) {
+  console.log(`    ⚠ ${degenerate}/${spec.length} 条用例的 ${SAMPLES} 次采样逐位相同 —— 那几条的区间不代表真实抖动。`);
+}
 if (lo > hi) console.log(`    → 建议 θa高 ≈ ${(lo - (lo-hi)*0.25).toFixed(3)} / θa低 ≈ ${(hi + (lo-hi)*0.25).toFixed(3)}`);

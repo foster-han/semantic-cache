@@ -16,8 +16,8 @@ const P = [
   ["near-anton  should DIFFER", "What are the properties of L1 regularisation?", "What are the properties of L2 regularisation?", false],
   ["unrelated   should DIFFER", "How do you prune a decision tree?", "Which metrics does homework three ask for?", false],
 ];
-const emb = await enc.embedQuestions(P.flatMap(p => [p[1], p[2]]));
-const rows = P.map((p, i) => ({ tag: p[0], want: p[3], s: cosine(emb[i*2], emb[i*2+1]) }));
+const emb = await enc.embedQuestions(P.flatMap(p => [String(p[1]), String(p[2])]));
+const rows = P.map((p, i) => ({ tag: String(p[0]), want: Boolean(p[3]), s: cosine(emb[i * 2], emb[i * 2 + 1]) }));
 for (const r of rows) console.log("   ", r.tag.padEnd(26), r.s.toFixed(4));
 const pos = rows.filter(r => r.want).map(r => r.s), neg = rows.filter(r => !r.want).map(r => r.s);
 const lo = Math.min(...pos), hi = Math.max(...neg);

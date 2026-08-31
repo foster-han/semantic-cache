@@ -60,7 +60,14 @@ export interface LabGenerator {
 	readonly note: string;
 	/** 一次生成大概多久 —— 页面上要据此提示"这张卡跑不完" */
 	readonly approxMsPerCall: number;
-	generate(prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload>;
+	/**
+	 * `variant` 用来取**同一输入的不同采样**。
+	 *
+	 * 不加它的话「多采样」是假的：DeepSeek 在 temperature 0.2 下同 prompt 同输出，
+	 * 实测同一轮内 3 次采样一字不差（区间 `x~x`），压不掉任何噪声。
+	 * 走 `seed` 而不是抬 temperature —— 抬温度会改变被测的那个分布本身。
+	 */
+	generate(prompt: CachePrompt, chunks: ReadonlyArray<Chunk>, variant?: number): Promise<CachedPayload>;
 	refine(cachedAnswer: string, prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload>;
 }
 
@@ -85,6 +92,7 @@ function stubGenerator(): LabGenerator {
 		kind: "stub",
 		note: "拼接检索到的首个片段并换序换壳 —— 不是真生成,⑥ 的支撑度天然偏高",
 		approxMsPerCall: 0,
+		// stub 是确定性的，variant 无意义 —— 如实忽略，别装作采样了
 		async generate(_prompt, chunks) {
 			return { kind: "answer", answer: compose(chunks as unknown as ReadonlyArray<ComposeChunk>), sourceIds: chunks.map(c => c.id) };
 		},
@@ -177,7 +185,7 @@ function apiGenerator(): LabGenerator {
 	const timeoutMs = Number(process.env.GEN_TIMEOUT_MS ?? 120_000);
 	const client = new Anthropic({ timeout: timeoutMs });
 
-	async function ask(user: string): Promise<string> {
+	async function ask(user: string, variant?: number): Promise<string> {
 		let response: Anthropic.Message;
 		try {
 			response = await client.messages.create({
@@ -228,11 +236,11 @@ function apiGenerator(): LabGenerator {
 		kind: "api",
 		note: `messages api ${model} —— 真生成，不需要 API key（走 ant auth 的 profile 也行）`,
 		approxMsPerCall: 2_000,
-		async generate(prompt, chunks) {
+		async generate(prompt, chunks, variant) {
 			const answer =
 				chunks.length === 0
 					? "（本课程下没有可用资料）"
-					: await ask(`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}`);
+					: await ask(`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}`, variant);
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 		async refine(cachedAnswer, prompt, chunks) {
@@ -269,7 +277,7 @@ function deepseekGenerator(): LabGenerator {
 	const model = process.env.GEN_MODEL ?? "deepseek-v4-flash";
 	const timeoutMs = Number(process.env.GEN_TIMEOUT_MS ?? 120_000);
 
-	async function ask(user: string): Promise<string> {
+	async function ask(user: string, variant?: number): Promise<string> {
 		// 429 和 5xx 是暂时的，值得重试；4xx 是请求本身错了，重试没意义
 		let lastError = "";
 		for (let attempt = 0; attempt < 3; attempt++) {
@@ -289,6 +297,8 @@ function deepseekGenerator(): LabGenerator {
 						// 生成要稳定：同一份资料 + 同一个问题，两次跑出来的答案分布不该差太多，
 						// 否则标定的支撑度是在测采样噪声
 						temperature: 0.2,
+						// 同输入取不同采样靠 seed，不靠抬温度 —— 后者会改变被测的分布
+						...(variant === undefined ? {} : { seed: variant }),
 						max_tokens: 400,
 					}),
 					signal: controller.signal,
@@ -324,11 +334,11 @@ function deepseekGenerator(): LabGenerator {
 		kind: "deepseek",
 		note: `deepseek ${model} —— 真生成，约 1~3 秒一次，完整 bench 跑得动（~15 分钟）`,
 		approxMsPerCall: 2_000,
-		async generate(prompt, chunks) {
+		async generate(prompt, chunks, variant) {
 			const answer =
 				chunks.length === 0
 					? "（本课程下没有可用资料）"
-					: await ask(`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}`);
+					: await ask(`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}`, variant);
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 		async refine(cachedAnswer, prompt, chunks) {
@@ -440,11 +450,11 @@ export function memoizeGenerator(inner: LabGenerator): LabGenerator {
 	return {
 		...inner,
 		note: `${inner.note}（同输入去重）`,
-		generate(prompt, chunks) {
-			const key = keyOf(prompt, chunks);
+		generate(prompt, chunks, variant) {
+			const key = `${variant ?? "-"}\u0000${keyOf(prompt, chunks)}`;
 			const hit = cache.get(key);
 			if (hit) return hit;
-			const run = inner.generate(prompt, chunks);
+			const run = inner.generate(prompt, chunks, variant);
 			cache.set(key, run);
 			return run;
 		},
