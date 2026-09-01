@@ -7,7 +7,7 @@
 	"scripts": {
 		"start": "node --experimental-strip-types Server.ts",
 		"stub": "MODE=stub node --experimental-strip-types Server.ts",
-		"start:en": "CORPUS_LANG=en node --experimental-strip-types Server.ts",
+		"start:zh": "CORPUS_LANG=zh PAIR_MODEL=Xenova/paraphrase-multilingual-MiniLM-L12-v2 RETR_MODEL=Xenova/multilingual-e5-small node --experimental-strip-types Server.ts",
 		"start:pg": "SEMCACHE_DB=${SEMCACHE_DB:-postgres://postgres:postgres@localhost:5432/semcache} node --experimental-strip-types Server.ts",
 		"stub:pg": "MODE=stub SEMCACHE_DB=${SEMCACHE_DB:-postgres://postgres:postgres@localhost:5432/semcache} node --experimental-strip-types Server.ts",
 		"start:redis": "SEMCACHE_REDIS=${SEMCACHE_REDIS:-redis://localhost:6379/2} node --experimental-strip-types Server.ts",

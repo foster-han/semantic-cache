@@ -16,7 +16,7 @@
 import { spawn } from "node:child_process";
 import Anthropic from "@anthropic-ai/sdk";
 import type { CachedPayload, CachePrompt, Chunk } from "../sdk/src/index.ts";
-import { compose, refineSuffix } from "./Corpus.ts";
+import { compose, LANGUAGE, refineSuffix } from "./Corpus.ts";
 import type { ComposeChunk } from "./types/Corpus.ts";
 
 /** 检索片段带着 title/version —— `Chunk` 里没有，取的时候防御一下。 */
@@ -72,18 +72,76 @@ export interface LabGenerator {
 }
 
 /**
+ * 提示词的**框架**,跟着语料语言走。
+ *
+ * 系统提示词是模型挑答案语言的最强信号 —— 中文框架配英文语料(`npm start` 的默认形态,
+ * `CORPUS_LANG` 不设就是 en),问的是英文、答的是中文。除了看着别扭,它还坏了两件事:
+ * ⑥ 的支撑度是拿答案去比 passage 空间里的英文资料,跨语言比出来的分数是另一个尺度;
+ * 而缓存里存的答案语言和后续提问对不上。
+ *
+ * 整组必须同语言 —— system、资料抬头、提问抬头、refine 指令、无资料兜底。
+ * 混着来等于在 prompt 里塞进另一种语言的噪声,而这台东西量的就是分数。
+ */
+interface PromptFrame {
+	readonly system: string;
+	/** 资料块的抬头,`n` 从 1 起 */
+	material(n: number, title: string): string;
+	question(text: string): string;
+	refine(cachedAnswer: string): string;
+	/** 一篇资料都没检索到时的答案 —— 和语料 `compose()` 的兜底同一句话 */
+	readonly noMaterials: string;
+}
+
+const FRAMES: Readonly<Record<"en" | "zh", PromptFrame>> = {
+	en: {
+		system:
+			"You are the teaching assistant for a machine learning course. Answer the student's question using only " +
+			"the material given below; do not bring in knowledge from outside it, and do not make anything up. " +
+			"Two or three sentences, plain tone, no bullet lists, no restating the question, no preamble. " +
+			"Just give the answer, in English.",
+		material: (n, title) => `[Material ${n}] "${title}"`,
+		question: text => `Student's question: ${text}`,
+		refine: cachedAnswer =>
+			"Below is an answer given earlier to a different student. It is broadly right but may not fit this " +
+			"material. Rewrite it **based on the material above** so that it does fit; keep whatever you can, " +
+			`don't start over:\n${cachedAnswer}`,
+		noMaterials: "(No material available for this course.)",
+	},
+	zh: {
+		system:
+			"你是一门机器学习课程的助教。只根据给出的资料回答学生的问题,不要引入资料以外的知识,也不要编造。" +
+			"用两三句话讲清楚,语气平实,不要罗列要点,不要重复问题,不要写开场白。直接给答案。",
+		material: (n, title) => `【资料 ${n}】《${title}》`,
+		question: text => `学生的问题：${text}`,
+		refine: cachedAnswer =>
+			"下面是之前给别的同学的答案，大体对但不一定贴合这次的资料。请**基于上面的资料**把它改得贴合，" +
+			`能沿用就沿用，不要从头重写：\n${cachedAnswer}`,
+		noMaterials: "（本课程下没有可用资料）",
+	},
+};
+
+const FRAME = FRAMES[LANGUAGE];
+const SYSTEM = FRAME.system;
+
+/**
  * 片段拼成资料块。**顺序即重要性**,和 `sourceIds` 一致 ——
  * 判据是 `sourceIds[0]`,所以首个片段必须是排第一的那个。
  */
 function materials(chunks: ReadonlyArray<Chunk>): string {
-	return chunks
-		.map((c, i) => `【资料 ${i + 1}】《${titleOf(c)}》\n${c.text}`)
-		.join("\n\n");
+	return chunks.map((c, i) => `${FRAME.material(i + 1, titleOf(c))}\n${c.text}`).join("\n\n");
 }
 
-const SYSTEM =
-	"你是一门机器学习课程的助教。只根据给出的资料回答学生的问题,不要引入资料以外的知识,也不要编造。" +
-	"用两三句话讲清楚,语气平实,不要罗列要点,不要重复问题,不要写开场白。直接给答案。";
+/**
+ * 三个真生成端送出去的用户消息**必须逐字一样** —— 它们是同一个被测对象的三次实现,
+ * 差一个字就不是在同一份 prompt 上比支撑度了。所以拼装只此一处。
+ */
+function userPrompt(prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): string {
+	return `${materials(chunks)}\n\n${FRAME.question(prompt.retrievalText)}`;
+}
+
+function refinePrompt(cachedAnswer: string, prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): string {
+	return `${userPrompt(prompt, chunks)}\n\n${FRAME.refine(cachedAnswer)}`;
+}
 
 /* ---------- stub ---------- */
 
@@ -141,19 +199,12 @@ function claudeCliGenerator(): LabGenerator {
 		note: `claude -p${model ? `(${model})` : ""} —— 真生成,约 8.5 秒一次,完整 bench 跑不动`,
 		approxMsPerCall: 8_500,
 		async generate(prompt, chunks) {
-			const answer =
-				chunks.length === 0
-					? "（本课程下没有可用资料）"
-					: await ask(`${materials(chunks)}\n\n学生的问题:${prompt.retrievalText}`);
+			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks));
 			// 没有资料时 sourceIds 为空 —— SDK 会因此不把它写进缓存,这是对的
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 		async refine(cachedAnswer, prompt, chunks) {
-			const answer = await ask(
-				`${materials(chunks)}\n\n学生的问题:${prompt.retrievalText}\n\n` +
-					`下面是之前给别的同学的答案,大体对但不一定贴合这次的资料。请**基于上面的资料**把它改得贴合,` +
-					`能沿用就沿用,不要从头重写:\n${cachedAnswer}`,
-			);
+			const answer = await ask(refinePrompt(cachedAnswer, prompt, chunks));
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 	};
@@ -237,18 +288,11 @@ function apiGenerator(): LabGenerator {
 		note: `messages api ${model} —— 真生成，不需要 API key（走 ant auth 的 profile 也行）`,
 		approxMsPerCall: 2_000,
 		async generate(prompt, chunks, variant) {
-			const answer =
-				chunks.length === 0
-					? "（本课程下没有可用资料）"
-					: await ask(`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}`, variant);
+			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks), variant);
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 		async refine(cachedAnswer, prompt, chunks) {
-			const answer = await ask(
-				`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}\n\n` +
-					`下面是之前给别的同学的答案，大体对但不一定贴合这次的资料。请**基于上面的资料**把它改得贴合，` +
-					`能沿用就沿用，不要从头重写：\n${cachedAnswer}`,
-			);
+			const answer = await ask(refinePrompt(cachedAnswer, prompt, chunks));
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 	};
@@ -335,18 +379,11 @@ function deepseekGenerator(): LabGenerator {
 		note: `deepseek ${model} —— 真生成，约 1~3 秒一次，完整 bench 跑得动（~15 分钟）`,
 		approxMsPerCall: 2_000,
 		async generate(prompt, chunks, variant) {
-			const answer =
-				chunks.length === 0
-					? "（本课程下没有可用资料）"
-					: await ask(`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}`, variant);
+			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks), variant);
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 		async refine(cachedAnswer, prompt, chunks) {
-			const answer = await ask(
-				`${materials(chunks)}\n\n学生的问题：${prompt.retrievalText}\n\n` +
-					`下面是之前给别的同学的答案，大体对但不一定贴合这次的资料。请**基于上面的资料**把它改得贴合，` +
-					`能沿用就沿用，不要从头重写：\n${cachedAnswer}`,
-			);
+			const answer = await ask(refinePrompt(cachedAnswer, prompt, chunks));
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 	};

@@ -9,8 +9,21 @@
  */
 import type { PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "../sdk/src/index.ts";
 
-const PAIR_ID = process.env.PAIR_MODEL ?? "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
-const RETR_ID = process.env.RETR_MODEL ?? "Xenova/multilingual-e5-small";
+/**
+ * 默认语料是英文（`Corpus.ts`），所以默认编码器也是英文的。
+ *
+ * 先前两个默认都是多语模型，各约 118M —— 其中约 96M 是 25 万词的多语词表，
+ * Transformer 本体只有约 21M。纯英文场景下那份词表是白付的下载量。
+ * 换成英文模型后本体算力不变、维度同样是 384（**已存的向量不用迁移**），体积小一个量级。
+ *
+ * 检索侧特意留在 e5 家族：下面 `usesE5Prefix` 是按模型名里有没有 `e5` 判的，
+ * 换到 bge 那类会静默丢掉 query/passage 前缀 —— 又是一次不报错的任务错配。
+ *
+ * 跑中文请一并回切：`CORPUS_LANG=zh PAIR_MODEL=Xenova/paraphrase-multilingual-MiniLM-L12-v2
+ * RETR_MODEL=Xenova/multilingual-e5-small`。
+ */
+const PAIR_ID = process.env.PAIR_MODEL ?? "Xenova/all-MiniLM-L6-v2";
+const RETR_ID = process.env.RETR_MODEL ?? "Xenova/e5-small-v2";
 const CE_ID = process.env.CE_MODEL ?? "Xenova/ms-marco-MiniLM-L-6-v2";
 
 /**
@@ -39,6 +52,8 @@ const CE_TARGET: RerankTarget = process.env.CE_TARGET === "answer" ? "answer" : 
  * 先前 `run()` 一律传 `pooling: "mean"`。实测代价：`redis/langcache-embed-v1` 的
  * `1_Pooling/config.json` 写着 `pooling_mode_cls_token: true`，拿 mean 去跑它，
  * 1000 对 QQP 上「正命中率 ≥ 97% 时的命中率」从 60.0% 掉到 54.8%（≥95% 时 89.0% → 76.6%）——
+ * （这两个绝对值是 in-domain 的，该模型就在 QQP 上微调过；但这里要的是**同模型同数据下
+ * 换 pooling 的差**，那个比较不受影响）——
  * **少一成多的命中率，而且不报错**。这和「三个模型角色不能共用」是同一类问题：
  * 模型的元数据靠猜，猜错了没人告诉你。
  *

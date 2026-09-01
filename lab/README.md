@@ -64,7 +64,7 @@ HTML 不是 JSON，一次静默失败会让一份数据停留在旧版本上）�
 
 ```bash
 # 真模型 + 英文语料 + Redis + 真生成
-GEN=claude-cli MODE=local CORPUS_LANG=en SEMCACHE_REDIS=redis://localhost:6379/2 npm start
+GEN=claude-cli MODE=local CORPUS_LANG=zh SEMCACHE_REDIS=redis://localhost:6379/2 npm start
 
 # stub 编码器 + pgvector（跑得快，用来验存储实现，不用来读分数）
 MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm start
@@ -75,8 +75,8 @@ MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm s
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `MODE` | `local` | `local` 真模型（ONNX，本地跑）/ `stub` 字符 Jaccard 的哈希投影 |
-| `PAIR_MODEL` | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` | ③ 缓存匹配（问题↔问题） |
-| `RETR_MODEL` | `Xenova/multilingual-e5-small` | 检索 + ⑥ 的答案侧编码 |
+| `PAIR_MODEL` | `Xenova/all-MiniLM-L6-v2` | ③ 缓存匹配（问题↔问题） |
+| `RETR_MODEL` | `Xenova/e5-small-v2` | 检索 + ⑥ 的答案侧编码 |
 | `CE_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | ④ 精排。**默认这个在中文上全盲**（18 对真实对子 margin −0.0003）。想跑 ④ 的真实精度：`CE_MODEL=Xenova/bge-reranker-base`，换完必须重标 θq。候选实测见 [FINDINGS](../FINDINGS.md) |
 | `CE_TARGET` | `question` | ④ 把**旧问题**还是**旧答案**递给重排器。`answer` 才是 query→passage，手上可得的重排器都是那么训练的 —— 同一个 `bge-reranker-base`，留一交叉验证 27.8%（问↔答，假负 0）对 50%（问↔问，假负 1）。**换形态就是换尺度，θq 不通用**，所以标定表按 (模型 × 形态) 索引 |
 
@@ -95,7 +95,7 @@ CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer npm start
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `CORPUS_LANG` | `zh` | `zh` / `en`。**同一套 26 条场景，key 与顺序逐条对齐**，两种语言各一份 |
+| `CORPUS_LANG` | `en` | `zh` / `en`。**同一套 26 条场景，key 与顺序逐条对齐**，两种语言各一份。切 `zh` 请一并回切 `PAIR_MODEL` / `RETR_MODEL`（或用 `npm run start:zh`） |
 
 ### ③ 存储
 

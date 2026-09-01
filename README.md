@@ -37,7 +37,7 @@ GEN=claude-cli npm start             # 用本机 Claude Code，不需要 API key
 `SEMCACHE_DB`/`SEMCACHE_REDIS`、生成端 `GEN`。npm scripts 只是常见组合的快捷方式：
 
 ```bash
-GEN=claude-cli MODE=local CORPUS_LANG=en SEMCACHE_REDIS=redis://localhost:6379/2 npm start
+GEN=claude-cli MODE=local CORPUS_LANG=zh SEMCACHE_REDIS=redis://localhost:6379/2 npm start
 ```
 
 完整的变量表在 [`lab/README.md`](lab/README.md#配置四个互不相干的轴)。

@@ -161,7 +161,11 @@ export const CALIBRATIONS: ReadonlyArray<CalibrationRow> = [
 		thetaAHi: 0.923,
 		thetaALo: 0.91,
 		recallNote: RECALL_NOTE,
-		supportNote: "en 语料 · e5-small passage 空间 · top-1 算子 · stub 生成 · scripts/calibrate.ts",
+		supportNote:
+			"⚠ **这两个数已作废,待重标**:0.923 / 0.910 是在 `multilingual-e5-small` 的 passage 空间上标的,"
+			+ "而检索模型的默认值已改成 `e5-small-v2` —— 换了检索模型,θa 就是别人分布上的产物。"
+			+ "原标定:en 语料 · multilingual-e5-small passage 空间 · top-1 算子 · stub 生成 · scripts/calibrate.ts。"
+			+ "重标:`CORPUS_LANG=en` 配真生成端跑 scripts/calibrate.ts —— en × 真生成端本来也一行都没有",
 	},
 	{
 		corpus: "zh",

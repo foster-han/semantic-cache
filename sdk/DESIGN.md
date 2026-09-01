@@ -130,9 +130,9 @@
 | 阈值与打分器绑定、标定语境必填 | ❌ 阈值是独立配置项 | ❌ | ✅ `Calibrated<Scorer, Thresholds>` + `calibratedOn` |
 | LLM adapter（OpenAI 等 API 兼容） | ✅ | ✅ REST API | ❌ 生成由调用方传入 |
 | 向量库适配 | ✅ 九种（Milvus/FAISS/Chroma/Qdrant…） | 托管 | 三种（内存 / pgvector / Redis vectorset） |
-| 淘汰策略 | ✅ LRU / FIFO / LFU / RR | ✅ 自动淘汰 | 只有 TTL + `purgeExpired()` |
+| 淘汰策略 | ✅ LRU / FIFO / LFU / RR | ✅ 自动淘汰 | ✅ 同样四种，三个后端语义一致；**容量按 scope 计**，默认 `fifo`（`lru`/`lfu` 要在命中路径上多一次写） |
 | 多模态（图像） | ✅ | ❌ | ❌ |
-| 内置指标看板 | ❌ | ✅ | ❌（`trace` 逐闸判定，自己接） |
+| 内置指标看板 | ❌ | ✅ | ✅ `Metrics.ts`，LangCache 同款那组 + `missedAtGate` / `evictions`；**刻意不算正命中率**（需要标签） |
 
 **定位差别比功能差别更要紧。**GPTCache 与 LangCache 假设的是**纯 query→response 缓存**：
 问题像不像，是唯一要判断的事。本库假设的是**RAG 之上的缓存**，于是多出两类失效 ——
@@ -140,8 +140,8 @@
 是在问一个前两者结构上问不出的问题：**答案和它的依据之间的关系还成不成立。**
 
 所以这张表不该读成「本库功能更多」。反过来看更准确：**它是精度层，不是基础设施层。**
-LLM adapter、九种向量库、四种淘汰策略、托管看板 —— 那些是要接进生产必须有的东西，
-这里一个都没有，而且不打算有（`CacheStore` / `Retriever` / `Generate` 都是让你把已有的接进来）。
+LLM adapter、九种向量库、多模态 —— 那些是要接进生产必须有的东西，这里没有，而且不打算有
+（`CacheStore` / `Retriever` / `Generate` 都是让你把已有的接进来）。
 真要上生产，把这一层套在 GPTCache 或 LangCache 之上比替换它们更合理。
 
 同一张尺子上的实测数字见 [`FINDINGS.md`](../FINDINGS.md) 的「和主流基线的同尺度对比」。
