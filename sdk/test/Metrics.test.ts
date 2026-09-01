@@ -8,12 +8,21 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { createMetrics } from "../src/Metrics.ts";
+import { answering, BASE, forCosine, harness } from "./Fakes.ts";
 import type { CacheResult, GateId, GateTrace, Outcome } from "../src/types/Pipeline.ts";
 
-function result(outcome: Outcome, exitedAt: GateId | null = null, trace: Array<GateTrace> = []): CacheResult {
+function result(
+	outcome: Outcome,
+	exitedAt: GateId | null = null,
+	trace: Array<GateTrace> = [],
+	bypassReason: string | null = null,
+	wouldReuse: boolean | null = null,
+): CacheResult {
 	return {
 		payload: { kind: "answer", answer: "a", sourceIds: ["n1"] },
 		outcome,
+		bypassReason,
+		wouldReuse,
 		exitedAt,
 		entryId: outcome === "generated" ? null : "e1",
 		sourceIds: ["n1"],
@@ -21,7 +30,13 @@ function result(outcome: Outcome, exitedAt: GateId | null = null, trace: Array<G
 	};
 }
 
-const exitAt = (gate: GateId): Array<GateTrace> => [{ gate, name: "x", verdict: "exit", detail: "d" }];
+/** 真驱逐：exit **且**删了条目 */
+const exitAt = (gate: GateId): Array<GateTrace> => [{ gate, name: "x", verdict: "exit", detail: "d", evicted: true }];
+/** 判负但什么都没删 —— ⑥ 的「判不了」、答案无依据不写入、影子模式都是这一种 */
+/** 走真管线的用例共用这一个问题 */
+const P = { matchText: "问题", retrievalText: "问题", context: {} };
+
+const exitNoEvict = (gate: GateId): Array<GateTrace> => [{ gate, name: "x", verdict: "exit", detail: "d" }];
 
 test("空的时候命中率是 0，不是 NaN —— 看板上一个 NaN 就会让人以为服务挂了", () => {
 	const s = createMetrics().snapshot();
@@ -42,7 +57,24 @@ test("exact / reuse / refine 都算命中，generated 算未命中", () => {
 	assert.equal(s.hits, 3);
 	assert.equal(s.misses, 1);
 	assert.equal(s.hitRate, 0.75);
-	assert.deepEqual(s.byOutcome, { exact: 1, reuse: 1, refine: 1, generated: 1 });
+	assert.deepEqual(s.byOutcome, { exact: 1, reuse: 1, refine: 1, generated: 1, bypassed: 0 });
+});
+
+test("策略绕开单独成一档，并按理由分组 —— 不能混进 generated", () => {
+	const m = createMetrics();
+	m.record({ result: result("generated", 3) });
+	m.record({ result: result("bypassed", null, [], "依赖对话上下文") });
+	m.record({ result: result("bypassed", null, [], "依赖对话上下文") });
+	m.record({ result: result("bypassed", null, [], "有副作用") });
+	const s = m.snapshot();
+	// 绕开不是命中，但也不该和「查了没命中」混成一个数
+	assert.equal(s.hits, 0);
+	assert.equal(s.byOutcome.generated, 1);
+	assert.equal(s.byOutcome.bypassed, 3);
+	// 按理由降序 —— 看板要先看量最大的那条规则
+	assert.deepEqual(s.bypassedByReason, { 依赖对话上下文: 2, 有副作用: 1 });
+	// missedAtGate 只认真正跑过闸的：绕开一道闸都没跑
+	assert.deepEqual(s.missedAtGate, { 3: 1 });
 });
 
 test("未命中按闸分类 —— 三种未命中的处置完全不同，混成一个数就没用了", () => {
@@ -67,6 +99,19 @@ test("③④ 的 exit 不算驱逐 —— 那时根本没有条目被删", () =>
 	m.record({ result: result("generated", 3, exitAt(3)) });
 	m.record({ result: result("generated", 4, exitAt(4)) });
 	assert.equal(m.snapshot().evictions.total, 0);
+});
+
+test("⑥ 的 exit 里没删条目的那些也不算驱逐 —— 认 evicted，不反推 verdict", () => {
+	const m = createMetrics();
+	// ⑥ 发 exit 但什么都没删的分支：检索空/答案向量空「判不了」、答案无资料依据
+	// 不写入、中带微调失败、影子模式判负。反推 verdict 的话它们全被算成驱逐 ——
+	// retriever 一次故障就能让看板报出满屏「⑥ 判负驱逐」，而缓存一条没动。
+	m.record({ result: result("generated", 6, exitNoEvict(6)) });
+	m.record({ result: result("generated", 6, exitNoEvict(6)) });
+	m.record({ result: result("generated", 5, exitNoEvict(5)) });
+	assert.deepEqual(m.snapshot().evictions, { total: 0, bySourceVersion: 0, byAnswerCheck: 0 });
+	// 但它们照样算「未命中，被 ⑥ 拦下」—— 那件事确实发生了
+	assert.deepEqual(m.snapshot().missedAtGate, { 5: 1, 6: 2 });
 });
 
 test("延迟按命中/未命中分开 —— 混在一起均值会被命中的几毫秒拉平", () => {
@@ -109,7 +154,7 @@ test("延迟样本有上限，超了环形覆盖 —— 长跑进程里无上限
 	assert.equal(hit.p50, 4);
 });
 
-test("省下的生成次数 = 命中数；没给单价就不折算成钱", () => {
+test("完整省下的生成次数 = exact + reuse；没给单价就不折算成钱", () => {
 	const m = createMetrics();
 	m.record({ result: result("reuse") });
 	m.record({ result: result("generated", 3) });
@@ -119,6 +164,16 @@ test("省下的生成次数 = 命中数；没给单价就不折算成钱", () =>
 	priced.record({ result: result("exact") });
 	priced.record({ result: result("reuse") });
 	assert.equal(priced.snapshot().saved.cost, 0.015);
+});
+
+test("refine 算命中，但不算「完整省下一次生成」—— 它确实跑了一次短生成", () => {
+	const m = createMetrics({ costPerGeneration: 1 });
+	m.record({ result: result("refine") });
+	const s = m.snapshot();
+	assert.equal(s.hits, 1, "refine 复用了旧答案，是命中");
+	assert.equal(s.byOutcome.refine, 1);
+	// 记成整次省下就是把节省报高。想按短生成的单价折算，用 byOutcome.refine 自己乘
+	assert.deepEqual(s.saved, { generations: 0, cost: 0 });
 });
 
 test("分段命中率按请求数降序 —— 看板要先看流量大的那一段", () => {
@@ -157,4 +212,133 @@ test("reset 清空一切", () => {
 	assert.equal(s.latencyMs.miss.count, 0);
 	assert.equal(s.bySegment.length, 0);
 	assert.equal(s.saved.cost, 0);
+});
+
+test("支撑度分布：从 ⑥ 的 trace 里取，命中与驱逐分开", () => {
+	const m = createMetrics({ supportThresholds: { high: 0.967, low: 0.936 } });
+	const six = (score: number, verdict: "pass" | "exit"): Array<GateTrace> => [
+		{ gate: 6, name: "回答有效性校验", verdict, detail: "", score },
+	];
+	// 三次命中：一次很稳、一次落在微调带、一次擦着线过
+	m.record({ result: result("reuse", null, six(0.999, "pass")) });
+	m.record({ result: result("reuse", null, six(0.9500, "pass")) });
+	m.record({ result: result("reuse", null, six(0.9675, "pass")) });
+	// 两次被 ⑥ 驱逐
+	m.record({ result: result("generated", 6, six(0.9102, "exit")) });
+	m.record({ result: result("generated", 6, six(0.8801, "exit")) });
+
+	const s = m.snapshot();
+	assert.equal(s.support.onHit.count, 3);
+	assert.equal(s.support.onHit.min, 0.95);
+	assert.equal(s.support.onEvict.count, 2);
+	assert.equal(s.support.onEvict.max, 0.9102);
+	// 余量 = 最险的 10% 离 θa高 还有多远。这里 p10 就是最小值 0.95
+	assert.ok(Math.abs((s.support.headroomP10 ?? 0) - (0.95 - 0.967)) < 1e-9);
+	// 0.95 落在 [0.936, 0.967) 里 —— 三次命中中的一次
+	assert.ok(Math.abs((s.support.midBandRate ?? 0) - 1 / 3) < 1e-9);
+});
+
+test("没给阈值就给不出余量和微调带比例 —— 不猜一个默认阈值", () => {
+	const m = createMetrics();
+	m.record({ result: result("reuse", null, [{ gate: 6, name: "回答有效性校验", verdict: "pass", detail: "", score: 0.99 }]) });
+	const s = m.snapshot();
+	assert.equal(s.support.onHit.count, 1, "分布本身不需要阈值");
+	assert.equal(s.support.headroomP10, null);
+	assert.equal(s.support.midBandRate, null);
+});
+
+test("⑥ 的「写入」「中带处理」条目不带 score，不能被当成支撑度样本", () => {
+	const m = createMetrics();
+	m.record({
+		result: result("generated", null, [
+			{ gate: 6, name: "中带处理", verdict: "exit", detail: "未提供 refine" },
+			{ gate: 6, name: "写入", verdict: "off", detail: "策略判定不写入" },
+		]),
+	});
+	const s = m.snapshot();
+	assert.equal(s.support.onHit.count, 0);
+	assert.equal(s.support.onEvict.count, 0);
+});
+
+test("影子模式的账：本会命中率独立于真实命中率", () => {
+	const m = createMetrics();
+	// 影子模式下 outcome 全是 generated，命中率恒为 0
+	m.record({ result: result("generated", null, [], null, true) });
+	m.record({ result: result("generated", null, [], null, true) });
+	m.record({ result: result("generated", null, [], null, false) });
+	// 非影子的请求 wouldReuse 为 null，不进分母
+	m.record({ result: result("exact") });
+
+	const s = m.snapshot();
+	assert.equal(s.hitRate, 0.25, "真实命中率只认那一次 exact");
+	assert.equal(s.shadow.requests, 3);
+	assert.equal(s.shadow.wouldReuse, 2);
+	assert.ok(Math.abs(s.shadow.wouldReuseRate - 2 / 3) < 1e-9, "真开了大约能命中 2/3");
+});
+
+/* ---------- 喂真 trace，不是手搓的 ---------- */
+
+/**
+ * 上面那些用例都手搓 `GateTrace`，于是「指标怎么数」和「管线怎么发 trace」这两件事
+ * 各自测得很干净，中间那条缝没人测 —— 而 bug 恰好长在缝里：管线在 ⑥ 上发过四种
+ * 什么都没删的 `exit`，指标却按 gate 号把它们全算成驱逐。所以下面这几条一律走真
+ * `resolve()`，断言的是「存储里少了几条」和「指标说少了几条」对得上。
+ */
+test("retriever 一次故障不许在看板上变成驱逐", async () => {
+	let broken = false;
+	const h = harness({ retrieve: () => (broken ? [] : [{ id: "n1", text: "CHUNK n1" }]) });
+	await h.cache.resolve(P, answering("A1"));
+	broken = true;
+
+	const m = createMetrics();
+	m.record({ result: await h.cache.resolve(P, answering("A2")) });
+	assert.equal((await h.store.all()).length, 1, "条目必须留着 —— 缺证据不是有罪");
+	assert.deepEqual(m.snapshot().evictions, { total: 0, bySourceVersion: 0, byAnswerCheck: 0 });
+	// 「查了但没用上，是 ⑥ 拦的」照样要报 —— 不复用这件事确实发生了
+	assert.deepEqual(m.snapshot().missedAtGate, { 6: 1 });
+});
+
+test("冷缓存 + 无资料依据的答案：一条候选都没有，也不许报驱逐", async () => {
+	const h = harness();
+	const m = createMetrics();
+	m.record({
+		result: await h.cache.resolve(P, async () => ({ kind: "answer" as const, answer: "无依据", sourceIds: [] })),
+	});
+	assert.equal((await h.store.all()).length, 0, "什么都没写进去");
+	assert.deepEqual(m.snapshot().evictions, { total: 0, bySourceVersion: 0, byAnswerCheck: 0 });
+});
+
+test("⑤ 判负的真驱逐照样要数上", async () => {
+	let version = "v1";
+	const h = harness({ sourceVersion: () => version });
+	await h.cache.resolve(P, answering("A1"));
+	version = "v2";
+	const m = createMetrics();
+	m.record({ result: await h.cache.resolve(P, answering("A2")) });
+	assert.deepEqual(m.snapshot().evictions, { total: 1, bySourceVersion: 1, byAnswerCheck: 0 });
+});
+
+test("⑥ 判负的真驱逐照样要数上", async () => {
+	const h = harness({ passage: { A: forCosine(0.2), "CHUNK n1": [...BASE] }, support: { high: 0.9, low: 0.8 } });
+	await h.cache.write(P, { kind: "answer", answer: "A", sourceIds: ["n1"] });
+	const m = createMetrics();
+	m.record({ result: await h.cache.resolve(P, answering("A2")) });
+	assert.deepEqual(m.snapshot().evictions, { total: 1, bySourceVersion: 0, byAnswerCheck: 1 });
+});
+
+test("影子模式：⑥ 判负但不删 —— 驱逐数是 0，支撑度分布照样收样本", async () => {
+	// 判定与动作刻意不同源：影子模式的全部意义就是「量出上线后 ⑥ 会拦掉什么」，
+	// 所以那次判定必须进 support.onEvict；但它一条都没删，所以 evictions 必须是 0。
+	const h = harness({
+		shadow: true,
+		passage: { A: forCosine(0.2), "CHUNK n1": [...BASE] },
+		support: { high: 0.9, low: 0.8 },
+	});
+	await h.cache.write(P, { kind: "answer", answer: "A", sourceIds: ["n1"] });
+	const m = createMetrics();
+	m.record({ result: await h.cache.resolve(P, answering("A2")) });
+	const s = m.snapshot();
+	assert.equal((await h.store.all()).length, 1, "影子模式一条都不删");
+	assert.deepEqual(s.evictions, { total: 0, bySourceVersion: 0, byAnswerCheck: 0 });
+	assert.equal(s.support.onEvict.count, 1, "判负那次的支撑度要留下");
 });

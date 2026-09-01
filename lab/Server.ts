@@ -13,6 +13,18 @@ import type { LabConfig } from "./types/LabConfig.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 7788);
+/**
+ * **默认只绑回环。**
+ *
+ * `server.listen(PORT)` 不带 host 时 Node 绑的是 `::`（本机实测），也就是全部网卡 ——
+ * 而这个验证台**没有任何鉴权**：11 个 `/api/*` 路由谁都能打，`/api/ask` 与 `/api/bench`
+ * 在 `GEN=api|deepseek|claude-cli` 下会拿本机凭据去烧真 token（`GEN=stub` 不碰凭据）。
+ * 日志印的一直是 `localhost`，所以「它只在本机上」这个印象从来没被打破过。
+ *
+ * 要开给别人看就显式 `HOST=0.0.0.0`，并且**自己在前面放一层鉴权**（反向代理的
+ * basic auth 之类）—— 这个进程不打算长出用户体系。
+ */
+const HOST = process.env.HOST ?? "127.0.0.1";
 /** 与 SDK `checkReranker` 的默认值一致：margin 小于这个数就是任务错配 */
 const MIN_RERANK_MARGIN = 0.15;
 
@@ -223,8 +235,9 @@ const server = createServer(async (req, res) => {
 	}
 });
 
-server.listen(PORT, () => {
-	console.log(`\n语义缓存验证台  →  http://localhost:${PORT}\n`);
+server.listen(PORT, HOST, () => {
+	const reach = HOST === "127.0.0.1" || HOST === "localhost" ? "仅本机" : `**${HOST} 上的任何人都能访问，且无鉴权**`;
+	console.log(`\n语义缓存验证台  →  http://localhost:${PORT}   （${reach}）\n`);
 });
 
 /**

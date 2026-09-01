@@ -4,11 +4,11 @@ import { compose as composeAnswer, DOCS, LANGUAGE, RERANK_PROBES } from "../Corp
 import { createGenerator } from "../Generators.ts";
 import type { CourseDoc } from "../types/Corpus.ts";
 const enc = await createEncoders();
-const byId = (id: string): CourseDoc => {
+function byId(id: string): CourseDoc {
 	const doc = DOCS.find(d => d.id === id);
 	if (!doc) throw new Error(`标定用例引用了不存在的文档：${id}`);
 	return doc;
-};
+}
 
 /**
  * **标定必须和运行路径用同一个生成端。** 分叉过一次，代价是英文语料下阈值高过了
@@ -48,11 +48,11 @@ async function compose(d: CourseDoc, sample = 0): Promise<string> {
   return text;
 }
 
-const median = (xs: ReadonlyArray<number>): number => {
+function median(xs: ReadonlyArray<number>): number {
   const a = [...xs].sort((x, y) => x - y);
   const m = a.length >> 1;
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
-};
+}
 
 /**
  * 探针取自语料包（`RERANK_PROBES`）—— 和验证台页面上那个自检**同一份**。

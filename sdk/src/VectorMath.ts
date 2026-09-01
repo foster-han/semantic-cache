@@ -17,13 +17,27 @@ export function cosine(a: ReadonlyArray<number>, b: ReadonlyArray<number>): numb
 	return denom === 0 ? 0 : dot / denom;
 }
 
-/** 归一化缓存键：去空白、统一大小写、去掉句末标点。 */
+/**
+ * 归一化缓存键：折叠空白、统一大小写、去掉句末标点。
+ *
+ * **空白是折叠成一个空格，不是删掉。**先前是全删，那在中文里无害（分词本来就不确定），
+ * 但在英文里会把 `what is over fitting` 和 `what is overfitting` 归成同一个 key ——
+ * 而闸 ② 的全部价值恰恰是「零假命中风险」。
+ *
+ * 更麻烦的是这类合并**挡不住**：③ 的碰撞复核用的是同一个 `normalizeKey`，
+ * 它只能抓哈希碰撞，抓不到归一化自己造成的合并。
+ *
+ * 折叠的代价是中文侧 ② 的容错变窄（`什么是 过拟合` 和 `什么是过拟合` 成了两个 key）。
+ * 这个方向是安全的：② 漏掉就落到 ③，而 ③ 本来就是管「说法不同、意思相同」的那一层。
+ * 反过来的错法（该分开的合并了）没有任何一层能兜住。
+ */
 export function normalizeKey(text: string): string {
 	return text
-		.trim()
 		.toLowerCase()
-		.replace(/\s+/gu, "")
-		.replace(/[?？。.!！]+$/u, "");
+		.replace(/\s+/gu, " ")
+		// 句末标点连同它前后的空白一起去掉，免得留下一个尾随空格
+		.replace(/[\s?？。.!！]+$/u, "")
+		.replace(/^\s+/u, "");
 }
 
 /** 稳定哈希，仅用于缓存键，不用于安全用途。 */

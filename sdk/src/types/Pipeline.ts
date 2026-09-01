@@ -36,7 +36,22 @@ export interface CachePrompt {
  *
  * PII 过滤留在 SDK 之上：库不认识 PII，只认这里返回的隔离边界。
  */
-export type ScopeDecision = string | { readonly key: string; readonly shared: boolean };
+export interface ScopeDecision {
+	/** 业务隔离边界,比如某门课、某个知识库 */
+	readonly key: string;
+	readonly shared: boolean;
+	/**
+	 * 组织 / 租户 id。**必填,而且不能靠拼进 `key` 来代替。**
+	 *
+	 * ③ 是 scope **内**的向量召回 —— 问题文本不在 key 里,分桶就只靠这个字符串。
+	 * 拼错的后果不是少一次命中,是**跨租户返回别人的答案**,而且完全静默。
+	 * 库用 `composeScope()` 转义后拼接,所以 `("a", "b|c")` 和 `("a|b", "c")`
+	 * 落在不同的桶里 —— 自己拼字符串挡不住这一类。
+	 *
+	 * 单租户部署也要给一个固定值(比如 `"default"`),让它是个显式的决定。
+	 */
+	readonly org: string;
+}
 export type ScopeResolver = (prompt: CachePrompt) => Promise<ScopeDecision> | ScopeDecision;
 
 export type GateId = 1 | 2 | 3 | 4 | 5 | 6;
@@ -56,6 +71,19 @@ export interface GateTrace {
 	readonly verdict: GateVerdict;
 	readonly detail: string;
 	readonly score?: number;
+	/**
+	 * 这一步**真的删掉了一条条目**。
+	 *
+	 * **驱逐必须由这个字段声明，不能从 `verdict === "exit"` 反推。** ⑥ 的 `exit`
+	 * 里有一半什么都没删：「判不了」（检索没返回片段、条目没有答案向量）刻意保留
+	 * 条目，无资料依据的答案不写入也不删，中带微调失败同样保留旧条目；影子模式下
+	 * ⑤⑥ 判负也一律不删。
+	 *
+	 * 反推的话，retriever 一次故障会让看板报出「N 次 ⑥ 判负驱逐」而缓存一条没动 ——
+	 * 「一次故障不改变缓存状态」这条不变量会被指标自己打穿，而且是从最可信的那一侧
+	 * （看板）打穿。`Metrics.ts` 因此只认这个字段。
+	 */
+	readonly evicted?: boolean;
 }
 
 export type Outcome =
@@ -66,7 +94,15 @@ export type Outcome =
 	/** 命中但支撑度只到中带，用旧答案 + 新片段做了一次短生成 */
 	| "refine"
 	/** 未命中或被某道闸拦下，走了完整生成 */
-	| "generated";
+	| "generated"
+	/**
+	 * `CachePolicy` 的 `noCache` 生效 —— **有意没查缓存**，直接生成。
+	 *
+	 * 不并进 `generated`：那样一次「策略绕开」和一次「查了但没命中」在看板上
+	 * 完全一样，于是「上游某个信号一直是开的」这种事只表现为命中率下降，
+	 * 查不出原因。这正是 litellm 那类框架里静默 no-op 的病根。
+	 */
+	| "bypassed";
 
 export interface CacheResult {
 	/**
@@ -78,6 +114,19 @@ export interface CacheResult {
 	 */
 	readonly payload: CachedPayload;
 	readonly outcome: Outcome;
+	/**
+	 * `outcome === "bypassed"` 时是 `noCache` 的理由，其余为 null。
+	 *
+	 * 指标要按理由分组才有诊断价值：只知道「绕开变多了」查不出是哪条规则，
+	 * 而上游某个信号一直是开的，恰恰是这类系统最常见的静默失效。
+	 */
+	readonly bypassReason: string | null;
+	/**
+	 * 影子模式下这一次**本来会不会复用**；非影子模式为 null。
+	 *
+	 * 指标层靠它算「本会命中率」—— 那是决定要不要真开缓存的那个数。
+	 */
+	readonly wouldReuse: boolean | null;
 	/** 被哪道闸拦下；未被拦下时为 null */
 	readonly exitedAt: GateId | null;
 	/**
@@ -179,6 +228,13 @@ export interface WriteTicket {
 	readonly matchHash: string;
 	/** PairEncoder 空间 */
 	readonly matchVector: ReadonlyArray<number>;
+	/**
+	 * `CachePolicy` 为这一条定的 TTL，随票据流到写入路径。
+	 *
+	 * 优先级：`WriteOptions.ttlMs`（调用方显式给的）> 这里 > 全局 `ttlMs`。
+	 * 策略说「这类只活十分钟」不该压过调用方在具体某一条上的明确指定。
+	 */
+	readonly ttlMs?: number | null;
 }
 
 export type LookupOutcome =
@@ -189,7 +245,22 @@ export type LookupOutcome =
 	/** 命中，但支撑度只到中带 —— 旧答案还在，用不用由调用方决定 */
 	| "mid"
 	/** 没有可用条目 */
-	| "miss";
+	| "miss"
+	/**
+	 * 影子模式：**闸全跑了，但结果不作数** —— 真实结果在 `wouldHave` 里。
+	 *
+	 * 上线一个概率型缓存最需要的一步：在生产流量上跑完整条判定链，却仍然每次都
+	 * 真生成，用来回答「开了会不会返回错答案」。所以影子模式下读路径**严格只读** ——
+	 * 不复用、不驱逐、不 touch，评估本身不该改变被评估的东西。
+	 */
+	| "shadow"
+	/**
+	 * `CachePolicy` 的 `noCache` 生效 —— **一道闸都没跑**。
+	 *
+	 * 和 `miss` 是两回事：`miss` 是查过了没有，`bypass` 是压根没查。
+	 * 注意它只说明**没读**；写不写由 `noStoreReason` 决定，两者正交。
+	 */
+	| "bypass";
 
 /**
  * 只读匹配的结果。
@@ -212,6 +283,27 @@ export interface LookupResult {
 	 * 走到过就直接用，别再检索一遍。
 	 */
 	readonly chunks: ReadonlyArray<Chunk> | null;
+	/**
+	 * `CachePolicy` 说「别读」的理由；没说就是 null。
+	 *
+	 * 放在结果上而不是 `trace` 里，是因为一道闸都没跑 —— 记成某道闸的判定
+	 * 就是假话。非 null 等价于 `outcome === "bypass"`。
+	 */
+	/**
+	 * 影子模式下**本来会是什么结果**；非影子模式为 null。
+	 *
+	 * `outcome === "shadow"` 时它必然非 null。和 `GateVerdict` 的 `would-exit`
+	 * 是同一个思路，只是抬到了整条链路的层面。
+	 */
+	readonly wouldHave: LookupOutcome | null;
+	readonly noCacheReason: string | null;
+	/**
+	 * `CachePolicy` 说「别写」的理由；没说就是 null。
+	 *
+	 * 非 null 时 `prepareWrite()` 必然抛。它和 `noCacheReason` 正交：
+	 * 「重新回答」只有前者，「出五道练习题」只有后者。
+	 */
+	readonly noStoreReason: string | null;
 	/** ⑥ 的支撑度；没算到时为 null */
 	readonly support: number | null;
 	/**

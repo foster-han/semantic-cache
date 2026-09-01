@@ -9,6 +9,7 @@
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
 import { createSemanticCache } from "../src/SemanticCache.ts";
 import type { GateSwitches, Refine, ScopeResolver } from "../src/types/Pipeline.ts";
+import type { CachePolicy } from "../src/types/CachePolicy.ts";
 import type { PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "../src/types/Encoders.ts";
 import type { Chunk, Retriever, SourceVersionResolver } from "../src/types/Retrieval.ts";
 import type { CacheStore, InspectableCacheStore } from "../src/types/CacheStore.ts";
@@ -98,6 +99,8 @@ export interface HarnessConfig {
 	readonly singleFlight?: boolean;
 	readonly ttlMs?: number | null;
 	readonly now?: () => number;
+	readonly policy?: CachePolicy;
+	readonly shadow?: boolean;
 }
 
 export const DEFAULT_CHUNK: Chunk = { id: "n1", text: "CHUNK n1" };
@@ -135,13 +138,15 @@ export function harness(config: HarnessConfig = {}) {
 				  },
 		store,
 		retriever,
-		scope: config.scope ?? (() => ({ key: "course:1", shared: true })),
+		scope: config.scope ?? (() => ({ key: "course:1", shared: true, org: "org:1" })),
 		sourceVersion: config.sourceVersion ?? (() => "v1"),
 		refine: config.refine,
 		gates: config.gates,
 		recallLimit: config.recallLimit ?? 5,
 		singleFlight: config.singleFlight,
 		ttlMs: config.ttlMs === undefined ? null : config.ttlMs,
+		policy: config.policy,
+		shadow: config.shadow,
 		now: config.now,
 	});
 	return { cache, store, counts, retrieval, pair };

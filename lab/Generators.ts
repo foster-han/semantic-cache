@@ -236,7 +236,14 @@ function apiGenerator(): LabGenerator {
 	const timeoutMs = Number(process.env.GEN_TIMEOUT_MS ?? 120_000);
 	const client = new Anthropic({ timeout: timeoutMs });
 
+	/**
+	 * `variant` 在这里**故意不进请求体** —— Anthropic 的 Messages API 没有 `seed`。
+	 * 不带 `temperature` 就是默认的 1.0，同一份输入重复调本来就会给出不同采样，
+	 * 所以「取第 k 个样本」只需要记忆化不把它们合并掉（`memoize` 把 variant 进了 key）。
+	 * 别在这里补一个 `temperature`：抬温度会改变被测的分布，理由同 deepseek 那边。
+	 */
 	async function ask(user: string, variant?: number): Promise<string> {
+		void variant;
 		let response: Anthropic.Message;
 		try {
 			response = await client.messages.create({
@@ -395,10 +402,17 @@ function deepseekGenerator(): LabGenerator {
 const MEMO_LIMIT = 2_000;
 
 /**
- * 同一个（问题 + 资料）只生成一次。
+ * 同一个（问题 + 资料 + 采样序号）只生成一次。**全仓库唯一的一层记忆化。**
  *
  * 那 30 条干扰会在 13 条场景里各灌一遍 —— 390 次调用里只有 30 个不同的组合。
- * 套上这一层，完整 bench 的真生成从 **416 次降到约 56 次**。
+ * 套上这一层，完整 bench 的真生成从 **416 次降到约 56 次**；26 条场景那一档实测
+ * 832 次调用里只有 73 个不同输入，最热的一条重复 27 次，91% 的调用是在重复付
+ * 同一笔钱。
+ *
+ * **先前有两份几乎一样的实现**（这个私有的，和一个导出的 `memoizeGenerator`），
+ * `LabCache.benchGenerator()` 把生成端又套了一层：默认配置下 bench 是双层记忆化，
+ * 而外层无条件存 promise、没有失败剔除也没有上限 —— 正好把下面 `once()` 那句
+ * 「一次网络抖动会把这个 key 永久钉死在错误上」的防护撤销掉。两份合成这一份。
  *
  * **key 必须含片段原文，不能只含 id。** `bumpCorpus()` 改的是 syl 的正文而 id 不变；
  * 只按 id 记忆化的话，改版之后那次生成会拿到改版前的答案 —— ⑤ 那两条用例会静默变绿，
@@ -441,9 +455,22 @@ function memoize(inner: LabGenerator): LabGenerator {
 		kind: inner.kind,
 		note: `${inner.note}｜同一组合只生成一次`,
 		approxMsPerCall: inner.approxMsPerCall,
-		generate(prompt, chunks) {
-			return once(JSON.stringify(["generate", prompt.retrievalText, ...fingerprint(chunks)]), () =>
-				inner.generate(prompt, chunks),
+		/**
+		 * **`variant` 必须进 key，也必须转发下去。**
+		 *
+		 * 先前两样都漏了，于是「同一输入的第 k 次采样」全部撞进同一个 key：
+		 * `calibrate.ts` 的 `CALIB_SAMPLES`（真生成端默认 3）在默认 `GEN_MEMO` 下
+		 * 塌成一次调用，而且塌成的是 `variant === undefined` 那一次 —— 连 seed 都不带。
+		 * 标出来的 θa 因此是单次采样的产物，而那个脚本的注释说得很清楚：
+		 * 「单轮结果测的是采样噪声，不是分布」。
+		 *
+		 * 更难查的是它会**归错因**：`calibrate.ts` 的采样自检会发现 3 次逐位相同，
+		 * 然后印出「同 prompt 同输出（如 DeepSeek 的 temperature 0.2）」—— 把记忆化的
+		 * 锅算到生成端头上，而那个结论看起来完全合理。
+		 */
+		generate(prompt, chunks, variant) {
+			return once(JSON.stringify(["generate", variant ?? null, prompt.retrievalText, ...fingerprint(chunks)]), () =>
+				inner.generate(prompt, chunks, variant),
 			);
 		},
 		refine(cachedAnswer, prompt, chunks) {
@@ -454,6 +481,13 @@ function memoize(inner: LabGenerator): LabGenerator {
 	};
 }
 
+/**
+ * 生成端的唯一入口。**记忆化的决定只在这里做一次** —— 调用方拿到的就是最终形态，
+ * 不要在外面再包一层（`LabCache` 先前包了，见 `memoize` 的注释）。
+ *
+ * 记忆化跨 bench 共享，这是有意的：key 里带片段原文，语料改版自动失效，所以
+ * 「换个配置重跑」要的正是逐字相同的生成 —— A/B 的差值里不该混采样噪声。
+ */
 export function createGenerator(): LabGenerator {
 	const wanted = process.env.GEN ?? "stub";
 	// stub 不套记忆化 —— 它本来就是确定性的，而且免费，包一层只是多一份内存
@@ -465,44 +499,3 @@ export function createGenerator(): LabGenerator {
 	return stubGenerator();
 }
 
-/**
- * 把生成端包成「同输入同输出」的纯函数。
- *
- * 实测：一次 26 条场景的 bench 要 832 次生成，但**只有 73 个不同的输入** ——
- * 那 30 条干扰缓存每个场景都重灌一遍，输入一字不差，最热的一条重复 27 次。
- * 91% 的调用是在重复付同一笔钱。
- *
- * 这不只是省钱。对照实验要比的是「开/关某道闸」，生成本身应当是**固定函数**；
- * 同一份输入在 A 配置和 B 配置下给出不同答案，那个差值里就混进了采样噪声。
- * 去重之后 A/B 反而更干净。
- *
- * 键里带片段原文，所以「语料改版」自动失效 —— 改版后 chunk 变了，键就变了。
- * 手动提问不走这里：那边要看的是真实行为，包括同一个问题两次答得不一样。
- */
-export function memoizeGenerator(inner: LabGenerator): LabGenerator {
-	const cache = new Map<string, Promise<CachedPayload>>();
-	const keyOf = (prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): string =>
-		`${prompt.retrievalText}\u0000${chunks.map(c => `${c.id}:${c.text}`).join("\u0000")}`;
-
-	return {
-		...inner,
-		note: `${inner.note}（同输入去重）`,
-		generate(prompt, chunks, variant) {
-			const key = `${variant ?? "-"}\u0000${keyOf(prompt, chunks)}`;
-			const hit = cache.get(key);
-			if (hit) return hit;
-			const run = inner.generate(prompt, chunks, variant);
-			cache.set(key, run);
-			return run;
-		},
-		// refine 的输入还包含「旧答案」—— 一起进键
-		refine(cachedAnswer, prompt, chunks) {
-			const key = `refine\u0000${cachedAnswer}\u0000${keyOf(prompt, chunks)}`;
-			const hit = cache.get(key);
-			if (hit) return hit;
-			const run = inner.refine(cachedAnswer, prompt, chunks);
-			cache.set(key, run);
-			return run;
-		},
-	};
-}

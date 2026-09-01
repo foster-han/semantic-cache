@@ -6,23 +6,26 @@
 	"description": "语义缓存精度层的验证原型 — 六道闸逐一可开关，用来检验（或推翻）文章里的三条论断",
 	"scripts": {
 		"start": "node --experimental-strip-types Server.ts",
-		"stub": "MODE=stub node --experimental-strip-types Server.ts",
-		"start:zh": "CORPUS_LANG=zh PAIR_MODEL=Xenova/paraphrase-multilingual-MiniLM-L12-v2 RETR_MODEL=Xenova/multilingual-e5-small node --experimental-strip-types Server.ts",
-		"start:pg": "SEMCACHE_DB=${SEMCACHE_DB:-postgres://postgres:postgres@localhost:5432/semcache} node --experimental-strip-types Server.ts",
-		"stub:pg": "MODE=stub SEMCACHE_DB=${SEMCACHE_DB:-postgres://postgres:postgres@localhost:5432/semcache} node --experimental-strip-types Server.ts",
-		"start:redis": "SEMCACHE_REDIS=${SEMCACHE_REDIS:-redis://localhost:6379/2} node --experimental-strip-types Server.ts",
-		"stub:redis": "MODE=stub SEMCACHE_REDIS=${SEMCACHE_REDIS:-redis://localhost:6379/2} node --experimental-strip-types Server.ts",
-		"compare-stores": "MODE=stub SEMCACHE_DB=${SEMCACHE_DB:-postgres://postgres:postgres@localhost:5432/semcache} node --experimental-strip-types scripts/compareStores.ts",
-		"compare-stores:redis": "MODE=stub SEMCACHE_REDIS=${SEMCACHE_REDIS:-redis://localhost:6379/2} node --experimental-strip-types scripts/compareStores.ts",
+		"stub": "node scripts/with-env.mjs MODE=stub -- node --experimental-strip-types Server.ts",
+		"start:zh": "node scripts/with-env.mjs CORPUS_LANG=zh PAIR_MODEL=Xenova/paraphrase-multilingual-MiniLM-L12-v2 RETR_MODEL=Xenova/multilingual-e5-small -- node --experimental-strip-types Server.ts",
+		"start:pg": "node scripts/with-env.mjs SEMCACHE_DB?=postgres://postgres:postgres@localhost:5432/semcache -- node --experimental-strip-types Server.ts",
+		"stub:pg": "node scripts/with-env.mjs MODE=stub SEMCACHE_DB?=postgres://postgres:postgres@localhost:5432/semcache -- node --experimental-strip-types Server.ts",
+		"start:redis": "node scripts/with-env.mjs SEMCACHE_REDIS?=redis://localhost:6379/2 -- node --experimental-strip-types Server.ts",
+		"stub:redis": "node scripts/with-env.mjs MODE=stub SEMCACHE_REDIS?=redis://localhost:6379/2 -- node --experimental-strip-types Server.ts",
+		"compare-stores": "node scripts/with-env.mjs MODE=stub SEMCACHE_DB?=postgres://postgres:postgres@localhost:5432/semcache -- node --experimental-strip-types scripts/compareStores.ts",
+		"compare-stores:redis": "node scripts/with-env.mjs MODE=stub SEMCACHE_REDIS?=redis://localhost:6379/2 -- node --experimental-strip-types scripts/compareStores.ts",
 		"typecheck": "tsc -p tsconfig.json",
-		"store-conformance": "SEMCACHE_DB=${SEMCACHE_DB:-postgres://postgres:postgres@localhost:5432/semcache} SEMCACHE_TABLE=${SEMCACHE_TABLE:-semantic_cache_conformance} node --experimental-strip-types scripts/storeConformance.ts",
-		"store-conformance:redis": "SEMCACHE_REDIS=${SEMCACHE_REDIS:-redis://localhost:6379/2} SEMCACHE_NS=${SEMCACHE_NS:-semcache_conformance} node --experimental-strip-types scripts/storeConformance.ts"
+		"store-conformance": "node scripts/with-env.mjs SEMCACHE_DB?=postgres://postgres:postgres@localhost:5432/semcache SEMCACHE_TABLE?=semantic_cache_conformance -- node --experimental-strip-types scripts/storeConformance.ts",
+		"store-conformance:redis": "node scripts/with-env.mjs SEMCACHE_REDIS?=redis://localhost:6379/2 SEMCACHE_NS?=semcache_conformance -- node --experimental-strip-types scripts/storeConformance.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.122.0",
 		"@huggingface/transformers": "^3.0.0",
 		"pg": "^8.23.0",
 		"redis": "^6.2.1"
+	},
+	"overrides": {
+		"sharp": "^0.35.4"
 	},
 	"devDependencies": {
 		"@types/node": "^26.4.0",

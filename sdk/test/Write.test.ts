@@ -8,6 +8,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
+import { composeScope } from "../src/Scope.ts";
 import type { CacheEntry } from "../src/types/CacheStore.ts";
 import type { CachedPayload } from "../src/types/Pipeline.ts";
 import { harness } from "./Fakes.ts";
@@ -141,7 +142,7 @@ test("合流键里必须带 retrievalText —— 否则等于亲手制造占位�
 		await new Promise(r => setTimeout(r, 5));
 		return { kind: "answer", answer: "A", sourceIds: ["n1"] };
 	};
-	const { cache } = harness({ scope: () => ({ key: "user:x", shared: false }) });
+	const { cache } = harness({ scope: () => ({ key: "user:x", shared: false, org: "org:1" }) });
 	// 匿名化之后两个学生的 matchText 完全相同，实体只在 retrievalText 里
 	await Promise.all([
 		cache.resolve({ matchText: "<PERSON_1> 的分数", retrievalText: "张三的分数", context: {} }, slow),
@@ -151,7 +152,7 @@ test("合流键里必须带 retrievalText —— 否则等于亲手制造占位�
 });
 
 test("失效：evict 收数组、clear 按 scope、invalidateSource 按资料 id", async () => {
-	const { cache, store } = harness({ scope: prompt => `course:${prompt.context.courseId ?? "-"}` });
+	const { cache, store } = harness({ scope: prompt => ({ key: `course:${prompt.context.courseId ?? "-"}`, shared: true, org: "org:1" }) });
 	const written = await cache.writeMany(
 		[
 			{ q: "问题 1", src: ["n1"], course: "1" },
@@ -164,7 +165,8 @@ test("失效：evict 收数组、clear 按 scope、invalidateSource 按资料 id
 	);
 	assert.equal(await cache.invalidateSource("n1"), 2, "引用过这篇资料的都该失效");
 	assert.equal((await store.all()).length, 1);
-	assert.equal(await cache.clear("course:2"), 1);
+	// clear 收的是组合后的 scope —— 别在测试里手拼，用同一个函数
+	assert.equal(await cache.clear(composeScope("org:1", "course:2")), 1);
 	assert.equal((await store.all()).length, 0);
 
 	await cache.writeMany(

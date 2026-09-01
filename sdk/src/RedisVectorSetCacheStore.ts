@@ -1,4 +1,5 @@
 import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
+import { lfuCount } from "./EvictionOrder.ts";
 import type { EvictionConfig } from "./types/Eviction.ts";
 import type { RedisExecutor } from "./types/RedisExecutor.ts";
 
@@ -217,18 +218,16 @@ return 'OK'
  * 字典序淘汰，那时「刚写进去的新条目」会因为 id 恰好靠前而被立刻删掉，
  * 和内存/pgvector 的结果不一致（一致性测试就是这么抓到的）。
  *
- * 打包：`min(次数, 1023) * 2^41 + 毫秒时间戳`。
+ * 打包：`min(次数, LFU_COUNT_CAP) * 2^41 + 毫秒时间戳`。
  *   - 41 位放得下毫秒时间戳到 2039 年（2^41 ≈ 2.199e12，当前约 1.77e12）
  *   - 次数封顶 1023 占 10 位，合计 51 位，在 double 的 53 位有效位之内
  *
- * **次数封顶是有意的，不是精度妥协。** Redis 自己的 LFU 用的是 8 位对数计数器，
- * 理由一样：不封顶的计数器会让早期攒够次数的老条目永远赖着不走。
+ * 封顶本身的理由、以及为什么三个后端必须封在同一个值上，都在 `EvictionOrder.ts`。
  */
-const LFU_COUNT_CAP = 1023;
 const LFU_TIME_BITS = 2 ** 41;
 
 function lfuScore(useCount: number, lastUsedAt: number): number {
-	return Math.min(useCount, LFU_COUNT_CAP) * LFU_TIME_BITS + lastUsedAt;
+	return lfuCount(useCount) * LFU_TIME_BITS + lastUsedAt;
 }
 
 const SCRIPT_EVICT = `
@@ -351,31 +350,65 @@ export function createRedisVectorSetCacheStore(
 			case "lru":
 				return entry.lastUsedAt ?? entry.createdAt;
 			case "lfu":
-				return lfuScore(entry.useCount ?? 0, entry.lastUsedAt ?? entry.createdAt);
+				// 没记过账 = 刚写进来，按「用过一次」算。理由见 MemoryCacheStore.keepOrder
+				return lfuScore(entry.useCount ?? 1, entry.lastUsedAt ?? entry.createdAt);
 			default:
 				return entry.createdAt;
 		}
 	}
 
-	/** 把一个 scope 压回容量，返回删掉的条数。rr 走随机取样，其余走排序集合 */
+	/**
+	 * 一个 scope 现在有多少条。`rr` 不维护排序集合，所以数的是 scope 集合。
+	 * **数的是存储里的成员，含已过期未清理的** —— `trim` 靠 `purgeExpiredIn` 把这
+	 * 两者的差抹掉。
+	 */
+	async function sizeOf(scope: string): Promise<number> {
+		const rr = eviction?.policy === "rr";
+		return Number(await redis.sendCommand(rr ? ["SCARD", keys.scope(scope)] : ["ZCARD", keys.rank(scope)]));
+	}
+
+	/**
+	 * 收掉一个 scope 里已过期的成员，返回条数。
+	 *
+	 * 只在容量吃紧时调 —— 代价是 O(scope)，而那条路本来就要排序取样。
+	 * 走的是全量 `purgeExpired()` 用的同一个脚本，所以「本体 + 5 个索引」照样
+	 * 在一个脚本里删完，不会留下孤儿索引。
+	 */
+	async function purgeExpiredIn(scope: string): Promise<number> {
+		const deadline = String(now());
+		let removed = 0;
+		for (const group of batches(await listSetIds(keys.scope(scope)))) {
+			removed += Number((await evalScript(SCRIPT_PURGE, [keys.vector, keys.all], [namespace, deadline, ...group])) ?? 0);
+		}
+		return removed;
+	}
+
+	/**
+	 * 把一个 scope 压回容量，返回删掉的条数。rr 走随机取样，其余走排序集合。
+	 *
+	 * **容量数的是活条目。** 超出上限时先收掉这个 scope 里已过期、只是还没被
+	 * `purgeExpired()` 收走的成员，再看是否仍然超。先前不分活死，于是一条过期成员
+	 * 占着一个名额把活条目顶掉；而排序集合的分数根本不看 `expires_at`，那条过期成员
+	 * 只要 `last_used_at` 够新就能接着顶掉好几条。内存与 pgvector 后端先前是同一个
+	 * 毛病，三处一起改 —— 这条要么三个后端都做，要么都不做。
+	 */
 	async function trim(scope: string): Promise<number> {
 		if (!eviction) return 0;
+		if ((await sizeOf(scope)) <= eviction.capacity) return 0;
+		const purged = await purgeExpiredIn(scope);
+		const over = (await sizeOf(scope)) - eviction.capacity;
+		if (over <= 0) return purged;
+		let ids: Array<string>;
 		if (eviction.policy === "rr") {
-			const size = Number(await redis.sendCommand(["SCARD", keys.scope(scope)]));
-			const over = size - eviction.capacity;
-			if (over <= 0) return 0;
 			// SRANDMEMBER 带负数会给重复元素，所以取正数再去重
 			const picked = (await redis.sendCommand(["SRANDMEMBER", keys.scope(scope), String(over)])) as Array<string>;
-			const ids = [...new Set(picked.map(String))];
-			return ids.length === 0 ? 0 : await deleteIds(ids);
+			ids = [...new Set(picked.map(String))];
+		} else {
+			// 分数最低的那批就是该走的
+			const doomed = (await redis.sendCommand(["ZRANGE", keys.rank(scope), "0", String(over - 1)])) as Array<string>;
+			ids = doomed.map(String);
 		}
-		const size = Number(await redis.sendCommand(["ZCARD", keys.rank(scope)]));
-		const over = size - eviction.capacity;
-		if (over <= 0) return 0;
-		// 分数最低的那批就是该走的
-		const doomed = (await redis.sendCommand(["ZRANGE", keys.rank(scope), "0", String(over - 1)])) as Array<string>;
-		const ids = doomed.map(String);
-		return ids.length === 0 ? 0 : await deleteIds(ids);
+		return ids.length === 0 ? purged : purged + (await deleteIds(ids));
 	}
 	const { redis, dimensions } = options;
 	const now = options.now ?? (() => Date.now());
@@ -545,6 +578,13 @@ export function createRedisVectorSetCacheStore(
 				"last_used_at", entry.lastUsedAt === undefined ? "" : String(entry.lastUsedAt),
 				"use_count", entry.useCount === undefined ? "" : String(entry.useCount),
 			];
+			/**
+			 * **属性里的「永不过期」是 `NEVER`，hash 里是空串 —— 两套表示故意不同。**
+			 *
+			 * `VSIM` 的 FILTER 只看属性，表达式是 `.expires_at > <now>`：落空串的话
+			 * 字符串和数字比不出结果，所有不过期的条目会对 ③ 完全不可见。而 hash 那边
+			 * 落 `0` 会被读成「早就过期」，所以只能是空串。改任何一侧前先看另一侧。
+			 */
 			const attributes = JSON.stringify({ scope: entry.scope, expires_at: entry.expiresAt ?? NEVER });
 			const done = await evalScript(
 				SCRIPT_PUT,
@@ -591,7 +631,18 @@ export function createRedisVectorSetCacheStore(
 			const got = (await redis.sendCommand(["HMGET", ek, "scope", "use_count"])) as Array<string | null>;
 			const scope = got[0];
 			if (scope === null || scope === undefined) return; // 可能刚被并发驱逐，静默返回
-			const next = Number(got[1] ?? 0) + 1;
+			/**
+			 * 基数 1：保留优先级把「没记过账」算作一次使用，从 0 起加会让首次复用不提升优先级。
+			 *
+			 * **「没记过账」在 entry hash 里是空串，不是 null** —— `put` 落的是
+			 * `use_count = ""`（见上面的写入）。所以 `?? 1` 挡不住它：`Number("")` 是 0，
+			 * 于是 Redis 这边每条条目的次数都比内存与 pgvector 少 1（那两个后端分别是
+			 * `?? 1` 与 `COALESCE(use_count, 1)`）。`lfu` 下这个差会改变 lfuScore 的打包值、
+			 * 进而在同分时改变淘汰顺序 —— 一致性脚本的「e0 记账」那两行就是这么照出来的。
+			 */
+			const recorded = got[1];
+			const previous = recorded === null || recorded === undefined || recorded === "" ? 1 : Number(recorded);
+			const next = previous + 1;
 			const stamp = now();
 			await redis.sendCommand(["HSET", ek, "last_used_at", String(stamp), "use_count", String(next)]);
 			await redis.sendCommand([

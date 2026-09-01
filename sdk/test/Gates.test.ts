@@ -104,6 +104,61 @@ test("④ target: \"answer\" 遇到 plan 条目：这道闸不适用，不是把
 	assert.equal(found.outcome, "reuse", "④ 不适用不等于淘汰：plan 条目该照常按 ③ 的名次复用");
 });
 
+test("④ 精排推翻 ③ 的名次时，胜出者自己的 ③ 余弦必须报在 trace 上", async () => {
+	/**
+	 * ③ 的下限只卡 `candidates[0]` —— 那是「这批候选值不值得看」的门槛，不是
+	 * 「每条候选都得过」。所以精排完全可以选中一条余弦远低于 floor 的候选，这是
+	 * 设计使然（④ 就是用来推翻 ③ 的名次的）。
+	 *
+	 * 但先前 trace 上只有 top-1 的余弦和精排分，「被复用的那条 ③ 只有 0.3」这件事
+	 * 在哪儿都看不到 —— 取舍可以，但必须看得见。
+	 */
+	const { cache } = harness({
+		recallFloor: 0.9,
+		pair: { 好候选: forCosine(0.95), 差候选: forCosine(0.3), [P.matchText]: [...BASE] },
+		rerank: { 好候选: 0.1, 差候选: 0.99 },
+		rerankFloor: 0.5,
+	});
+	await cache.write({ matchText: "好候选", retrievalText: "好候选", context: {} }, { kind: "answer", answer: "好答案", sourceIds: ["n1"] });
+	await cache.write({ matchText: "差候选", retrievalText: "差候选", context: {} }, { kind: "answer", answer: "差答案", sourceIds: ["n1"] });
+
+	const found = await cache.lookup(P);
+	assert.equal(found.outcome, "reuse");
+	assert.equal(found.payload?.kind === "answer" ? found.payload.answer : "", "差答案", "精排选的是余弦 0.3 那条");
+	const four = found.trace.find(t => t.gate === 4)?.detail ?? "";
+	assert.match(four, /0\.3000/u, "胜出者的 ③ 余弦要出现在 ④ 的 detail 里");
+	assert.match(four, /低于召回下限/u, "低于下限这件事要醒目，不能只报个数");
+	// ③ 那一步照旧只报 top-1 —— 它回答的是「这批候选值不值得看」
+	closeTo(found.trace.find(t => t.gate === 3)?.score ?? null, 0.95);
+});
+
+test("④ target: \"answer\" 的混合 scope：plan 让位给 answer，而且 trace 要说出来", async () => {
+	/**
+	 * 「这道闸对 plan 不适用」在混合 scope 里等于「让位」：只要 top-k 里还有一条
+	 * answer，胜出者就在 answer 里挑 —— plan 条目连 ③ 排第一也拿不到这一次复用。
+	 *
+	 * 没有第四种选择（让 plan 拿余弦跟 answer 的精排分排同一张榜，就是尺度混用
+	 * 换个地方混）。所以取舍是「answer 优先」，代价写在 trace 上：用得着 plan 的
+	 * 调用方应当给它单独的 scope。
+	 */
+	const { cache } = harness({
+		recallFloor: 0.5,
+		pair: { 计划的问法: forCosine(0.99), 答案的问法: forCosine(0.7), [P.matchText]: [...BASE] },
+		rerank: {},
+		rerankFloor: 0.1,
+		rerankTarget: "answer",
+	});
+	// 直接 write，免得第二次写入自己先命中了第一条
+	await cache.write({ matchText: "计划的问法", retrievalText: "计划的问法", context: {} }, { kind: "plan", plan: { tool: "getGrade" } });
+	await cache.write({ matchText: "答案的问法", retrievalText: "答案的问法", context: {} }, { kind: "answer", answer: "答案条目", sourceIds: ["n1"] });
+
+	const found = await cache.lookup(P);
+	assert.equal(found.payload?.kind, "answer", "③ 排第一的是 plan，复用的却是 answer");
+	const four = found.trace.find(t => t.gate === 4)?.detail ?? "";
+	assert.match(four, /让位/u, "被挤掉这件事必须在 trace 上，不能只说「不适用」");
+	assert.match(four, /1 条 plan/u);
+});
+
 test("⑤ 资料版本：不符就驱逐；关掉这道闸时标 would-exit 并照常放行", async () => {
 	let version = "v1";
 	const stale = { sourceVersion: () => version };

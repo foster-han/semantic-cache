@@ -25,7 +25,7 @@ import {
 } from "../sdk/src/index.ts";
 import { COURSE, DISTRACTORS, DOCS, ENTITIES, LANGUAGE, SCENARIOS, STUDENT_RECORDS, SYL_V2 } from "./Corpus.ts";
 import { resolveCalibration, type ActiveCalibration } from "./Calibrations.ts";
-import { createGenerator, memoizeGenerator, type LabGenerator } from "./Generators.ts";
+import { createGenerator, type LabGenerator } from "./Generators.ts";
 import { cosine, type LabEncoders } from "./Models.ts";
 import type { CourseDoc, LabAsk, LabScenario } from "./types/Corpus.ts";
 import type { LabConfig, LabCounters } from "./types/LabConfig.ts";
@@ -218,6 +218,17 @@ export function createLab(
 			}))
 			.sort((a, b) => b.score - a.score)
 			.slice(0, cfg.chunkK);
+		/**
+		 * 截断线取「最高分的 chunkCut 倍」。
+		 *
+		 * **最高分为负时这个公式会反过来**（`-0.1 * 0.85 = -0.085 > -0.1`），连 top-1
+		 * 自己都被筛掉，返回空片段。这里把它写成明确的决定，不留成意外：余弦全负
+		 * 说明这个问题跟整个语料都不沾边，那时**返回空比硬留 top-1 更安全**。
+		 * 空片段会让 ⑥ 走「判不了」（本次不复用，但不驱逐）；硬留一条不相关的 top-1
+		 * 反而会让 ⑥ 算出一个低支撑度、进而把一条本来好好的缓存**判负驱逐**掉 ——
+		 * 一个跟缓存内容毫无关系的问题，就能删掉别人的条目。
+		 */
+		if (ranked[0].score <= 0) return [];
 		const cut = ranked[0].score * cfg.chunkCut;
 		return ranked.filter(r => r.score >= cut);
 	}
@@ -248,17 +259,14 @@ export function createLab(
 	 * 那一下把种子抹了。清理必须是显式动作，不能是别的操作的副作用。
 	 */
 	/**
-	 * bench 与场景回放用**去重过**的生成端：同输入只生成一次。
+	 * bench 与场景回放用的生成端就是 `generator` 本身。
 	 *
-	 * 91% 的调用是重复输入（30 条干扰 × 26 场景），去掉之后 1558 次降到 122 次。
-	 * 而且对照实验因此更干净 —— 生成成了固定函数，A/B 的差值里不再混采样噪声。
-	 * 每次 bench 一份新的 memo，跨 bench 不共享（配置不同，语料可能已改版）。
-	 *
-	 * `GEN_MEMO=0` 可关掉，用来看生成端自身的抖动。
+	 * **先前这里又套了一层记忆化**（一个私有的 benchGenerator 包装），于是默认配置下
+	 * bench 是双层：`createGenerator()` 里那层带失败剔除与 2000 条上限，外面这层无条件
+	 * 存 promise、既不剔除失败也没有上限 —— 内层「一次网络抖动会把这个 key 永久钉死在
+	 * 错误上」的防护被外层撤销了。去重与 `GEN_MEMO` 的决定现在只在
+	 * `createGenerator()` 里做一次。
 	 */
-	function benchGenerator(): LabGenerator {
-		return process.env.GEN_MEMO === "0" ? generator : memoizeGenerator(generator);
-	}
 
 	function build(cfg: LabConfig, storeOverride?: InspectableCacheStore, genOverride?: LabGenerator) {
 		/**
@@ -300,12 +308,14 @@ export function createLab(
 			retriever: { retrieve: (text, ctx) => retrieveChunks(text, ctx.unit || null, cfg) },
 			// ① PII 门控写在 scope 解析里 —— SDK 不认识 PII，只认 scope 字符串
 			scope: prompt => {
+				// 验证台是单租户，但 org 仍要显式给 —— 让它是个决定，不是一个遗漏
+				const org = "lab";
 				if (cfg.gate1 && prompt.context.pii === "1") {
-					return { key: `user:${prompt.context.userId}`, shared: false };
+					return { key: `user:${prompt.context.userId}`, shared: false, org };
 				}
 				const key =
 					cfg.scopeMode === "unit" ? `course:${COURSE}|unit:${prompt.context.unit || "-"}` : `course:${COURSE}`;
-				return { key, shared: true };
+				return { key, shared: true, org };
 			},
 			sourceVersion: ids => fingerprint(ids),
 			refine: (answer, prompt, chunks) => (genOverride ?? generator).refine(answer, prompt, chunks),
@@ -420,9 +430,8 @@ export function createLab(
 			// ④ 开着却没有标定过的 θq），而「这个配置不成立」正是对照实验的有效结果之一 ——
 			// 先前 build 在 try 外面，于是它一抛错整个请求变成 500，页面上看到的是
 			// 「请求失败」而不是「配置 B 被拒绝，原因是……」。
-			const gen = benchGenerator();
-			const cache = build(cfg, isolated, gen);
-			report = await evaluate(cache, scenarios, (p, c) => gen.generate(p, c), {
+			const cache = build(cfg, isolated);
+			report = await evaluate(cache, scenarios, (p, c) => generator.generate(p, c), {
 				reset: async () => {
 					docs = DOCS.map(d => ({ ...d }));
 					await isolated.clear();
@@ -473,13 +482,12 @@ export function createLab(
 		if (!sc) return null;
 		const cfg: LabConfig = { ...defaults, ...override };
 		const isolated = createMemoryCacheStore();
-		const gen = benchGenerator();
-		const cache = build(cfg, isolated, gen);
+		const cache = build(cfg, isolated);
 		const snapshot = docs.map(d => ({ ...d }));
 		try {
-			await cache.resolve(toRequest(sc.seed, cfg), (p, c) => gen.generate(p, c));
+			await cache.resolve(toRequest(sc.seed, cfg), (p, c) => generator.generate(p, c));
 			if (sc.bumpCorpus) bumpCorpus();
-			return await runOn(cache, sc.probe, cfg, gen);
+			return await runOn(cache, sc.probe, cfg);
 		} finally {
 			docs = snapshot;
 		}

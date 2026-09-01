@@ -50,6 +50,12 @@ export interface EvaluationHooks {
 	readonly warm?: (cache: SemanticCache, generate: Generate) => Promise<void>;
 }
 
+/**
+ * 「复用了旧答案」的那几种结果。假命中只可能发生在它们身上 ——
+ * `generated` 是新生成的，`bypassed` 是压根没查缓存，都谈不上假命中。
+ */
+const REUSED_OUTCOMES: ReadonlySet<string> = new Set(["exact", "reuse", "refine"]);
+
 export async function evaluate(
 	cache: SemanticCache,
 	scenarios: ReadonlyArray<Scenario>,
@@ -74,7 +80,10 @@ export async function evaluate(
 			outcome: result.outcome,
 			exitedAt: result.exitedAt,
 			ok,
-			falseHit: !ok && result.outcome !== "generated",
+			// **正向判据。**先前是 `outcome !== "generated"` —— 加一个新的 Outcome
+			// （比如 "bypassed"：压根没查缓存、真生成的）就会被误计成假命中。
+			// 假命中的定义是「复用了缓存，但答案的依据不对」，只有命中类才算得上。
+			falseHit: !ok && REUSED_OUTCOMES.has(result.outcome),
 		});
 	}
 	return {

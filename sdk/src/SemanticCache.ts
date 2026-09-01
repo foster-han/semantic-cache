@@ -1,5 +1,7 @@
 import { cosine, hashKey, normalizeKey } from "./VectorMath.ts";
+import { composeScope } from "./Scope.ts";
 import type { RecallStage, RerankStage, SupportStage } from "./types/Calibration.ts";
+import type { CachePolicy } from "./types/CachePolicy.ts";
 import type { CacheEntry, CacheStore } from "./types/CacheStore.ts";
 import type { Chunk, Retriever, SourceVersionResolver } from "./types/Retrieval.ts";
 import type {
@@ -10,6 +12,7 @@ import type {
 	GateSwitches,
 	GateTrace,
 	Generate,
+	LookupOutcome,
 	LookupResult,
 	Refine,
 	ScopeResolver,
@@ -54,6 +57,25 @@ export interface SemanticCacheOptions {
 	 * 关掉的场景是每个请求的 `generate` 或 `writeOptions` 必须各自生效。
 	 */
 	readonly singleFlight?: boolean;
+	/**
+	 * 哪些 prompt 根本不该进缓存，在任何一道闸之前判。不给就是「全都可以缓存」。
+	 *
+	 * 判定 `bypass` 时 `lookup` 一道闸都不跑，并且**不发写入票据** ——
+	 * 那类问题写进去一次，下一次就是假命中。
+	 */
+	readonly policy?: CachePolicy;
+	/**
+	 * 影子模式。默认 `false`。
+	 *
+	 * 打开后：闸照常全跑、新条目照常写入（否则缓存永远暖不起来），但**从不复用**，
+	 * 而且读路径**严格只读** —— 不驱逐、不 touch。真实判定放在 `LookupResult.wouldHave`
+	 * 与 `CacheResult.wouldReuse` 里，配 `Metrics` 的 `shadow.wouldReuseRate` 看
+	 * 「真开了能命中多少」。
+	 *
+	 * 不驱逐是要点：⑤⑥ 判负是破坏性的，而影子模式的目的恰恰是检验它们判得对不对 ——
+	 * 一边评估一边按评估结果删数据，等于用没验证过的判据毁掉证据。
+	 */
+	readonly shadow?: boolean;
 	readonly now?: () => number;
 }
 
@@ -116,6 +138,33 @@ function assertCalibratedOn(stage: string, value: string): void {
  *
  * ② 命中也要过 ⑤⑥：缓存键建在脱敏文本上时，占位符塌陷对精确匹配同样成立。
  */
+/**
+ * 绕开时的「票据」：调用它必然抛。
+ *
+ * 返回一个能用的票据、指望调用方自觉不写，等于没有守卫 —— 这套 API 一路的做法
+ * 是让错误的用法拿不到东西，而不是让它拿到之后出问题。
+ */
+/**
+ * 理由不能是空串。**`""` 不是 `null`** —— 不判一下的话，策略返回 `{ noCache: "" }`
+ * 会静默绕开且没有任何解释，而这一层的全部意义就是让「为什么这条没缓存」有个答案。
+ * 和 `assertCalibratedOn` 对 `calibratedOn` 的处理是同一条规矩。
+ */
+function assertReason(field: string, value: string | undefined): string | null {
+	if (value === undefined) return null;
+	if (value.trim() === "") {
+		throw new Error(
+			`CachePolicy 返回的 ${field} 是空字符串。要绕开就给出理由（它会进 trace 和看板）；不想绕开就别给这个字段。`,
+		);
+	}
+	return value;
+}
+
+function bypassTicket(reason: string): () => Promise<WriteTicket> {
+	return async function refuse(): Promise<WriteTicket> {
+		throw new Error(`这个 prompt 被 CachePolicy 判定为不进缓存（${reason}），拿不到写入票据。要写入请先让 policy 放行。`);
+	};
+}
+
 export function createSemanticCache(options: SemanticCacheOptions) {
 	const gates: GateSwitches = { ...DEFAULT_GATES, ...options.gates };
 	const recall = options.recall;
@@ -125,6 +174,8 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	const ttlMs = options.ttlMs === undefined ? 60 * 60 * 1000 : options.ttlMs;
 	const now = options.now ?? (() => Date.now());
 	const singleFlight = options.singleFlight ?? true;
+	/** 影子模式：读路径严格只读 —— 评估不该改变被评估的东西 */
+	const shadow = options.shadow ?? false;
 	let counter = 0;
 	/**
 	 * 「时间戳 + 进程内计数器」在多实例部署下会碰撞：两个进程在同一毫秒内都写
@@ -178,24 +229,44 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	assertCalibratedOn("support", support.calibratedOn);
 	if (rerank) assertCalibratedOn("rerank", rerank.calibratedOn);
 
+	/**
+	 * 解析隔离边界。**三条路径（lookup / prepareTicket / writeMany）必须走同一个实现** ——
+	 * 先前是三份拷贝，任何一处改了组合方式，写进去的 scope 和读出来的就对不上，
+	 * 表现是「明明写了却永远读不到」，而不会报错。
+	 */
+	async function resolveScope(prompt: CachePrompt): Promise<{ scope: string; shared: boolean }> {
+		const decision = await options.scope(prompt);
+		return { scope: composeScope(decision.org, decision.key), shared: decision.shared };
+	}
+
 	/* ------------------------------------------------------------------ *
 	 * 匹配 —— 只读路径。跑 ①～⑥，不生成、不写新条目。
 	 * ------------------------------------------------------------------ */
 
 	async function lookup(prompt: CachePrompt): Promise<LookupResult> {
 		const trace: Array<GateTrace> = [];
-		const decision = await options.scope(prompt);
-		const scope = typeof decision === "string" ? decision : decision.key;
-		const shared = typeof decision === "string" ? true : decision.shared;
+		/** 策略给这一条定的 TTL；`undefined` = 策略没意见，落全局默认 */
+		let policyTtlMs: number | null | undefined;
+		let noCacheReason: string | null = null;
+		let noStoreReason: string | null = null;
+
+		/**
+		 * **`CachePolicy` 在任何一道闸之前。**它回答的不是「这条缓存还成不成立」，
+		 * 而是「这个问题该不该进缓存」—— 后者一旦交给闸去拦，就要先付掉整条
+		 * 召回+检索+支撑度的开销才发现不该用，而且拦不住写入。
+		 *
+		 * 两个开关正交，所以**判定在这里、返回在票据装配之后**：`noCache` 单独用
+		 * （「重新回答」）时仍然要能写回，早退就把票据一起丢了。
+		 */
+		if (options.policy) {
+			const disposition = await options.policy(prompt);
+			noCacheReason = assertReason("noCache", disposition.noCache);
+			noStoreReason = assertReason("noStore", disposition.noStore);
+			policyTtlMs = disposition.ttlMs;
+		}
+
+		const { scope, shared } = await resolveScope(prompt);
 		const guard = makeRedactionGuard(prompt, scope, shared);
-
-		trace.push({
-			gate: 1,
-			name: "scope 门控",
-			verdict: "pass",
-			detail: `scope = ${scope}${shared ? "（共享）" : "（隔离）"}${prompt.redacted ? " · 已脱敏" : ""}`,
-		});
-
 		const normalized = normalizeKey(prompt.matchText);
 		const matchHash = hashKey(normalized);
 
@@ -210,13 +281,42 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				shared,
 				matchHash,
 				matchVector: (await recall.scorer.embedQuestions([prompt.matchText]))[0],
+				ttlMs: policyTtlMs,
 			};
 			return ticket;
 		}
 
+		/** `noStore` 生效时票据必须拒发 —— 不是「这次不写」，是写不进去 */
+		const issueTicket = noStoreReason === null ? prepareWrite : bypassTicket(noStoreReason);
+
 		function miss(exitedAt: GateId, chunks: ReadonlyArray<Chunk> | null, support: number | null): LookupResult {
-			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt, trace, chunks, support, prepareWrite };
+			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt, trace, chunks, support, wouldHave: null, noCacheReason, noStoreReason, prepareWrite: issueTicket };
 		}
+
+		// `noCache`：一道闸都不跑。trace 保持空的 —— 记成某道闸的判定就是假话
+		if (noCacheReason !== null) {
+			return {
+				outcome: "bypass",
+				payload: null,
+				entryId: null,
+				sourceIds: [],
+				exitedAt: null,
+				trace,
+				chunks: null,
+				support: null,
+				wouldHave: null,
+				noCacheReason,
+				noStoreReason,
+				prepareWrite: issueTicket,
+			};
+		}
+
+		trace.push({
+			gate: 1,
+			name: "scope 门控",
+			verdict: "pass",
+			detail: `scope = ${scope}${shared ? "（共享）" : "（隔离）"}${prompt.redacted ? " · 已脱敏" : ""}`,
+		});
 
 		/* ② 精确匹配 */
 		const candidate = await options.store.getByHash(scope, matchHash);
@@ -225,7 +325,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		const exact = candidate && normalizeKey(candidate.matchText) === normalized ? candidate : null;
 		if (exact) {
 			trace.push({ gate: 2, name: "精确匹配", verdict: "hit", detail: `命中条目 ${exact.id}` });
-			return verify(exact, prompt, trace, guard, prepareWrite, true);
+			return verify(exact, prompt, trace, guard, issueTicket, true, { noCacheReason, noStoreReason });
 		}
 		trace.push({
 			gate: 2,
@@ -237,15 +337,37 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		/* ③ 向量召回 */
 		const [matchVector] = await recall.scorer.embedQuestions([prompt.matchText]);
 		// 已经算出来了，顺手把票据填上，写入路径不必再编一次
-		ticket = { scope, shared, matchHash, matchVector };
-		const candidates = await options.store.searchNearest(scope, matchVector, recallLimit);
+		// ttlMs 必须一起带上 —— 这里是覆盖赋值，漏了就把 prepareWrite 记下的策略 TTL 冲掉
+		ticket = { scope, shared, matchHash, matchVector, ttlMs: policyTtlMs };
+		const returned = await options.store.searchNearest(scope, matchVector, recallLimit);
+
+		/**
+		 * **拿回来再复核一次 scope，不信任存储层的 pre-filter。**
+		 *
+		 * `searchNearest` 的契约是「只返回同 scope、未过期的条目」（见 DESIGN.md
+		 * 「对存储实现的两条硬要求」），但那是**契约**，不是**校验**。② 那条路已经
+		 * 用同一条规矩防住了自己（哈希命中之后再比一次原文），③ 先前没有 —— 而 ③
+		 * 的失效后果严重得多：pgvector 或 Redis 那侧一个 filter 写错，就是跨 scope
+		 * 返回另一门课、另一个组织的答案，而且完全静默（向量照样算得出来、相似度
+		 * 照样很高、trace 上一切正常）。
+		 *
+		 * 这里只多一次字符串比较 —— 条目已经在手里，没有额外往返。
+		 *
+		 * **丢弃而不是抛。**读路径上一条脏数据不该让整个请求失败（和「缺证据不是有罪」
+		 * 是同一族取舍）；但丢了多少条会如实写进 trace ——`foreign > 0` 意味着存储实现
+		 * 违反了硬要求，那是个必须被人看见的缺陷，不是可以容忍的常态。
+		 */
+		const candidates = returned.filter(c => c.entry.scope === scope);
+		const foreign = returned.length - candidates.length;
+		const foreignNote = foreign > 0 ? ` · ⚠ 丢弃 ${foreign} 条 scope 不符的候选：存储层 pre-filter 失效` : "";
+
 		if (candidates.length === 0 || candidates[0].similarity < recall.thresholds.floor) {
 			const top = candidates[0]?.similarity;
 			trace.push({
 				gate: 3,
 				name: `向量召回 top-${recallLimit}`,
 				verdict: "exit",
-				detail: candidates.length === 0 ? "该 scope 下没有候选" : `最高余弦 ${top?.toFixed(4)} 低于召回下限`,
+				detail: (candidates.length === 0 ? "该 scope 下没有候选" : `最高余弦 ${top?.toFixed(4)} 低于召回下限`) + foreignNote,
 				score: top,
 			});
 			return miss(3, null, null);
@@ -254,7 +376,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			gate: 3,
 			name: `向量召回 top-${recallLimit}`,
 			verdict: "pass",
-			detail: `${candidates.length} 条候选`,
+			detail: `${candidates.length} 条候选${foreignNote}`,
 			score: candidates[0].similarity,
 		});
 
@@ -271,7 +393,15 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			 *   - **这道闸对它们不适用** ← 选用
 			 *
 			 * 和 ⑤⑥ 对 plan 不适用是同一个道理，DESIGN 里已经立了这个先例。
-			 * 不适用不等于淘汰：它们保持 ③ 的余弦名次继续往下走。
+			 *
+			 * **但「不适用」在混合 scope 里等于「让位」，这一点必须说清。** 只要 top-k
+			 * 里还有一条 answer，胜出者就在 answer 里挑 —— plan 条目连 ③ 排第一也拿不到
+			 * 这一次复用（只有 top-k 全是 plan 时才按 ③ 的名次取 top-1）。
+			 *
+			 * 没有第四种选择：让 plan 拿 ③ 的余弦去跟 answer 的精排分排同一张榜，
+			 * 就是这段注释开头拒绝的那种尺度混用，只不过换了个地方混。所以取舍是
+			 * 「answer 优先」，代价如实写进 trace（下面的 `skipNote`）—— 混合 scope 下
+			 * plan 会被 answer 饿死，用得着 plan 的调用方应当给它单独的 scope。
 			 */
 			const rerankable = target === "answer" ? candidates.filter(c => c.entry.kind === "answer") : [...candidates];
 			const skipped = candidates.length - rerankable.length;
@@ -286,16 +416,37 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 						"这道闸对 plan 不适用，按 ③ 的余弦名次取 top-1",
 				});
 			} else {
-				const scored: Array<{ entry: CacheEntry; score: number }> = [];
+				const scored: Array<{ entry: CacheEntry; score: number; similarity: number }> = [];
 				for (const c of rerankable) {
 					const candidateText = target === "answer" ? c.entry.answer : c.entry.matchText;
-					scored.push({ entry: c.entry, score: await rerank.scorer.score(prompt.matchText, candidateText) });
+					scored.push({
+						entry: c.entry,
+						score: await rerank.scorer.score(prompt.matchText, candidateText),
+						similarity: c.similarity,
+					});
 				}
 				scored.sort((a, b) => b.score - a.score);
 				best = scored[0].entry;
 				const questionScore = scored[0].score;
+				/**
+				 * **胜出者自己的 ③ 余弦，必须报出来。**
+				 *
+				 * ③ 的下限只卡 `candidates[0]`（那是「这批候选值不值得看」的门槛），
+				 * 而这里的胜出者可以是 top-k 里任何一条 —— 包括余弦远低于 `floor` 的。
+				 * 精排推翻 ③ 的名次是设计使然，但先前 trace 上只有 top-1 的余弦和精排分，
+				 * 「被复用的那条 ③ 只有 0.3」这件事在哪儿都看不到。
+				 *
+				 * 这个项目在 `foreign > 0` 和 ⑤ 的 `would-exit` 上都守着同一条规矩：
+				 * 取舍可以，但必须看得见。
+				 */
+				const belowFloor = scored[0].similarity < recall.thresholds.floor;
+				// 中性措辞：这条闸拦下时并没有「胜出者」，只有「④ 最高分那条」
+				const winnerNote =
+					`；④ 最高分那条的 ③ 余弦 ${scored[0].similarity.toFixed(4)}` +
+					(belowFloor ? ` **低于召回下限 ${recall.thresholds.floor}**` : "");
 				const scaleNote = `${target === "answer" ? "问↔答" : "问↔问"}尺度`;
-				const skipNote = skipped === 0 ? "" : `，另有 ${skipped} 条 plan 条目不适用本闸`;
+				// 「不适用」在混合 scope 里就是「让位」—— 说成「不适用」会让人以为它们还在候选里
+				const skipNote = skipped === 0 ? "" : `，另有 ${skipped} 条 plan 条目本闸不适用、已让位给 answer`;
 				if (questionScore < rerank.thresholds.floor) {
 					trace.push({
 						gate: 4,
@@ -303,7 +454,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 						verdict: "exit",
 						detail:
 							`分数 ${questionScore.toFixed(4)} 低于闸值 ${rerank.thresholds.floor}（${scaleNote}` +
-							`，标定于：${rerank.calibratedOn}）${skipNote}`,
+							`，标定于：${rerank.calibratedOn}）${skipNote}${winnerNote}`,
 						score: questionScore,
 					});
 					return miss(4, null, null);
@@ -312,7 +463,10 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 					gate: 4,
 					name: "精排",
 					verdict: "pass",
-					detail: `过闸（${scaleNote}）${skipNote}`,
+					detail:
+						`过闸（${scaleNote}）${skipNote}${winnerNote}` +
+						// 复用一条低于 ③ 下限的条目是 ④ 的权力，但必须写明白它用了这个权力
+						(belowFloor ? "　—— 精排推翻了 ③ 的名次" : ""),
 					score: questionScore,
 				});
 			}
@@ -325,7 +479,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			});
 		}
 
-		return verify(best, prompt, trace, guard, prepareWrite, false);
+		return verify(best, prompt, trace, guard, issueTicket, false, { noCacheReason, noStoreReason });
 	}
 
 	/**
@@ -340,6 +494,11 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		guard: RedactionGuard,
 		prepareWrite: () => Promise<WriteTicket>,
 		wasExact: boolean,
+		/**
+		 * 策略的两个理由原样透传。`noCache` 走不到这里（它在闸之前就返回了），
+		 * 但 `noStore` 走得到 —— 中带那条路会 refine 后写回，必须拿不到票据。
+		 */
+		reasons: { readonly noCacheReason: string | null; readonly noStoreReason: string | null },
 	): Promise<LookupResult> {
 		// 快速失败：脱敏 × 共享 × answer 是必然出错的组合，早点抛，
 		// 别先付掉一次检索和两次 embedding 再抛。
@@ -354,9 +513,10 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				verdict: "off",
 				detail: "plan 条目无实体特定内容 —— 实体是参数，执行时填参并授权",
 			});
-			await options.store.touch(entry.id);
+			if (!shadow) await options.store.touch(entry.id);
 			return {
-				outcome: wasExact ? "exact" : "reuse",
+				outcome: shadow ? "shadow" : wasExact ? "exact" : "reuse",
+				wouldHave: shadow ? (wasExact ? "exact" : "reuse") : null,
 				payload: payloadOf(entry),
 				entryId: entry.id,
 				sourceIds: [],
@@ -364,6 +524,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				trace,
 				chunks: null,
 				support: null,
+				...reasons,
 				prepareWrite,
 			};
 		}
@@ -376,10 +537,12 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				gate: 5,
 				name: "资料版本比对",
 				verdict: "exit",
-				detail: `版本不符（写入时 ${entry.sourceVersion} → 当前 ${currentVersion}），驱逐 ${entry.id}`,
+				detail: `版本不符（写入时 ${entry.sourceVersion} → 当前 ${currentVersion}），${shadow ? "影子模式不驱逐" : `驱逐 ${entry.id}`}`,
+				// 影子模式下面那行 evict 不执行 —— 指标不能记成驱逐
+				evicted: !shadow,
 			});
-			await options.store.evict(entry.id);
-			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 5, trace, chunks: null, support: null, prepareWrite };
+			if (!shadow) await options.store.evict(entry.id);
+			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 5, trace, chunks: null, support: null, wouldHave: null, ...reasons, prepareWrite };
 		}
 		trace.push({
 			gate: 5,
@@ -407,8 +570,10 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				name: "回答有效性校验",
 				verdict: "exit",
 				detail: chunks.length === 0 ? "检索没有返回任何片段，判不了 —— 本次不复用，但不驱逐" : "条目没有答案向量，判不了 —— 本次不复用，但不驱逐",
+				// 显式写出来：这条 exit 不是驱逐。缺证据不是有罪，指标也不许当成有罪
+				evicted: false,
 			});
-			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 6, trace, chunks, support: null, prepareWrite };
+			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 6, trace, chunks, support: null, wouldHave: null, ...reasons, prepareWrite };
 		}
 
 		const supportValue = await supportScore(entry, chunks);
@@ -418,11 +583,14 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				gate: 6,
 				name: "回答有效性校验",
 				verdict: "exit",
-				detail: `支撑度 ${supportValue.toFixed(4)} 低于 ${support.thresholds.low}（标定于：${support.calibratedOn}），驱逐 ${entry.id}`,
+				detail:
+					`支撑度 ${supportValue.toFixed(4)} 低于 ${support.thresholds.low}（标定于：${support.calibratedOn}）` +
+					`，${shadow ? "影子模式不驱逐" : `驱逐 ${entry.id}`}`,
 				score: supportValue,
+				evicted: !shadow,
 			});
-			await options.store.evict(entry.id);
-			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 6, trace, chunks, support: supportValue, prepareWrite };
+			if (!shadow) await options.store.evict(entry.id);
+			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 6, trace, chunks, support: supportValue, wouldHave: null, ...reasons, prepareWrite };
 		}
 		trace.push({
 			gate: 6,
@@ -442,9 +610,11 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		 *
 		 * 中带也算命中：它复用了这条条目的答案。
 		 */
-		await options.store.touch(entry.id);
+		if (!shadow) await options.store.touch(entry.id);
+		const real: LookupOutcome = confident ? (wasExact ? "exact" : "reuse") : "mid";
 		return {
-			outcome: confident ? (wasExact ? "exact" : "reuse") : "mid",
+			outcome: shadow ? "shadow" : real,
+			wouldHave: shadow ? real : null,
 			payload: payloadOf(entry),
 			entryId: entry.id,
 			sourceIds: entry.sourceIds,
@@ -452,6 +622,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			trace,
 			chunks,
 			support: supportValue,
+			...reasons,
 			prepareWrite,
 		};
 	}
@@ -484,12 +655,25 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 
 	/** 没有 lookup 结果可用时，现算一份写入票据。 */
 	async function prepareTicket(prompt: CachePrompt): Promise<WriteTicket> {
-		const decision = await options.scope(prompt);
+		/**
+		 * **这里也要查策略。**否则它就是绕过 `CachePolicy` 的后门：不走 `lookup`、
+		 * 直接要一张票就能写进去，而那道守卫的全部意义在于「判定不缓存的东西
+		 * 从类型到运行期都写不进去」。少查这一次，守卫就只是建议。
+		 */
+		let ttlMs: number | null | undefined;
+		if (options.policy) {
+			const disposition = await options.policy(prompt);
+			// 只有 noStore 拦写入。noCache 说的是「别读」，不该挡住一次合法的写回
+			if (disposition.noStore !== undefined) await bypassTicket(disposition.noStore)();
+			ttlMs = disposition.ttlMs;
+		}
+		const { scope, shared } = await resolveScope(prompt);
 		return {
-			scope: typeof decision === "string" ? decision : decision.key,
-			shared: typeof decision === "string" ? true : decision.shared,
+			scope,
+			shared,
 			matchHash: hashKey(normalizeKey(prompt.matchText)),
 			matchVector: (await recall.scorer.embedQuestions([prompt.matchText]))[0],
+			ttlMs,
 		};
 	}
 
@@ -546,15 +730,27 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		 * 一次通常是纯函数的 ScopeResolver 调用），而票据配错 prompt 的后果不便宜。
 		 * 见 assertTicketMatches。
 		 */
-		const prepared: Array<{ scope: string; shared: boolean; matchHash: string; matchVector: ReadonlyArray<number> | null }> = [];
+		const prepared: Array<{ scope: string; shared: boolean; matchHash: string; matchVector: ReadonlyArray<number> | null; ttlMs?: number | null }> = [];
 		for (const item of items) {
-			const decision = await options.scope(item.prompt);
-			const scope = typeof decision === "string" ? decision : decision.key;
-			const shared = typeof decision === "string" ? true : decision.shared;
+			const { scope, shared } = await resolveScope(item.prompt);
 			const matchHash = hashKey(normalizeKey(item.prompt.matchText));
 			const ticket = item.options?.ticket;
 			if (ticket) assertTicketMatches(ticket, item.prompt, scope, shared, matchHash);
-			prepared.push({ scope, shared, matchHash, matchVector: ticket?.matchVector ?? null });
+			/**
+			 * **没带票据的写入也要过一次策略。**
+			 *
+			 * `ticket` 是可选的（缺了就现编向量），所以「`noStore` ⇒ 拿不到票据」这道
+			 * 守卫只挡住了走 `lookup` / `prepareTicket` 的那条路 —— 直接
+			 * `write(prompt, payload)` 是一扇没关的正门，那句「从类型到运行期都写不进去」
+			 * 就成了空话。带票据的不必重查：发票时已经查过，重查只是多付一次 policy 调用。
+			 */
+			let ttlMs = ticket?.ttlMs;
+			if (!ticket && options.policy) {
+				const disposition = await options.policy(item.prompt);
+				if (disposition.noStore !== undefined) await bypassTicket(disposition.noStore)();
+				ttlMs = disposition.ttlMs;
+			}
+			prepared.push({ scope, shared, matchHash, matchVector: ticket?.matchVector ?? null, ttlMs });
 		}
 
 		// 守卫必须在 put 之前 —— 落库之后再抛就已经污染了缓存
@@ -591,8 +787,13 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			const isAnswer = payload.kind === "answer";
 			const sourceIds = isAnswer ? payload.sourceIds : [];
 			const created = now();
-			// 显式给了 ttlMs 就用它（含 null = 不过期），没给才落到全局默认
-			const ttl = items[i].options?.ttlMs === undefined ? ttlMs : items[i].options?.ttlMs;
+			// 显式给了 ttlMs 就用它（含 null = 不过期），其次是策略随票据带来的，最后才是全局默认
+			const ttl =
+				items[i].options?.ttlMs !== undefined
+					? items[i].options?.ttlMs
+					: slot.ttlMs !== undefined
+						? slot.ttlMs
+						: ttlMs;
 
 			const entry: CacheEntry = {
 				id: newId(),
@@ -755,12 +956,27 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	 * 相同的 `matchText`，但 `retrievalText` 里的实体不同 —— 那正是 ⑥ 存在的理由。
 	 * 只按 matchText 合流，等于亲手制造这套东西一路在防的占位符塌陷。
 	 */
+	/**
+	 * 合流键。
+	 *
+	 * **分隔符只能用 `\u0000`，不能用 `=` / `&`。**先前 context 拼成 `k=v&k=v`，
+	 * 于是 `{a: "b&c=d"}` 和 `{a: "b", c: "d"}` 得到同一个键 —— 两个不同的请求合流，
+	 * **后到者拿到前一个请求的答案**。这不是效率问题，是错答案：教学场景里 context
+	 * 装的是 courseId / userId / unit，都可能含这两个字符。
+	 *
+	 * 用不可能出现在文本字段里的字符，比转义省 —— 同一条规矩在 `Scope.ts` 里
+	 * 因为要存进库、要人读，所以走的是转义。
+	 */
 	function flightKey(prompt: CachePrompt): string {
 		const context = Object.entries(prompt.context)
 			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-			.map(([k, v]) => `${k}=${v}`)
-			.join("&");
-		return `${normalizeKey(prompt.matchText)}\u0000${prompt.retrievalText}\u0000${context}\u0000${prompt.redacted ? "1" : "0"}`;
+			.flatMap(([k, v]) => [k, v]);
+		return [
+			normalizeKey(prompt.matchText),
+			prompt.retrievalText,
+			context.join("\u0000"),
+			prompt.redacted ? "1" : "0",
+		].join("\u0000\u0000");
 	}
 
 	/**
@@ -790,10 +1006,37 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		const found = await lookup(prompt);
 		const trace: Array<GateTrace> = [...found.trace];
 
+		/**
+		 * `noCache`：没查缓存，照常生成。**写不写由 `noStore` 单独决定** ——
+		 * 两个开关都设是「那第二个呢」，只设 noCache 是「重新回答」：新答案要写回去
+		 * 替换旧的那条，否则每个点重来的学生都各付一次生成，而算出的更好答案全被丢掉。
+		 */
+		if (found.outcome === "bypass") {
+			const bypassChunks = await options.retriever.retrieve(prompt.retrievalText, prompt.context);
+			const produced = await generate(prompt, bypassChunks);
+			// 影子模式下 bypass 也不写：一道闸都没跑，无从知道写入会不会去重顶掉一条现有条目
+			const storable = !shadow && found.noStoreReason === null && cacheable(produced);
+			const stored = storable ? await write(prompt, produced, { ...writeOptions, ticket: await found.prepareWrite() }) : null;
+			return {
+				payload: produced,
+				outcome: "bypassed",
+				bypassReason: found.noCacheReason,
+				wouldReuse: null,
+				exitedAt: null,
+				// null 在这里和「答案没有依据」时同义：生成了，但没有落缓存
+				entryId: stored?.id ?? null,
+				sourceIds: produced.kind === "answer" ? produced.sourceIds : [],
+				trace,
+			};
+		}
+
 		if (found.payload && (found.outcome === "exact" || found.outcome === "reuse")) {
 			return {
 				payload: found.payload,
 				outcome: found.outcome,
+				bypassReason: null,
+				// 影子模式下命中已被降级成 "shadow"，走不到这里
+				wouldReuse: null,
 				exitedAt: null,
 				entryId: found.entryId,
 				sourceIds: found.sourceIds,
@@ -808,13 +1051,40 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				const refined = await options.refine(found.payload.answer, prompt, found.chunks ?? []);
 				if (!cacheable(refined)) {
 					// 旧条目还没删 —— 拿一个没有依据的微调结果去换掉它是净亏
-					trace.push({ gate: 6, name: "中带处理", verdict: "exit", detail: "微调结果没有资料依据，不写回，旧条目保留" });
+					trace.push({
+						gate: 6,
+						name: "中带处理",
+						verdict: "exit",
+						detail: "微调结果没有资料依据，不写回，旧条目保留",
+						evicted: false,
+					});
 					return {
 						payload: refined,
 						outcome: "refine",
+						bypassReason: null,
+						// 影子模式下 mid 已被降级成 "shadow"，refine 不可达 —— 恒为 null
+						wouldReuse: null,
 						exitedAt: null,
 						entryId: found.entryId,
 						sourceIds: [],
+						trace,
+					};
+				}
+				/**
+				 * `noStore` 下不写回 —— 票据是拒发的，直接往下走会把 resolve 整个炸掉。
+				 * 微调结果照样返回给这一次的调用方（refine 的钱已经花了，答案是好的），
+				 * 代价如实写进 trace：下次同样的问题还会再微调一次。
+				 */
+				if (found.noStoreReason !== null) {
+					trace.push({ gate: 6, name: "中带处理", verdict: "off", detail: `策略判定不写入（${found.noStoreReason}）—— 微调结果只用这一次，旧条目保留` });
+					return {
+						payload: refined,
+						outcome: "refine",
+						bypassReason: null,
+						wouldReuse: null,
+						exitedAt: null,
+						entryId: found.entryId,
+						sourceIds: refined.kind === "answer" ? refined.sourceIds : [],
 						trace,
 					};
 				}
@@ -825,6 +1095,9 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				return {
 					payload: refined,
 					outcome: "refine",
+					bypassReason: null,
+					// 影子模式下 mid 已被降级成 "shadow"，refine 不可达 —— 恒为 null
+					wouldReuse: null,
 					exitedAt: null,
 					// 旧条目已经删了。返回旧 id 的话调用方拿它去 get 只会拿到 null
 					entryId: replacement.id,
@@ -837,12 +1110,26 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				name: "中带处理",
 				verdict: "exit",
 				detail: `未提供 refine，中带退化为完整生成；旧条目 ${found.entryId} 留到新答案写成之后再删`,
+				/**
+				 * **不算 ⑥ 的驱逐。** 旧条目稍后确实会被 `replaceEntry` 删掉，但那是
+				 * 「被新答案顶替」，不是「⑥ 判它失效」—— 中带的语义恰恰是「它没失效，
+				 * 只是不够有把握」。混进 `evictions.byAnswerCheck` 会让那个数变成
+				 * 「⑥ 判负 + 中带退化」的和，于是「阈值是不是太紧」这个问题问不出来。
+				 * 而且这条路走不到写入时（答案无依据 / noStore / 影子模式）旧条目还留着。
+				 */
+				evicted: false,
 			});
 			superseded = found.entryId;
 		}
 
 		const chunks = found.chunks ?? (await options.retriever.retrieve(prompt.retrievalText, prompt.context));
 		const produced = await generate(prompt, chunks);
+		/**
+		 * 中带落到这里是被 ⑥ 放弃的，如实记成 6 —— 下面几条不写入的返回路径共用它，
+		 * 免得同一件事在不同分支记出不同的 `exitedAt`。
+		 */
+		const exitedAt = found.outcome === "mid" ? 6 : found.exitedAt;
+
 		if (!cacheable(produced)) {
 			trace.push({
 				gate: 6,
@@ -851,14 +1138,63 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				detail: superseded
 					? "答案没有任何资料依据，本次不写入缓存 —— 中带的旧条目因此保留"
 					: "答案没有任何资料依据，本次不写入缓存",
+				// 这条 exit 在任何生成路径上都会发，连一条候选都没有的全新 scope 也会 ——
+				// 反推驱逐的话，冷缓存也能报出一次「⑥ 判负驱逐」
+				evicted: false,
 			});
 			return {
 				payload: produced,
 				outcome: "generated",
-				exitedAt: found.outcome === "mid" ? 6 : found.exitedAt,
+				bypassReason: null,
+				wouldReuse: shadow ? false : null,
+				exitedAt,
 				// null 在这里有确切含义：生成了，但没有落缓存
 				entryId: null,
 				sourceIds: [],
+				trace,
+			};
+		}
+		/**
+		 * **影子模式的写入抑制，必须排在 `noStore` 之前。**
+		 *
+		 * 排后面的话，一次「本会命中但被 noStore 挡住」会落进 noStore 分支报
+		 * `wouldReuse: false` —— 而 noStore 只管写不管读，它本来是会复用的，
+		 * 影子模式的分子就被低估了。
+		 *
+		 * 抑制的范围不只是被降级的命中：**⑤⑥ 判负那两条也不能写。**
+		 * `lookup` 侧的 `if (!shadow) evict` 只保住了「不主动删」，但尾巴照常生成、
+		 * 照常写入，而 `writeMany` 的去重会把同 `(scope, matchHash)` 的旧条目当
+		 * duplicate 驱逐 —— 从写路径把「影子模式只读」这个承诺打穿。`exitedAt` 是
+		 * 5/6 正好标志「存在一条被判负但被保留的条目」；3/4 与无候选的真未命中
+		 * 撞不上去重，照常写，否则缓存永远暖不起来。
+		 */
+		if (shadow && (found.outcome === "shadow" || exitedAt === 5 || exitedAt === 6)) {
+			const detail =
+				found.outcome === "shadow"
+					? `本会 ${found.wouldHave} —— 已改为真生成，且不写回（原条目保留）`
+					: `⑤⑥ 判负的条目已保留，写入也一并跳过 —— 否则去重会把它顶掉（本会 miss@${exitedAt}）`;
+			trace.push({ gate: 6, name: "影子模式", verdict: "off", detail });
+			return {
+				payload: produced,
+				outcome: "generated",
+				bypassReason: null,
+				wouldReuse: found.outcome === "shadow",
+				exitedAt: found.outcome === "shadow" ? null : exitedAt,
+				entryId: found.entryId,
+				sourceIds: produced.kind === "answer" ? produced.sourceIds : [],
+				trace,
+			};
+		}
+		if (found.noStoreReason !== null) {
+			trace.push({ gate: 6, name: "写入", verdict: "off", detail: `策略判定不写入（${found.noStoreReason}）—— 生成了，但不落缓存` });
+			return {
+				payload: produced,
+				outcome: "generated",
+				bypassReason: null,
+				wouldReuse: shadow ? false : null,
+				exitedAt,
+				entryId: null,
+				sourceIds: produced.kind === "answer" ? produced.sourceIds : [],
 				trace,
 			};
 		}
@@ -869,8 +1205,9 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		return {
 			payload: produced,
 			outcome: "generated",
-			// 中带落到这里是被 ⑥ 放弃的，如实记成 6
-			exitedAt: found.outcome === "mid" ? 6 : found.exitedAt,
+			bypassReason: null,
+			wouldReuse: shadow ? false : null,
+			exitedAt,
 			// 刚写进去的那条。先前这里恒为 null —— 明明写了一条却拿不到它的 id
 			entryId: stored.id,
 			sourceIds: produced.kind === "answer" ? produced.sourceIds : [],

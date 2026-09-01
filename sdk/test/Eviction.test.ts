@@ -80,7 +80,10 @@ test("lru：touch 真的写了 lastUsedAt 与 useCount", async () => {
 	await s.touch("e1");
 	const got = await s.getById("e1");
 	assert.equal(got?.lastUsedAt, 7777);
-	assert.equal(got?.useCount, 2);
+	// 阶梯是「写入算 1 次使用，每次复用 +1」：1 + 两次 touch = 3。
+	// 从 0 起加的话，没记过账的条目（保留优先级按 1 算）和被复用过一次的条目同分，
+	// 第一次复用等于白费。
+	assert.equal(got?.useCount, 3);
 });
 
 test("lfu：用得多的留下，哪怕它更老", async () => {
@@ -152,4 +155,112 @@ test("touch 不存在的条目静默返回 —— 它可能刚被并发驱逐", 
 	const s = store("lru", 10);
 	await s.touch("从来没有过的 id");
 	assert.equal((await s.all()).length, 0);
+});
+
+test("lfu：刚写进来的条目不能被自己触发的淘汰立刻删掉", async () => {
+	const store = createMemoryCacheStore({ eviction: { policy: "lfu", capacity: 2 } });
+	const base = { scope: "s", kind: "answer" as const, matchText: "", matchHash: "h", matchVector: [1], answer: "",
+		plan: {}, answerVector: [], sourceIds: [], sourceVersion: "", expiresAt: null };
+
+	// 两条老条目，各被用过一次
+	await store.put({ ...base, id: "old-a", matchHash: "a", createdAt: 1, lastUsedAt: 1, useCount: 1 });
+	await store.put({ ...base, id: "old-b", matchHash: "b", createdAt: 2, lastUsedAt: 2, useCount: 1 });
+
+	// 第三条刚写入、没记过账。算「零次」的话它排最后，会被自己这次 put 删掉
+	await store.put({ ...base, id: "fresh", matchHash: "c", createdAt: 3 });
+
+	const ids = (await store.all()).map(e => e.id).sort();
+	assert.ok(ids.includes("fresh"), `新条目必须活下来，实际留下 ${ids.join("/")}`);
+	assert.equal(ids.length, 2);
+	// 打平后由 LRU 破平：最久没用的那条老条目出局
+	assert.deepEqual(ids, ["fresh", "old-b"]);
+});
+
+test("lfu：用得多的老条目仍然压得住新条目 —— 只解「进不来」，不改 LFU 本意", async () => {
+	const store = createMemoryCacheStore({ eviction: { policy: "lfu", capacity: 2 } });
+	const base = { scope: "s", kind: "answer" as const, matchText: "", matchHash: "h", matchVector: [1], answer: "",
+		plan: {}, answerVector: [], sourceIds: [], sourceVersion: "", expiresAt: null };
+
+	await store.put({ ...base, id: "hot-a", matchHash: "a", createdAt: 1, lastUsedAt: 1, useCount: 9 });
+	await store.put({ ...base, id: "hot-b", matchHash: "b", createdAt: 2, lastUsedAt: 2, useCount: 9 });
+	await store.put({ ...base, id: "fresh", matchHash: "c", createdAt: 3 });
+
+	const ids = (await store.all()).map(e => e.id).sort();
+	assert.deepEqual(ids, ["hot-a", "hot-b"], "9 次 > 1 次，热条目该留下");
+});
+
+/* ---------- 过期行不占容量 ---------- */
+
+test("过期未清理的行不占容量名额 —— 它顶不掉活条目", async () => {
+	// 一条已过期、但 lastUsedAt 很新的行：LRU 的保留优先级最高，先前它会活下来
+	// 并把一条活条目顶掉。而 purgeExpired 还没跑到之前，它在读路径上早已看不见 ——
+	// 「看不见的行删掉了看得见的行」。
+	const s = store("lru", 2);
+	await s.put({ ...entry("过期的", "s", 1000), expiresAt: 4000, lastUsedAt: 4999 });
+	await s.put(entry("活A", "s", 1001));
+	await s.put(entry("活B", "s", 1002));
+	assert.deepEqual(await ids(s), ["活A", "活B"]);
+});
+
+test("过期行被收掉之后就没超容量了 —— 这时一条活条目都不该动", async () => {
+	const s = store("fifo", 2);
+	await s.put({ ...entry("过期的", "s", 1000), expiresAt: 4000 });
+	await s.put(entry("活A", "s", 1001));
+	// 此刻存储里 2 条（含 1 条过期），没超；再写一条触发淘汰
+	await s.put(entry("活B", "s", 1002));
+	assert.deepEqual(await ids(s), ["活A", "活B"], "该走的是那条过期的，不是最老的活条目");
+});
+
+test("evictOverCapacity 的返回值把过期行也算进去 —— 契约是「删掉的条数」", async () => {
+	const s = store("fifo", 1);
+	await s.put({ ...entry("过期1", "s", 1000), expiresAt: 4000 });
+	await s.put({ ...entry("过期2", "s", 1001), expiresAt: 4000 });
+	await s.put(entry("活A", "s", 1002));
+	// put 里那次 trim 已经把两条过期的收走了，剩 1 条活的正好等于容量
+	assert.deepEqual(await ids(s), ["活A"]);
+	assert.equal(await s.evictOverCapacity("s"), 0, "已经在容量内了");
+});
+
+/* ---------- lfu 的次数封顶三个后端一致 ---------- */
+
+test("lfu 的使用次数封顶 —— 超过 LFU_COUNT_CAP 之后退回按时间破平", async () => {
+	// Redis 后端必须把「次数 + 时间」打包进 zset 的一个 double，所以次数封在 1023。
+	// 内存与 pgvector 先前用的是裸 use_count：两条 1500 与 1100 的条目，内存选 1500
+	// 留下，Redis 视为同分退回按时间破平 —— 一条真实的跨后端语义分歧，只是要跑到
+	// 1023 次以上才暴露。三处现在共用 EvictionOrder.ts 的封顶值。
+	const s = store("lfu", 1);
+	await s.put({ ...entry("次数1500但很久没用", "s", 1000), useCount: 1500, lastUsedAt: 100 });
+	await s.put({ ...entry("次数1100刚用过", "s", 1001), useCount: 1100, lastUsedAt: 200 });
+	assert.deepEqual(await ids(s), ["次数1100刚用过"]);
+});
+
+test("lfu 在封顶以下仍然只看次数", async () => {
+	const s = store("lfu", 1);
+	await s.put({ ...entry("次数9但很久没用", "s", 1000), useCount: 9, lastUsedAt: 100 });
+	await s.put({ ...entry("次数2刚用过", "s", 1001), useCount: 2, lastUsedAt: 200 });
+	assert.deepEqual(await ids(s), ["次数9但很久没用"]);
+});
+
+/* ---------- rr 是均匀抽样 ---------- */
+
+test("rr 是均匀抽样，不是拿 Math.random() 当比较器", async () => {
+	// `sort(() => Math.random() - 0.5)` 的比较器不自反也不传递，给出的排列取决于
+	// sort 内部走的哪条路径，明显偏向原顺序 —— rr 于是悄悄变成「偏向淘汰先写入的」，
+	// 跟 fifo 撞车，而它对外承诺的是随机。
+	const evicted: Record<string, number> = { a: 0, b: 0, c: 0 };
+	const rounds = 6000;
+	for (let i = 0; i < rounds; i++) {
+		const s = store("rr", 2);
+		await s.put(entry("a", "s", 1000));
+		await s.put(entry("b", "s", 1001));
+		await s.put(entry("c", "s", 1002));
+		const left = new Set((await s.all()).map(e => e.id));
+		for (const id of ["a", "b", "c"]) if (!left.has(id)) evicted[id] += 1;
+	}
+	// 每条应各占约 1/3。放宽到 ±20% —— 这是防偏，不是测随机数发生器的质量
+	const expected = rounds / 3;
+	for (const id of ["a", "b", "c"]) {
+		const ratio = evicted[id] / expected;
+		assert.ok(ratio > 0.8 && ratio < 1.2, `${id} 被淘汰 ${evicted[id]} 次，期望 ≈${expected}（比值 ${ratio.toFixed(2)}）`);
+	}
 });

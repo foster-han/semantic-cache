@@ -12,7 +12,7 @@
  *
  *   npm run store-conformance
  */
-import { createMemoryCacheStore, type CacheEntry, type InspectableCacheStore } from "../../sdk/src/index.ts";
+import { createMemoryCacheStore, LFU_COUNT_CAP, type CacheEntry, type InspectableCacheStore } from "../../sdk/src/index.ts";
 import { createLabStore } from "../Store.ts";
 
 const DIM = 8;
@@ -218,14 +218,53 @@ async function evictionRun(policy: "fifo" | "rr" | "lru" | "lfu", s: Inspectable
 	out.push(`${policy}: e0 记账=${accounted ? `有(次数 ${probe?.useCount ?? "-"})` : "无"}`);
 
 	/**
-	 * LFU 的一个真实性质，值得写成判据：**新条目 useCount=0，会被立刻淘汰。**
-	 * 它不是 bug，是纯频率策略的固有代价 —— 冷启动的条目永远攒不到次数。
+	 * 新条目会不会被自己触发的那次淘汰立刻删掉。
+	 *
+	 * 三个后端都把「没记过账」算成**用过一次**（不是零次），所以它应当留下 ——
+	 * 算零次的话它排在所有被 touch 过的条目之后，`resolve` 返回的 entryId 会指向
+	 * 一条已经不存在的记录，而那个问题在这个 scope 里永远立不住。
+	 * 「用得多的老条目压着新条目」是 LFU 固有的，那半边没治，要衰减才治得了。
 	 */
 	if (policy === "lfu") {
 		await s.put(entry("brandnew", "course:1", "h-new", 99, ["n1"], null));
 		const after = (await s.all()).map(x => x.id);
 		out.push(`lfu: 新条目留下了吗=${after.includes("brandnew") ? "留下" : "**立刻被淘汰**"}`);
+
+		/**
+		 * **使用次数封顶（`LFU_COUNT_CAP`）必须三个后端一致。**
+		 *
+		 * Redis 要把「次数 + 时间」打包进 zset 的一个 double，所以次数封在 1023；
+		 * 内存与 pgvector 先前用的是裸 `use_count`。两条 1500 与 1100 的条目，
+		 * 封顶之后应当同分、退回按时间破平 —— 不封顶的那两个后端会选 1500 那条。
+		 * 一条真实存在的分歧，只是要跑到 1023 次以上才显形，所以一直没被撞上。
+		 */
+		await s.clear();
+		const capped = `${LFU_COUNT_CAP + 477}`;
+		await s.put({ ...entry("超封顶但很久没用", "course:1", "h-cap1", 11, ["n1"], null), useCount: LFU_COUNT_CAP + 477, lastUsedAt: 100 });
+		await s.put({ ...entry("刚过封顶但刚用过", "course:1", "h-cap2", 12, ["n1"], null), useCount: LFU_COUNT_CAP + 77, lastUsedAt: 200 });
+		await s.put({ ...entry("填位1", "course:1", "h-cap3", 13, ["n1"], null), useCount: 1, lastUsedAt: 150 });
+		await s.put({ ...entry("填位2", "course:1", "h-cap4", 14, ["n1"], null), useCount: 1, lastUsedAt: 160 });
+		out.push(`lfu: 次数 ${capped} 与 ${LFU_COUNT_CAP + 77} 封顶后同分 → 留 ${(await s.all()).map(x => x.id).sort().join(",")}`);
 	}
+
+	/**
+	 * **过期未清理的行不占容量名额。**
+	 *
+	 * 一条已过期、但「最近用过」的行：`lru`/`lfu` 的保留优先级最高，先前它会活下来
+	 * 并把一条活条目顶掉 —— 一条读路径上早已看不见的行，删掉了看得见的行。
+	 * 三个后端先前都是这个毛病，所以这一条不是回归测试，是新增的共同判据。
+	 */
+	await s.clear();
+	await s.put({ ...entry("过期但最近用过", "course:1", "h-x0", 21, ["n1"], 4_000), lastUsedAt: 4_999, useCount: 9 });
+	for (let i = 1; i <= 3; i++) {
+		await s.put({ ...entry(`活${i}`, "course:1", `h-x${i}`, 21 + i, ["n1"], null), lastUsedAt: 1_000 + i, useCount: 1 });
+	}
+	const survivors = (await s.all()).map(x => x.id).sort();
+	out.push(
+		policy === "rr"
+			? `${policy}: 过期行不占名额 → 留 ${survivors.length} 条，其中过期的还在吗=${survivors.includes("过期但最近用过") ? "**还在**" : "已收走"}`
+			: `${policy}: 过期行不占名额 → ${survivors.join(",")}`,
+	);
 
 	await s.clear();
 	return out;

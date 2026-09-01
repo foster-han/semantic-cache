@@ -92,7 +92,8 @@ await cache.purgeExpired();          // 删掉已过期的行，挂定时任务�
 | `cache.drop(ids=[...])` | `evict(id \| ids)` |
 | `cache.clear()` | `clear(scope)` — 见上，必须给 scope |
 | `filters` / `filter_expression` · `llm_string` | `ScopeResolver`（模型要不要进 key 由你决定） |
-| `cache.set_threshold(0.2)` | **故意没有** |
+| `cache.set_threshold(0.2)` · `cache_factor` | **故意没有** —— 阈值绑在 `Calibrated<>` 上 |
+| `cache_enable_func` · `cache: {no-cache, no-store}` | `CachePolicy`（读写正交、理由必填、`noStore` ⇒ 票据抛） |
 | GPTCache 的 session 并发去重 | `singleFlight`（默认开，仅进程内） |
 | — | `invalidateSource(id)`、⑤ 资料版本、⑥ 回答校验（主流都没有） |
 
@@ -159,6 +160,77 @@ SDK **不依赖 `pg`** —— `SqlExecutor` 只有一个 `query(text, values)`�
 阈值上的样本可能倒向另一边 —— **阈值在哪个后端上标定，就在哪个后端上验**。
 pgvector 没有 float8 的向量类型，这不是换写法能绕开的。
 
+## 决定哪些请求不走缓存
+
+有一类问题是**从来就不该被写进缓存**的：「那第二个呢」（离开这次对话，问题本身就不
+完整）、「帮我提交作业」（是动作不是问答）。这类判定必须在六道闸**之前** —— 交给闸拦
+的话，要走完召回+检索+支撑度才发现不该用，而且拦不住写入，下次就是一次假命中。
+
+```ts
+import { createStructuralPolicy, combinePolicies } from "@jolli.ai/semantic-cache";
+
+const policy = createStructuralPolicy({
+  bypassWhen:   { needsHistory: "依赖对话上下文", hasSideEffect: "是动作，应走 plan" },
+  noCacheWhen:  { regenerate: "学生要求重新回答" },
+  noStoreWhen:  { openEnded: "开放生成，没有唯一答案" },
+  shortTtlWhen: { timeSensitive: 10 * 60_000 },
+  // 调用类型白名单。下面这行是默认值，不写也一样
+  allowedCallTypes: ["completion", "responses", "anthropic_messages"],
+});
+
+createSemanticCache({ /* … */, policy });
+```
+
+两个开关**正交**，借的是 HTTP `Cache-Control` 的语义：
+
+| `noCache` | `noStore` | 行为 | 场景 |
+|---|---|---|---|
+| — | — | 查、命中就复用；没命中就生成并存 | 绝大多数问题 |
+| ✓ | ✓ | 不查、生成、不存 | 「那第二个呢」 |
+| ✓ | — | 不查、强制生成、**写回替换旧的** | 「重新回答」 |
+| — | ✓ | 照常查，没命中就生成但不存 | 「出五道练习题」 |
+
+第三行是一个布尔开关表达不出来的：学生嫌答案简略点了「重新回答」，必须跳过查询
+（不然原样再吐一遍），但新答案该写回去替换旧的 —— 一个人的一次不满意变成对所有人
+的改进。**注意 key 不变**（还是原来那个问题），所以写入时旧条目被自动替换；
+如果重生成时改了问法，用 `WriteOptions.supersedes` 显式指定要替换哪条。
+
+### 只有 chat 形态该走语义缓存
+
+`allowedCallTypes` 是个白名单，默认只含 `completion` / `responses` /
+`anthropic_messages`（`DEFAULT_SEMANTIC_CALL_TYPES`，异步的 `a` 前缀变体自动认）。
+调用方在 `context.callType` 里标这次是什么调用，不在列的直接 `noCache` + `noStore`。
+
+判据是**输出是不是输入的确定函数**：
+
+| 调用类型 | 输出确定吗 | 该走哪种缓存 |
+|---|---|---|
+| `completion` / `responses` / `anthropic_messages` | ❌ 有采样 | **语义缓存** —— 才需要六道闸 |
+| `embedding` | ✅ 同文本 → 同向量 | 精确缓存（内容哈希） |
+| `rerank` | ✅ 同 query+文档集 → 同分数 | 精确缓存 |
+| `transcription` | ✅ 同文件 → 同转写 | 精确缓存（文件哈希） |
+| `text_completion` | — | 老式接口 |
+
+**被排除不等于不该缓存,恰恰相反。**后四类走精确缓存是零假命中风险、命中即赚的一档，
+应该先吃满 —— 它们只是不该走**这一层**。拿相似度去匹配 embedding，等于用「差不多的
+文本」换一个「差不多的向量」，正好摧毁向量本身的意义；两段「相似」的音频也不是同一段。
+
+用白名单而不是黑名单：漏配一个新出现的调用类型，后果是「这类没走语义缓存」（少一次
+命中，便宜），而不是「一类不该语义匹配的东西被语义匹配了」（错答案，贵）。
+
+没标 `callType` 时默认**放行** —— 这个库的入口只有 `resolve(prompt, generate)`，
+本来就只处理 chat 形态。如果你把多种调用都路由到这一层，打开 `requireCallType: true`：
+那时「忘了标」会静默走完语义匹配，和「标成 embedding」的后果完全不同。
+
+**`noStore` 生效时写入的三条路全堵死**：`prepareWrite()` 和 `prepareTicket()` 拒发票据，
+而 `write()` / `writeMany()` 不带票据时会自己再查一次策略 —— 不是「这次不写」，是写不进去。
+（`write` 的票据是可选的，只堵前两条等于留了一扇正门。）主流框架这一层都是"调用方自觉"。
+
+信号从 `prompt.context` 读。默认实现**不内置任何关键词** —— 「现在/今天/最新」那类
+词表漏一条就是持续的错答案，中英文还各要一份。要加词表或分类器，自己写一个
+`CachePolicy`，用 `combinePolicies` 串上去（`noCache` / `noStore` 各自取第一个理由，
+TTL 取最短）。
+
 ## 上线前：判别力自检
 
 ```ts
@@ -173,6 +245,31 @@ assertDiscriminates(report);   // 分不开就抛，别让任务错配的模型�
 
 `margin = 正例最低分 − 负例最高分`。大于 0 才说明两组可分。
 **把它放进 CI**：这是唯一能在上线前抓到任务错配的手段，十分钟的事。
+
+### 探针从上传的资料自动生成
+
+手写探针在产品里不成立 —— 老师传什么、学生问什么都事先不知道。但资料上传的那一刻
+语料就在手上了：
+
+```ts
+import { generateProbes, checkPairEncoder } from "@jolli.ai/semantic-cache";
+
+const report = await generateProbes(uploadedDocs, {
+  phrasing: async (concept, n) => askYourLLM(concept, n),   // 可选，产品已有 LLM 就接上
+});
+if (!report.usableFor.positives) { /* 只能检出假命中，检不出合法复用被误拒 */ }
+await checkPairEncoder(encoder, report.probes);
+// report.calibratedOn 直接填进 Calibrated.calibratedOn
+```
+
+探针按难度分四档：`identical`（逐字相同，天花板检查）、`paraphrase`（同一概念的不同
+问法）、`sibling`（**同一单元内**的不同概念 —— 难负例）、`distant`（跨单元，容易负例）。
+
+分档不是装饰：`L1 正则化` 与 `L2 正则化` 词汇几乎全重叠、意思不同，双编码器本来就
+分不开。混在一起算总 margin 会被容易那批撑得虚宽，把真正会造成假命中的那一档盖掉。
+
+**没有改写来源时不造正例**（模板造的「不同问法」字面上几乎相同，任何编码器都能过），
+**取样按内容哈希稳定**（同一批资料跑两次必须得到同一组探针）。
 
 **别用「分数跨度」代替 margin。** 跨度只看最大值减最小值，一个把「完全无关」打得比
 「同义改写」还高的打分器（顺序整个反过来、毫无用处）只要分数摊得开就能过关。
@@ -248,16 +345,76 @@ createPgVectorCacheStore({ ..., eviction: { policy: "fifo", capacity: 10000 } })
 ```ts
 import { createMetrics } from "@jolli.ai/semantic-cache";
 
-const metrics = createMetrics({ costPerGeneration: 0.0075 });
+const metrics = createMetrics({
+  costPerGeneration: 0.0075,
+  // 和 SupportStage.thresholds 同一组值 —— 有它才算得出「离阈值还有多远」
+  supportThresholds: { high: 0.967, low: 0.936 },
+});
 const t0 = Date.now();
 const result = await cache.resolve(prompt, generate);
 metrics.record({ result, ms: Date.now() - t0, segment: prompt.context.courseId });
 
 metrics.snapshot();
 // { requests, hits, misses, hitRate, byOutcome, missedAtGate,
-//   evictions: { bySourceVersion, byAnswerCheck },
+//   bypassedByReason,
+//   support: { onHit, onEvict, headroomP10, midBandRate },
+//   shadow: { requests, wouldReuse, wouldReuseRate },
+//   evictions: { total, bySourceVersion, byAnswerCheck },  ← 只数真删掉的
 //   latencyMs: { hit, miss }, saved, bySegment }
 ```
+
+### 命中率回答「省了多少」，支撑度分布回答「离翻车多远」
+
+一次支撑度 0.9990 的命中和一次 0.9675 的命中（θa高 0.967），在命中率上完全一样 ——
+但后者只比阈值高 0.0005，答案措辞一抖就翻到另一边。`support` 给四个数：
+
+- `onHit.p10` —— 最险的那批命中在哪。贴着 θa高 说明有一批是擦着线过的
+- `onEvict.max` —— **被 ⑥ 判负**的最高到哪。贴着 θa低 说明阈值太紧，正在杀合法复用
+  （影子模式下判负不删条目，但那次判定照样进这个分布 —— 否则影子模式就量不出
+  「上线后 ⑥ 会拦掉什么」）
+- `headroomP10` —— 余量（`onHit.p10 − high`）。**它往下掉比命中率下降更早**
+- `midBandRate` —— 落进微调带的比例。它涨说明真实分布在往阈值上靠
+
+**`evictions` 数的是「真删掉了几条」，不是「⑥ 判负了几次」。** 两者刻意不同源：
+⑥ 发 `exit` 的分支里有一半什么都没删 —— 检索没返回片段的「判不了」、答案没有资料
+依据不写入、中带微调失败、以及影子模式下的判负。要是从 `verdict === "exit"` 反推，
+**retriever 一次故障就会让看板报出满屏「⑥ 判负驱逐」而缓存一条没动** —— 那正好把
+「一次故障不改变缓存状态」这条不变量从最可信的那一侧（看板）打穿。判负次数看
+`missedAtGate[6]` 与 `support.onEvict.count`，删除次数看 `evictions`。
+
+**`saved.generations` 只数 `exact + reuse`，不含 `refine`。** 微调复用了旧答案，
+但它确实跑了一次短生成 —— 记成整次省下就是把节省报高，而中带占比一旦上去
+（`midBandRate` 正是看这个），报高的幅度就不是零头。refine 的次数在
+`byOutcome.refine` 里，想按短生成的单价折算用它自己乘：长短两种生成的单价不一样，
+库不替你假设那个比例。
+
+这就是 FINDINGS 里「不需要标注就能做的检验」（看分数直方图、看空隙有没有被填满）
+的**线上版本**，而且免费 —— ⑥ 每次命中本来就算这个数，先前算完就扔了。
+**这四个数变坏的时候，命中率可能还在涨**：分布整体上漂 → 越线的更多 → 命中率升、
+假命中也升。只看命中率会以为一切在变好。
+
+## 影子模式：上线前先在真实流量上跑判定
+
+```ts
+createSemanticCache({ /* … */, shadow: true });
+```
+
+闸照常全跑、真未命中照常写入（缓存要暖得起来），但**从不复用** —— 每次都真生成，
+真实判定放在 `CacheResult.wouldReuse` / `LookupResult.wouldHave` 里，配
+`metrics.snapshot().shadow.wouldReuseRate` 看「真开了能命中多少」，配上面的支撑度
+分布看「那些命中有多险」。
+
+读路径在影子模式下**严格只读**：不驱逐、不 touch、被降级的命中不写回。
+⑤⑥ 判负是破坏性的，而影子模式的目的恰恰是检验它们判得对不对 ——
+一边评估一边按评估结果删数据，等于用没验证过的判据毁掉证据。
+
+从 lab 的标注场景集到生产之间，这是中间那一步：**场景集证明机制成立，
+影子模式证明它在你的流量上成立。**
+
+`byOutcome` 里 **`bypassed` 单独成一档**，配 `bypassedByReason` 按理由分组。并进
+`generated` 的话，一次策略绕开和一次「查了但没命中」在看板上完全一样，于是「上游
+某个信号一直是开的」只表现为命中率下降，查不出原因 —— 那正是主流框架里静默 no-op
+的病根。`missedAtGate` 不含绕开：它一道闸都没跑。
 
 零依赖，不碰时钟/网络/存储 —— 只吃 `CacheResult`，时间和分段键由你给。
 

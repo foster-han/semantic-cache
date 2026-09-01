@@ -1,4 +1,5 @@
 import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
+import { LFU_COUNT_CAP } from "./EvictionOrder.ts";
 import type { EvictionConfig } from "./types/Eviction.ts";
 import type { SqlExecutor } from "./types/SqlExecutor.ts";
 
@@ -55,8 +56,20 @@ function assertIdentifier(table: string): void {
 	}
 }
 
-/** pgvector 的文本输入格式就是 `[1,2,3]`，不需要额外依赖来序列化。 */
+/**
+ * pgvector 的文本输入格式就是 `[1,2,3]`，不需要额外依赖来序列化。
+ *
+ * NaN / Infinity 先拦下来：拼进 SQL 的话由 pgvector 抛一个底层解析错，
+ * 堆栈里看不出真正的原因是编码器返回了非有限数。
+ */
 function toVectorLiteral(vector: ReadonlyArray<number>): string {
+	const bad = vector.findIndex(v => !Number.isFinite(v));
+	if (bad !== -1) {
+		throw new Error(
+			`向量第 ${bad} 维是 ${String(vector[bad])}，不是有限数。多半是编码器返回了 NaN —— ` +
+				"零向量、空输入、维度不匹配的池化都会导致它，先查编码器而不是查这里。",
+		);
+	}
 	return `[${vector.join(",")}]`;
 }
 
@@ -65,8 +78,23 @@ function fromVectorLiteral(value: unknown): Array<number> {
 	if (value === null || value === undefined) return [];
 	if (Array.isArray(value)) return value.map(Number);
 	if (typeof value !== "string") return [];
-	const parsed: unknown = JSON.parse(value);
-	return Array.isArray(parsed) ? parsed.map(Number) : [];
+	/**
+	 * **一条脏行不该让整个读路径炸掉。**
+	 *
+	 * pgvector 自己写出来的永远是合法字面量，但这一列不只有它写过 —— 手工改数据、
+	 * 逻辑复制、老迁移脚本都碰得到。裸 `JSON.parse` 抛的是个 SyntaxError，堆栈里
+	 * 看不出是哪张表哪一行，而调用方拿到的是「整次请求失败」而不是「少了一条候选」。
+	 *
+	 * 返回空向量的后果良性且可见：召回相似度是 SQL 算的（`1 - (match_vector <=> q)`），
+	 * 不看这个值；答案向量为空时 ⑥ 走「判不了」—— 本次不复用，但也不驱逐。
+	 * 和「缺证据不是有罪」是同一族取舍。
+	 */
+	try {
+		const parsed: unknown = JSON.parse(value);
+		return Array.isArray(parsed) ? parsed.map(Number) : [];
+	} catch {
+		return [];
+	}
 }
 
 function readString(row: Record<string, unknown>, key: string): string {
@@ -145,13 +173,21 @@ export function createPgVectorCacheStore(
 	 * 「删哪一条」就成了实现细节，三种后端会给出不同答案。`rr` 例外，
 	 * 它的语义就是随机。
 	 *
-	 * `lfu` 在次数相同时退到 LRU：纯 LFU 会让早期攒够次数的老条目永远赖着不走。
+	 * `lfu` 在次数相同时退到 LRU：纯 LFU 会让早期攒够次数的老条目永远赖着不走。	 *
+	 * **没记过账的条目按「用过一次」算，不是零次。**写入本身就是一次使用；算零次的话
+	 * 它在保留优先级里排到所有被 touch 过的条目之后，于是 scope 满员时**新写进去的
+	 * 条目会被自己触发的那次淘汰立刻删掉** —— `resolve` 返回的 entryId 指向一条已经
+	 * 不存在的记录，而那个问题在这个 scope 里永远立不住。算一次之后它与「只用过一次」
+	 * 的老条目打平，再由 LRU 破平（新的胜出）。
+	 *
+	 * 这只解掉「新条目进不来」那一半；「用得多的老条目压着新条目」是 LFU 固有的，
+	 * 要衰减才治得了，这里没做。
 	 */
 	const keepOrderSql =
 		eviction?.policy === "lru"
 			? "COALESCE(last_used_at, created_at) DESC, id DESC"
 			: eviction?.policy === "lfu"
-				? "COALESCE(use_count, 0) DESC, COALESCE(last_used_at, created_at) DESC, id DESC"
+				? `LEAST(COALESCE(use_count, 1), ${LFU_COUNT_CAP}) DESC, COALESCE(last_used_at, created_at) DESC, id DESC`
 				: eviction?.policy === "rr"
 					? "random()"
 					: "created_at DESC, id DESC";
@@ -193,6 +229,39 @@ export function createPgVectorCacheStore(
 				);
 			}
 		}
+	}
+
+	/**
+	 * 压回容量上限。**`put` 与 `evictOverCapacity` 共用这一条** —— 先前两处逐字重复，
+	 * 改保留优先级时漏掉一处，就是「写入时按 A 淘汰、显式调用时按 B 淘汰」的静默不一致。
+	 *
+	 * `ORDER BY <保留优先级> OFFSET capacity` 选出的正是「超出上限的那些」：
+	 * 少一次往返，也避免 COUNT 与 DELETE 之间的竞态。
+	 *
+	 * **容量数的是活行。** 前一半 `UNION` 先收掉这个 scope 里已过期、只是还没被
+	 * `purgeExpired` 收走的行；后一半只在活行里排保留优先级。先前不分活死，于是
+	 * 一条过期行占着一个名额把活条目顶掉，而 `ORDER BY` 根本不看 `expires_at` ——
+	 * 那条过期行只要 `last_used_at` 够新就能接着顶掉好几条。内存与 Redis 后端
+	 * 先前是同一个毛病，三处一起改。
+	 *
+	 * 仍然是一条语句一次往返：两半集合互斥，`UNION` 只是把它们拼起来。
+	 */
+	async function evictOverCapacityIn(scope: string): Promise<number> {
+		if (!eviction) return 0;
+		const done = await sql.query(
+			`DELETE FROM ${table} WHERE id IN (
+			   SELECT id FROM ${table}
+			     WHERE scope = $1 AND expires_at IS NOT NULL AND expires_at <= $3
+			   UNION
+			   SELECT id FROM (
+			     SELECT id FROM ${table}
+			       WHERE scope = $1 AND (expires_at IS NULL OR expires_at > $3)
+			       ORDER BY ${keepOrderSql} OFFSET $2
+			   ) AS over_capacity
+			 )`,
+			[scope, eviction.capacity, now()],
+		);
+		return done.rowCount ?? 0;
 	}
 
 	return {
@@ -301,15 +370,7 @@ export function createPgVectorCacheStore(
 					entry.useCount ?? null,
 				],
 			);
-			if (eviction) {
-				await sql.query(
-					`DELETE FROM ${table} WHERE id IN (
-					   SELECT id FROM ${table} WHERE scope = $1
-					   ORDER BY ${keepOrderSql} OFFSET $2
-					 )`,
-					[entry.scope, eviction.capacity],
-				);
-			}
+			if (eviction) await evictOverCapacityIn(entry.scope);
 		},
 
 		async evict(id) {
@@ -327,27 +388,13 @@ export function createPgVectorCacheStore(
 			if (eviction?.policy !== "lru" && eviction?.policy !== "lfu") return;
 			// 条目可能刚被并发驱逐 —— 0 行受影响就是正常结果，不抛
 			await sql.query(
-				`UPDATE ${table} SET last_used_at = $2, use_count = COALESCE(use_count, 0) + 1 WHERE id = $1`,
+				`UPDATE ${table} SET last_used_at = $2, use_count = COALESCE(use_count, 1) + 1 WHERE id = $1`,
 				[id, now()],
 			);
 		},
 
-		/**
-		 * 一条语句压回容量，不先 COUNT。
-		 *
-		 * `ORDER BY <保留优先级> OFFSET capacity` 选出的正是「超出上限的那些」——
-		 * 少一次往返，也避免 COUNT 与 DELETE 之间的竞态。
-		 */
 		async evictOverCapacity(scope) {
-			if (!eviction) return 0;
-			const done = await sql.query(
-				`DELETE FROM ${table} WHERE id IN (
-				   SELECT id FROM ${table} WHERE scope = $1
-				   ORDER BY ${keepOrderSql} OFFSET $2
-				 )`,
-				[scope, eviction.capacity],
-			);
-			return done.rowCount ?? 0;
+			return evictOverCapacityIn(scope);
 		},
 
 		async purgeExpired() {

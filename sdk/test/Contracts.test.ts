@@ -82,7 +82,7 @@ function buildWith(blank: { recall?: string; support?: string; rerank?: string }
 		rerank,
 		store: createMemoryCacheStore(),
 		retriever: { async retrieve() { return []; } },
-		scope: () => "course:1",
+		scope: () => ({ key: "course:1", shared: true, org: "org:1" }),
 		sourceVersion: () => "v1",
 	});
 }
@@ -95,11 +95,20 @@ test("cosine 的维度检查 —— 混用两个模型角色的输出必须炸�
 	assert.equal(cosine([0, 0, 0], [1, 0, 0]), 0);
 });
 
-test("normalizeKey 去空白、统一大小写、去句末标点；hashKey 稳定", () => {
+test("normalizeKey 折叠空白、统一大小写、去句末标点；hashKey 稳定", () => {
 	assert.equal(normalizeKey("  什么是过拟合？ "), "什么是过拟合");
-	assert.equal(normalizeKey("What Is Overfitting?"), "whatisoverfitting");
+	assert.equal(normalizeKey("What Is Overfitting?"), "what is overfitting");
 	assert.equal(normalizeKey("同一句话！！"), "同一句话");
 	assert.equal(normalizeKey("句中。的标点不动"), "句中。的标点不动");
+	// 多个空白折叠成一个，不是删掉
+	assert.equal(normalizeKey("what   is\tover fitting"), "what is over fitting");
 	assert.equal(hashKey("abc"), hashKey("abc"));
-	assert.notEqual(hashKey("abc"), hashKey("abd"));
+	assert.notEqual(hashKey("abd"), hashKey("abc"));
+});
+
+test("空白折叠而非删除：英文里两个不同的问题不能归成同一个 key", () => {
+	// 全删空白时这两句会撞成 "whatisoverfitting" —— ② 的「零假命中」就没了，
+	// 而且 ③ 的碰撞复核用的是同一个 normalizeKey，挡不住这类合并
+	assert.notEqual(normalizeKey("what is over fitting"), normalizeKey("what is overfitting"));
+	assert.notEqual(hashKey(normalizeKey("a nice cache")), hashKey(normalizeKey("anice cache")));
 });

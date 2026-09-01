@@ -88,7 +88,10 @@ const cache = createSemanticCache({
 	store,
 	retriever,
 	// PII 门控就写在这里：检出实体 → 个人隔离，否则同课共享
-	scope: (prompt: CachePrompt) => (prompt.context.pii === "1" ? `user:${prompt.context.userId}` : "course:ml101"),
+	scope: (prompt: CachePrompt) =>
+		prompt.context.pii === "1"
+			? { key: `user:${prompt.context.userId}`, shared: false, org: "acme" }
+			: { key: "course:ml101", shared: true, org: "acme" },
 	sourceVersion: ids => ids.map(id => `${id}v${docs.get(id)?.version ?? "?"}`).join(","),
 	ttlMs: null,
 });
@@ -170,7 +173,7 @@ const planCache = createSemanticCache({
 	store,
 	retriever,
 	// 共享 scope，且声明已脱敏 —— 对 plan 来说这正是想要的
-	scope: () => ({ key: "course:ml101", shared: true }),
+	scope: () => ({ key: "course:ml101", shared: true, org: "acme" }),
 	sourceVersion: () => "-",
 	ttlMs: null,
 });
