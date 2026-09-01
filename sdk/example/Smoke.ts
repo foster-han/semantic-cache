@@ -268,7 +268,11 @@ must(seeded.length === 3 && (await store.all()).length === 3, "批量写入该�
 /* 7. 批量删除与按 scope 清空 */
 await cache.evict(seeded.slice(0, 2).map(e => e.id));
 console.log(`evict(2 条)     剩余 ${(await store.all()).length} 条`);
-console.log(`clear(course:ml101)  删掉 ${await cache.clear("course:ml101")} 条　剩余 ${(await store.all()).length} 条`);
+// clear 收 { org, key }：先前这里传的是 "course:ml101"，少了 org，于是这一行
+// 一直在打印「删掉 0 条」而 smoke 照样通过 —— 正是这个库要消除的那种静默失效
+const cleared = await cache.clear({ org: "acme", key: "course:ml101" });
+console.log(`clear(course:ml101)  删掉 ${cleared} 条　剩余 ${(await store.all()).length} 条`);
+must(cleared === 1, "clear 该删掉那条仅剩的条目");
 
 /* 8. 票据配错 prompt → 当场拒绝，而不是写出一条读不回来的缓存 */
 const ticketFor过拟合 = await (await cache.lookup({ matchText: "什么是过拟合？", retrievalText: "什么是过拟合？", context: {} })).prepareWrite();

@@ -75,6 +75,38 @@ test("策略绕开单独成一档，并按理由分组 —— 不能混进 gener
 	assert.deepEqual(s.bypassedByReason, { 依赖对话上下文: 2, 有副作用: 1 });
 	// missedAtGate 只认真正跑过闸的：绕开一道闸都没跑
 	assert.deepEqual(s.missedAtGate, { 3: 1 });
+	// 总数上也不能混：misses 只数「查了但没命中」，命中率的分母是「真的查了的」
+	assert.equal(s.requests, 4);
+	assert.equal(s.attempted, 1);
+	assert.equal(s.misses, 1, "3 次绕开不是 3 次未命中");
+	assert.equal(s.hitRate, 0);
+});
+
+test("绕开不许稀释命中率 —— 一个绕开大半流量的策略会让缓存看起来什么都命中不了", () => {
+	const m = createMetrics();
+	m.record({ result: result("exact"), ms: 5 });
+	for (let i = 0; i < 9; i++) m.record({ result: result("bypassed", null, [], "有副作用"), ms: 500 });
+	const s = m.snapshot();
+	// 先前：misses 9、hitRate 0.1、未命中延迟 p50 500ms —— 三个数全是绕开撑出来的
+	assert.equal(s.misses, 0, "一次都没「查了没命中」");
+	assert.equal(s.hitRate, 1, "查过的那一次命中了");
+	assert.equal(s.attempted, 1);
+	// requests = hits + misses + bypassed，三个数对得上
+	assert.equal(s.requests, s.hits + s.misses + s.byOutcome.bypassed);
+	assert.equal(s.latencyMs.miss.count, 0);
+	assert.equal(s.latencyMs.bypassed.count, 9, "绕开自成一档：它是「什么缓存都不用」的基线");
+	assert.equal(s.latencyMs.bypassed.p50, 500);
+});
+
+test("分段命中率的分母同样是「真的查了的」—— 否则两个命中率会打架", () => {
+	const m = createMetrics();
+	m.record({ result: result("reuse"), segment: "course:ml101" });
+	m.record({ result: result("bypassed", null, [], "有副作用"), segment: "course:ml101" });
+	m.record({ result: result("bypassed", null, [], "有副作用"), segment: "course:ml101" });
+	const s = m.snapshot();
+	assert.equal(s.bySegment[0].requests, 3);
+	assert.equal(s.bySegment[0].bypassed, 2);
+	assert.equal(s.bySegment[0].hitRate, 1, "查过的那一次命中了，不是 1/3");
 });
 
 test("未命中按闸分类 —— 三种未命中的处置完全不同，混成一个数就没用了", () => {
@@ -204,9 +236,12 @@ test("reset 清空一切", () => {
 	const m = createMetrics({ costPerGeneration: 1 });
 	m.record({ result: result("reuse"), ms: 5, segment: "s" });
 	m.record({ result: result("generated", 6, exitAt(6)), ms: 500 });
+	m.record({ result: result("bypassed", null, [], "有副作用"), ms: 700 });
 	m.reset();
 	const s = m.snapshot();
 	assert.equal(s.requests, 0);
+	assert.equal(s.attempted, 0);
+	assert.equal(s.latencyMs.bypassed.count, 0);
 	assert.equal(s.hits, 0);
 	assert.equal(s.evictions.total, 0);
 	assert.equal(s.latencyMs.miss.count, 0);
@@ -341,4 +376,30 @@ test("影子模式：⑥ 判负但不删 —— 驱逐数是 0，支撑度分布
 	assert.equal((await h.store.all()).length, 1, "影子模式一条都不删");
 	assert.deepEqual(s.evictions, { total: 0, bySourceVersion: 0, byAnswerCheck: 0 });
 	assert.equal(s.support.onEvict.count, 1, "判负那次的支撑度要留下");
+});
+
+test("影子模式：「本会命中」的支撑度要进 onHit —— 否则影子模式量不出「那些命中有多险」", async () => {
+	/**
+	 * 影子模式下 `outcome` 恒为 `generated`，按 outcome 认命中的话这一栏是空的，
+	 * 于是 `headroomP10` / `midBandRate` 全是空 —— 而影子模式的用处恰恰是上线前
+	 * 先看一眼那些命中离阈值多近。⑥ 判出来的那个分数，本会命中和真命中在分布上
+	 * 是同一个点；出口侧（onEvict）先前就是这么认的，入口侧漏了。
+	 */
+	const h = harness({ shadow: true, passage: { A: forCosine(0.95), "CHUNK n1": [...BASE] }, support: { high: 0.9, low: 0.8 } });
+	await h.cache.write(P, { kind: "answer", answer: "A", sourceIds: ["n1"] });
+	const m = createMetrics({ supportThresholds: { high: 0.9, low: 0.8 } });
+	const result = await h.cache.resolve(P, answering("影子里新生成的"));
+	m.record({ result });
+	const s = m.snapshot();
+
+	assert.equal(result.outcome, "generated", "影子模式永远不复用");
+	assert.equal(result.wouldReuse, true);
+	assert.equal(s.support.onHit.count, 1, "本会命中的那次支撑度必须留下");
+	assert.notEqual(s.support.headroomP10, null, "有样本就该算得出余量");
+	assert.ok(Math.abs((s.support.headroomP10 ?? 0) - (0.95 - 0.9)) < 1e-6);
+	assert.equal(s.support.midBandRate, 0, "0.95 在高档之上，不在微调带里");
+	// 但它不许进真实命中的那几个数：实际发生的是一次生成
+	assert.equal(s.hits, 0);
+	assert.equal(s.hitRate, 0);
+	assert.equal(s.shadow.wouldReuseRate, 1, "「本会命中多少」在这里，不在 hitRate 里");
 });

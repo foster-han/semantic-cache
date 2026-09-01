@@ -8,7 +8,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
-import { composeScope } from "../src/Scope.ts";
 import type { CacheEntry } from "../src/types/CacheStore.ts";
 import type { CachedPayload } from "../src/types/Pipeline.ts";
 import { harness } from "./Fakes.ts";
@@ -40,6 +39,36 @@ test("writeMany 是两次批量编码，不是 2N 次单条调用", async () => 
 	assert.equal((await store.all()).length, 3);
 	assert.equal(counts.questions, 1, "三条的召回向量应当一次编完");
 	assert.equal(counts.passage, 1, "三条的答案向量也是一次");
+});
+
+test("writeMany 的版本指纹按 sourceIds 去重 —— 批量回填常常整批共用一组资料", async () => {
+	let calls = 0;
+	const seen: Array<string> = [];
+	const { cache } = harness({
+		sourceVersion: ids => {
+			calls += 1;
+			seen.push(ids.join(","));
+			return `v-${ids.join(",")}`;
+		},
+	});
+	const written = await cache.writeMany(
+		[
+			{ q: "问题 1", src: ["n1", "n2"] },
+			{ q: "问题 2", src: ["n1", "n2"] },
+			{ q: "问题 3", src: ["n1", "n2"] },
+			{ q: "问题 4", src: ["n9"] },
+		].map(x => ({
+			prompt: { matchText: x.q, retrievalText: x.q, context: {} },
+			payload: { kind: "answer" as const, answer: "a", sourceIds: x.src },
+		})),
+	);
+	assert.equal(calls, 2, "两组不同的 sourceIds，就该只调两次");
+	assert.deepEqual(seen.sort(), ["n1,n2", "n9"]);
+	// 去重不能把指纹弄串：每条要拿到自己那一组的值
+	assert.deepEqual(
+		written.map(e => e.sourceVersion),
+		["v-n1,n2", "v-n1,n2", "v-n1,n2", "v-n9"],
+	);
 });
 
 test("per-entry ttlMs 覆盖全局；null 表示不过期", async () => {
@@ -165,8 +194,8 @@ test("失效：evict 收数组、clear 按 scope、invalidateSource 按资料 id
 	);
 	assert.equal(await cache.invalidateSource("n1"), 2, "引用过这篇资料的都该失效");
 	assert.equal((await store.all()).length, 1);
-	// clear 收的是组合后的 scope —— 别在测试里手拼，用同一个函数
-	assert.equal(await cache.clear(composeScope("org:1", "course:2")), 1);
+	// clear 收 { org, key }，拼接由库做 —— 传字符串是先前那种「删 0 条不报错」的写法
+	assert.equal(await cache.clear({ org: "org:1", key: "course:2" }), 1);
 	assert.equal((await store.all()).length, 0);
 
 	await cache.writeMany(

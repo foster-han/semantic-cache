@@ -32,7 +32,20 @@ const DEFAULT_LIMITS: Readonly<Record<ProbeTier, number>> = {
 	distant: 8,
 };
 
-/** 按内容哈希稳定排序后取前 `limit` 条。同一批输入必然得到同一组输出。 */
+/**
+ * 按内容哈希稳定排序后取前 `limit` 条。**同一批资料必然得到同一组输出，与实参
+ * 顺序无关** —— 调用方那边先按 id 定了序，理由见 `generateProbes` 里那段注释。
+ *
+ * **`key` 的分隔符必须是文本里不可能出现的字符。**用 `|` 拼的话，
+ * `(a="x|y", b="z")` 和 `(a="x", b="y|z")` 会算出同一个排序键 —— 结果**仍然**
+ * 确定（JS 的 `Array.sort` 自 ES2019 起是稳定的，同键项保持原有相对次序），
+ * 但那是在拿一个语言版本的保证去兜一个本可以直接消除的歧义。
+ *
+ * 同一条「字段拼成一个键」的问题在别处后果重得多：`flightKey` 上是错答案、
+ * `composeScope` 上是跨租户读串。**两边的解法不同**，而且是有意的 —— `flightKey`
+ * 只活在进程内，用 `\u0000` 分隔最省；`composeScope` 要存进库、要人读，所以走转义。
+ * 这里跟 `flightKey` 同类，用前者。
+ */
 function takeStable<T>(items: ReadonlyArray<T>, limit: number, key: (item: T) => string): Array<T> {
 	if (items.length <= limit) return [...items];
 	return items
@@ -89,11 +102,21 @@ export async function generateProbes(
 		throw new Error(`phrasingsPerConcept=${perConcept} 造不出正例：一个概念至少要两种问法，才谈得上「同一件事的不同说法」。`);
 	}
 	const limits = { ...DEFAULT_LIMITS, ...options.limits };
-	const questions = await collectQuestions(sources, options.phrasing, perConcept);
+	/**
+	 * **先按 id 定序，再往下生成。**
+	 *
+	 * 负例对是 `i < j` 两两配出来的，所以实参顺序决定了同一对里谁是 `a` 谁是 `b` ——
+	 * 而 `takeStable` 的排序键就是 `[tier, a, b]`。同一批资料换个上传顺序，键就全变了，
+	 * 选出来的探针是**另一组**（8 篇同章资料、额度 20：正序与逆序选出的 20 对几乎不重叠）。
+	 * 于是「同一批输入必然得到同一组输出」只在数组逐位相同时成立，而标定跑的就是这组
+	 * 探针 —— 阈值会跟着上传顺序漂。id 唯一性上面已经查过，所以这个序是全序。
+	 */
+	const ordered = [...sources].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+	const questions = await collectQuestions(ordered, options.phrasing, perConcept);
 
 	const identical: Array<GeneratedProbe> = [];
 	const paraphrase: Array<GeneratedProbe> = [];
-	for (const source of sources) {
+	for (const source of ordered) {
 		const phrasings = questions.get(source.id) ?? [];
 		if (phrasings.length >= 1) {
 			identical.push({
@@ -122,9 +145,9 @@ export async function generateProbes(
 
 	const sibling: Array<GeneratedProbe> = [];
 	const distant: Array<GeneratedProbe> = [];
-	for (let i = 0; i < sources.length; i++) {
-		for (let j = i + 1; j < sources.length; j++) {
-			const [left, right] = [sources[i], sources[j]];
+	for (let i = 0; i < ordered.length; i++) {
+		for (let j = i + 1; j < ordered.length; j++) {
+			const [left, right] = [ordered[i], ordered[j]];
 			const sameUnit = left.unit === right.unit;
 			const probe: GeneratedProbe = {
 				label: `${sameUnit ? "同章不同概念" : "跨章"} · ${left.title} ／ ${right.title}`,
@@ -139,8 +162,9 @@ export async function generateProbes(
 		}
 	}
 
-	const pick = (tier: ProbeTier, pool: ReadonlyArray<GeneratedProbe>): Array<GeneratedProbe> =>
-		takeStable(pool, limits[tier], p => `${p.tier}|${p.a}|${p.b}`);
+	function pick(tier: ProbeTier, pool: ReadonlyArray<GeneratedProbe>): Array<GeneratedProbe> {
+		return takeStable(pool, limits[tier], p => [p.tier, p.a, p.b].join("\u0000"));
+	}
 	const chosen: Record<ProbeTier, Array<GeneratedProbe>> = {
 		identical: pick("identical", identical),
 		paraphrase: pick("paraphrase", paraphrase),

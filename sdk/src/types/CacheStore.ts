@@ -44,6 +44,10 @@ export interface Candidate {
  *
  * `searchNearest` 必须在库内做 pre-filter：只返回同一个 scope、且未过期的条目。
  * 过期行即使还没被清理也绝不能返回。
+ *
+ * 自己实现时另有三条硬要求（见 DESIGN.md）：`put` 遇 id 重复必须抛、`getByHash`
+ * 必须确定性取最新那条、向量里的非有限分量必须抛（用 `assertFiniteVector`，
+ * 静默落 0 或原样存下会让 ③ 的召回下限形同不存在）。
  */
 export interface CacheStore {
 	/**

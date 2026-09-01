@@ -1,5 +1,5 @@
 import { lfuCount } from "./EvictionOrder.ts";
-import { cosine } from "./VectorMath.ts";
+import { assertFiniteVector, cosine } from "./VectorMath.ts";
 import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
 import type { EvictionConfig } from "./types/Eviction.ts";
 
@@ -124,6 +124,8 @@ export function createMemoryCacheStore(options?: {
 			return live().find(e => e.id === id) ?? null;
 		},
 		async searchNearest(scope, vector, limit) {
+			// 非有限分量三个后端一律抛（理由见 assertFiniteVector）—— 这里不抛就是 ③ 恒放行
+			assertFiniteVector("查询向量", vector);
 			const scoped = live().filter(e => e.scope === scope);
 			const ranked: Array<Candidate> = scoped.map(entry => ({
 				entry,
@@ -139,6 +141,9 @@ export function createMemoryCacheStore(options?: {
 			if (entries.some(e => e.id === entry.id)) {
 				throw new Error(`缓存条目 id 重复：${entry.id}。id 由库生成，重复只可能是生成器碰撞。`);
 			}
+			// pgvector 在 toVectorLiteral 里、Redis 在 vectorArgs 里查同一件事
+			assertFiniteVector("matchVector ", entry.matchVector);
+			assertFiniteVector("answerVector ", entry.answerVector);
 			entries.push(entry);
 			trim(entry.scope);
 		},

@@ -1,5 +1,6 @@
 import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
 import { LFU_COUNT_CAP } from "./EvictionOrder.ts";
+import { assertFiniteVector } from "./VectorMath.ts";
 import type { EvictionConfig } from "./types/Eviction.ts";
 import type { SqlExecutor } from "./types/SqlExecutor.ts";
 
@@ -60,16 +61,11 @@ function assertIdentifier(table: string): void {
  * pgvector 的文本输入格式就是 `[1,2,3]`，不需要额外依赖来序列化。
  *
  * NaN / Infinity 先拦下来：拼进 SQL 的话由 pgvector 抛一个底层解析错，
- * 堆栈里看不出真正的原因是编码器返回了非有限数。
+ * 堆栈里看不出真正的原因是编码器返回了非有限数。检查本身在 `assertFiniteVector`，
+ * 三个后端共用一份 —— 先前只有这里抛，另两个后端各自静默处理了同一个输入。
  */
-function toVectorLiteral(vector: ReadonlyArray<number>): string {
-	const bad = vector.findIndex(v => !Number.isFinite(v));
-	if (bad !== -1) {
-		throw new Error(
-			`向量第 ${bad} 维是 ${String(vector[bad])}，不是有限数。多半是编码器返回了 NaN —— ` +
-				"零向量、空输入、维度不匹配的池化都会导致它，先查编码器而不是查这里。",
-		);
-	}
+function toVectorLiteral(name: string, vector: ReadonlyArray<number>): string {
+	assertFiniteVector(name, vector);
 	return `[${vector.join(",")}]`;
 }
 
@@ -235,8 +231,7 @@ export function createPgVectorCacheStore(
 	 * 压回容量上限。**`put` 与 `evictOverCapacity` 共用这一条** —— 先前两处逐字重复，
 	 * 改保留优先级时漏掉一处，就是「写入时按 A 淘汰、显式调用时按 B 淘汰」的静默不一致。
 	 *
-	 * `ORDER BY <保留优先级> OFFSET capacity` 选出的正是「超出上限的那些」：
-	 * 少一次往返，也避免 COUNT 与 DELETE 之间的竞态。
+	 * `ORDER BY <保留优先级> OFFSET capacity` 选出的正是「超出上限的那些」。
 	 *
 	 * **容量数的是活行。** 前一半 `UNION` 先收掉这个 scope 里已过期、只是还没被
 	 * `purgeExpired` 收走的行；后一半只在活行里排保留优先级。先前不分活死，于是
@@ -244,10 +239,21 @@ export function createPgVectorCacheStore(
 	 * 那条过期行只要 `last_used_at` 够新就能接着顶掉好几条。内存与 Redis 后端
 	 * 先前是同一个毛病，三处一起改。
 	 *
-	 * 仍然是一条语句一次往返：两半集合互斥，`UNION` 只是把它们拼起来。
+	 * **先数一次，没超就直接返回 0** —— 和 Redis 后端的 `sizeOf` 那一步同一个形状。
+	 * 先前这里无条件发 DELETE：容量以下也照样扫一遍 scope 收过期行，于是每次 `put`
+	 * 都在热路径上付一次删除，而内存与 Redis 在容量以下是零成本；`evictOverCapacity()`
+	 * 的返回值也因此分叉（pgvector 报过期行数，另两个报 0）。数的是**全部行**（含过期），
+	 * 跟另两个后端的压力判据一致 —— 过期行怎么处置由上面那半 `UNION` 决定，不由这里。
+	 *
+	 * 代价是 COUNT 与 DELETE 之间有一个窗口：这中间挤进来的写入要等下一次 `put` 才
+	 * 被压回容量。淘汰本来就是尽力而为的（`purgeExpired` 同理），而多留一条的后果
+	 * 只是内存占用，比每次写入都扫一遍便宜。
 	 */
 	async function evictOverCapacityIn(scope: string): Promise<number> {
 		if (!eviction) return 0;
+		const size = await sql.query(`SELECT count(*) AS n FROM ${table} WHERE scope = $1`, [scope]);
+		const total = size.rows.length === 0 ? 0 : readNumber(size.rows[0], "n");
+		if (total <= eviction.capacity) return 0;
 		const done = await sql.query(
 			`DELETE FROM ${table} WHERE id IN (
 			   SELECT id FROM ${table}
@@ -337,7 +343,7 @@ export function createPgVectorCacheStore(
 				 WHERE scope = $1 AND (expires_at IS NULL OR expires_at > $3)
 				 ORDER BY match_vector <=> $2::vector
 				 LIMIT $4`,
-				[scope, toVectorLiteral(vector), now(), limit],
+				[scope, toVectorLiteral("查询向量", vector), now(), limit],
 			);
 			return found.rows.map((row): Candidate => {
 				const similarity = readNumber(row, "similarity");
@@ -355,12 +361,12 @@ export function createPgVectorCacheStore(
 					entry.scope,
 					entry.matchText,
 					entry.matchHash,
-					toVectorLiteral(entry.matchVector),
+					toVectorLiteral("matchVector ", entry.matchVector),
 					entry.kind,
 					entry.answer,
 					JSON.stringify(entry.plan),
 					// plan 条目没有答案向量。pgvector 存不了 0 维，落 NULL
-					entry.answerVector.length === 0 ? null : toVectorLiteral(entry.answerVector),
+					entry.answerVector.length === 0 ? null : toVectorLiteral("answerVector ", entry.answerVector),
 					[...entry.sourceIds],
 					entry.sourceVersion,
 					entry.createdAt,

@@ -31,8 +31,8 @@ export interface CachePrompt {
 }
 
 /**
- * scope 决策。返回字符串即视为**共享** scope（保守默认）。
- * 要声明这是个只属于单个主体的隔离 scope，返回 `{ key, shared: false }`。
+ * scope 决策。三个字段都必填 —— 没有「返回一个字符串就算共享 scope」这种简写，
+ * 那会让 `org` 与 `shared` 变成可以忘掉的东西，而它们各自的失效都是静默的。
  *
  * PII 过滤留在 SDK 之上：库不认识 PII，只认这里返回的隔离边界。
  */
@@ -52,6 +52,15 @@ export interface ScopeDecision {
 	 */
 	readonly org: string;
 }
+/**
+ * 判这一次提问属于哪个隔离边界。
+ *
+ * **必须是 `prompt` 的纯函数。**决策只能来自参数（`context` 就是为此存在的），
+ * 不能从请求外的环境里读 —— AsyncLocalStorage 里的租户、请求头、模块级的
+ * 「当前用户」都不行。库把解析出来的 scope 放进了进程内合流键，所以一个不纯的
+ * resolver 会让两个租户的同一句话合流，后到的租户拿到前一个租户的答案。
+ * 需要租户信息就把它放进 `prompt.context`，让它成为请求的一部分。
+ */
 export type ScopeResolver = (prompt: CachePrompt) => Promise<ScopeDecision> | ScopeDecision;
 
 export type GateId = 1 | 2 | 3 | 4 | 5 | 6;

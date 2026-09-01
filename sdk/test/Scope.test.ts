@@ -45,6 +45,23 @@ test("同一个 key、不同 org 互不命中", async () => {
 	assert.equal(again.payload.kind === "answer" && again.payload.answer, "acme 的答案");
 });
 
+test("clear 收 { org, key } —— 传拼好的字符串是「删 0 条不报错」的那种写法", async () => {
+	const store = createMemoryCacheStore();
+	const { cache } = harness({ store, scope: () => ({ key: "course:ml101", shared: true, org: "acme" }) });
+	await cache.resolve(ASK, answering("acme 的答案"));
+	assert.equal((await store.all()).length, 1);
+
+	// 少了 org 的字符串先前删掉 0 条、返回 0、不报错 —— README 与 smoke 都是这么写的
+	await assert.rejects(
+		() => cache.clear("course:ml101" as unknown as { org: string; key: string }),
+		/clear\(\) 收的是 \{ org, key \}/u,
+	);
+	assert.equal((await store.all()).length, 1, "抛之前不该删掉任何东西");
+
+	assert.equal(await cache.clear({ org: "acme", key: "course:ml101" }), 1);
+	assert.equal((await store.all()).length, 0);
+});
+
 test("③ 复核候选的 scope —— 存储层 pre-filter 失效时不能把别人的条目复用出去", async () => {
 	const inner = createMemoryCacheStore();
 	// 一个「坏存储」：searchNearest 无视 scope，把所有条目都返回

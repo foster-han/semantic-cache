@@ -26,9 +26,11 @@ const cache = createSemanticCache({
 
   store: createMemoryCacheStore(),          // 或 createPgVectorCacheStore({ sql: pool, dimensions })
   retriever: yourExistingRagRetriever,      // 你自己的检索，库不实现
-  scope: prompt => prompt.redacted                // PII 策略写在这里，库不认识 PII
-    ? { key: `user:${prompt.context.userId}`,   shared: false }
-    : { key: `course:${prompt.context.courseId}`, shared: true },
+  // PII 策略写在这里，库不认识 PII。三个字段都必填：org 漏了会静默跨租户，
+  // 所以库不接受「只给 key」的简写，也不让你自己拼这个字符串
+  scope: prompt => prompt.redacted
+    ? { org: prompt.context.orgId, key: `user:${prompt.context.userId}`,   shared: false }
+    : { org: prompt.context.orgId, key: `course:${prompt.context.courseId}`, shared: true },
   sourceVersion: ids => fingerprintOf(ids), // 必须是**引用资料级**的
 });
 
@@ -70,7 +72,7 @@ if (found.outcome === "miss") {
 await cache.writeMany(items);        // 批量预热/回填：两次批量编码，不是 2N 次单条调用
 await cache.get(entryId);            // 按 id 取回条目（只返回未过期的）
 await cache.evict(entryId);          // 删一条；也可以传一个 id 数组
-await cache.clear("course:ml101");   // 清一个 scope，返回删掉的条数
+await cache.clear({ org: "acme", key: "course:ml101" });  // 清一个 scope，返回删掉的条数
 await cache.invalidateSource("n5");  // 资料改版后按资料 id 批量失效
 await cache.purgeExpired();          // 删掉已过期的行，挂定时任务调；不影响正确性，只管存储占用
 ```
@@ -90,7 +92,7 @@ await cache.purgeExpired();          // 删掉已过期的行，挂定时任务�
 | `cache.store(prompt, response, metadata, ttl)` · `BaseCache.update` | `write(prompt, payload, { meta, ttlMs })` |
 | `cache.import_data(questions, answers)` | `writeMany(items)` |
 | `cache.drop(ids=[...])` | `evict(id \| ids)` |
-| `cache.clear()` | `clear(scope)` — 见上，必须给 scope |
+| `cache.clear()` | `clear({ org, key })` — 见上，必须给 scope，且由库来拼 |
 | `filters` / `filter_expression` · `llm_string` | `ScopeResolver`（模型要不要进 key 由你决定） |
 | `cache.set_threshold(0.2)` · `cache_factor` | **故意没有** —— 阈值绑在 `Calibrated<>` 上 |
 | `cache_enable_func` · `cache: {no-cache, no-store}` | `CachePolicy`（读写正交、理由必填、`noStore` ⇒ 票据抛） |
@@ -355,13 +357,19 @@ const result = await cache.resolve(prompt, generate);
 metrics.record({ result, ms: Date.now() - t0, segment: prompt.context.courseId });
 
 metrics.snapshot();
-// { requests, hits, misses, hitRate, byOutcome, missedAtGate,
+// { requests, attempted, hits, misses, hitRate, byOutcome, missedAtGate,
 //   bypassedByReason,
 //   support: { onHit, onEvict, headroomP10, midBandRate },
 //   shadow: { requests, wouldReuse, wouldReuseRate },
 //   evictions: { total, bySourceVersion, byAnswerCheck },  ← 只数真删掉的
-//   latencyMs: { hit, miss }, saved, bySegment }
+//   latencyMs: { hit, miss, bypassed }, saved, bySegment }
 ```
+
+**命中率的分母是 `attempted`（真的查了缓存的那些），不是 `requests`。**
+`requests = hits + misses + byOutcome.bypassed`，`misses` 只数「查了但没命中」。
+绕开的请求一道闸都没跑，算进分母的话，一个策略绕开了大半流量的部署在看板上就长得像
+「一个什么都命中不了的缓存」—— 那正是下面 `bypassedByReason` 要防的误读。延迟同理分三档：
+未命中付的是召回 + 检索 + 支撑度 + 生成，绕开只付生成，混在一起会把未命中报便宜。
 
 ### 命中率回答「省了多少」，支撑度分布回答「离翻车多远」
 
@@ -402,7 +410,9 @@ createSemanticCache({ /* … */, shadow: true });
 闸照常全跑、真未命中照常写入（缓存要暖得起来），但**从不复用** —— 每次都真生成，
 真实判定放在 `CacheResult.wouldReuse` / `LookupResult.wouldHave` 里，配
 `metrics.snapshot().shadow.wouldReuseRate` 看「真开了能命中多少」，配上面的支撑度
-分布看「那些命中有多险」。
+分布看「那些命中有多险」—— 影子模式下的「本会命中」会照常进 `support.onHit`
+（`headroomP10` / `midBandRate` 全靠它），但不进 `hits` / `hitRate`：那两个数记的是
+实际发生的事，而实际发生的是一次生成。
 
 读路径在影子模式下**严格只读**：不驱逐、不 touch、被降级的命中不写回。
 ⑤⑥ 判负是破坏性的，而影子模式的目的恰恰是检验它们判得对不对 ——

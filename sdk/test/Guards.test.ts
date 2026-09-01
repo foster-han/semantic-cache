@@ -16,6 +16,25 @@ const REDACTED = {
 const answer = async (): Promise<CachedPayload> => ({ kind: "answer", answer: "扣了 10 分", sourceIds: ["n1"] });
 const plan = async (): Promise<CachedPayload> => ({ kind: "plan", plan: { tool: "getGrade", assignment: "2" } });
 
+test("空白 matchText 拒收 —— 空串之间互为 ② 精确命中", async () => {
+	/**
+	 * `""` 与 `"   "` 归一化之后是同一个空串。上游只要有一次「prompt 拼装出来是空的」
+	 * 写进去，之后每一次空 prompt 都会**精确命中**它 —— 最可信的那条路，不过闸、
+	 * 不算相似度、trace 上一切正常。所以抛，而不是当未命中（当未命中会照常写入，
+	 * 等于把这条假命中的源头留在库里）。
+	 */
+	const { cache, store } = harness();
+	const blank = { matchText: "   ", retrievalText: "x", context: {} };
+	await assert.rejects(() => cache.lookup(blank), /matchText 是空的/u);
+	await assert.rejects(() => cache.resolve({ ...blank, matchText: "" }, answer), /matchText 是空的/u);
+	await assert.rejects(
+		() => cache.write({ ...blank, matchText: "\t\n" }, { kind: "answer", answer: "a", sourceIds: ["n1"] }),
+		/matchText 是空的/u,
+	);
+	await assert.rejects(() => cache.prepareTicket(blank), /matchText 是空的/u);
+	assert.equal((await store.all()).length, 0, "一条都不该写进去");
+});
+
 test("脱敏 × 共享 scope × answer：直接抛错，并给出三条出路", async () => {
 	const { cache } = harness({ scope: () => ({ key: "course:1", shared: true, org: "org:1" }) });
 	await assert.rejects(cache.resolve(REDACTED, answer), (err: Error) => {

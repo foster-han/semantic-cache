@@ -47,6 +47,41 @@ test("N2 真正相同的请求仍然合流 —— 修分隔符不能把 singleFl
 	assert.equal(calls, 1);
 });
 
+test("N2 解析出来的 scope 必须在合流键里 —— 不纯的 resolver 会让两个租户合流", async () => {
+	/**
+	 * `ScopeResolver` 的契约是「prompt 的纯函数」，但那是契约不是校验 —— 而这个库
+	 * 对 ③ 的存储层 pre-filter 用的是同一条规矩（拿回来再复核一次 scope）。
+	 * 一个从请求外的环境读租户的 resolver（AsyncLocalStorage、请求头）会让两个租户的
+	 * 同一句话合流，后到的租户拿到前一个租户缓存里的答案。写路径有票据比 scope 挡着，
+	 * 读命中这条路先前没有任何东西挡。
+	 */
+	let tenant = "A";
+	let calls = 0;
+	const generate = async () => {
+		calls += 1;
+		// 序号要在 await 之前取好：两次生成都在等这 5ms，等完再读 calls 会都读到 2
+		const nth = calls;
+		await new Promise(r => setTimeout(r, 5));
+		return { kind: "answer" as const, answer: `第 ${nth} 次生成`, sourceIds: ["n1"] };
+	};
+	const { cache } = harness({ scope: () => ({ key: "course:1", shared: true, org: `org:${tenant}` }) });
+	const prompt = { matchText: "同一句话", retrievalText: "同一句话", context: {} };
+
+	// 并发：A 的请求先进来（此刻环境里的租户是 A），切到 B 之后第二个请求进来
+	const first = cache.resolve(prompt, generate);
+	tenant = "B";
+	const second = cache.resolve(prompt, generate);
+	const [a, b] = await Promise.all([first, second]);
+
+	// scope 不在键里时这两个请求会合流：只生成一次，后到者拿到前一个租户那次的结果
+	assert.equal(calls, 2, "两个租户的请求不能共用一次生成");
+	assert.notEqual(
+		a.payload.kind === "answer" && a.payload.answer,
+		b.payload.kind === "answer" && b.payload.answer,
+		"合流的话两边会是同一个答案对象",
+	);
+});
+
 /* ---------- N3：Outcome 扩展后的分类 ---------- */
 
 test("N3 bypassed 不是假命中 —— 它压根没查缓存", async () => {

@@ -86,6 +86,28 @@ test("同一批资料跑两次必须得到同一组探针 —— 否则 calibrat
 	assert.equal(first.counts.sibling, 20);
 });
 
+test("换个上传顺序必须还是同一组探针 —— 否则阈值跟着上传顺序漂", async () => {
+	/**
+	 * 负例对是 `i < j` 配出来的，所以实参顺序决定同一对里谁是 `a` 谁是 `b`，
+	 * 而 `takeStable` 的排序键就是 `[tier, a, b]`：先前把资料倒序传进来，选出的
+	 * 20 对同章负例和正序几乎不重叠 —— 而标定跑的就是这组探针。
+	 */
+	const many: Array<ProbeSource> = Array.from({ length: 8 }, (_, i) => ({
+		id: `d${i}`,
+		unit: "ch1",
+		title: `概念 ${i}`,
+		questions: [`什么是概念 ${i}？`, `概念 ${i} 怎么理解？`],
+	}));
+	const forward = await generateProbes(many);
+	const reversed = await generateProbes([...many].reverse());
+	// 8 篇同章共 28 对，截到 20 —— 必须是同样的 20 对
+	assert.equal(forward.counts.sibling, 20);
+	const pairs = (r: Awaited<ReturnType<typeof generateProbes>>) =>
+		r.probes.map(p => `${p.tier}:${p.aDoc}/${p.bDoc}`).sort();
+	assert.deepEqual(pairs(forward), pairs(reversed));
+	assert.deepEqual(forward.probes, reversed.probes, "连顺序都该一样：库自己先按 id 定序");
+});
+
 test("每档额度可以单独调，难负例给得比容易负例多是默认", async () => {
 	const report = await generateProbes(COURSE, { limits: { distant: 2 } });
 	assert.equal(report.counts.distant, 2);

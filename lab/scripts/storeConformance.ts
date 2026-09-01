@@ -266,6 +266,19 @@ async function evictionRun(policy: "fifo" | "rr" | "lru" | "lfu", s: Inspectable
 			: `${policy}: 过期行不占名额 → ${survivors.join(",")}`,
 	);
 
+	/**
+	 * **容量以下显式调 `evictOverCapacity` 必须返回 0，三个后端一样。**
+	 *
+	 * 内存与 Redis 先「数一次，没超就返回」，pgvector 先前无条件发那条 DELETE ——
+	 * 于是容量以下它会顺手收掉过期行并把条数报回来（另两个报 0），而每次 `put` 都在
+	 * 热路径上白付一次删除。这条判据是那次分叉的锚：它不走 `put`，专挑「有过期行、
+	 * 但没超容量」这个只有显式调用才看得见的状态。
+	 */
+	await s.clear();
+	await s.put({ ...entry("过期未清理", "course:1", "h-y0", 31, ["n1"], 4_000), lastUsedAt: 4_999, useCount: 9 });
+	await s.put({ ...entry("活着的", "course:1", "h-y1", 32, ["n1"], null), lastUsedAt: 1_000, useCount: 1 });
+	out.push(`${policy}: 容量以下 evictOverCapacity 返回 ${await s.evictOverCapacity("course:1")}，剩 ${(await s.all()).length} 条`);
+
 	await s.clear();
 	return out;
 }

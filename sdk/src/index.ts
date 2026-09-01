@@ -5,7 +5,9 @@ export { createPgVectorCacheStore } from "./PgVectorCacheStore.ts";
 export type { PgVectorCacheStoreOptions } from "./PgVectorCacheStore.ts";
 export { createRedisVectorSetCacheStore } from "./RedisVectorSetCacheStore.ts";
 export type { RedisVectorSetCacheStoreOptions } from "./RedisVectorSetCacheStore.ts";
-export { cosine, hashKey, normalizeKey } from "./VectorMath.ts";
+// assertFiniteVector 导出是给自己实现 CacheStore 的人用的：非有限分量必须抛，
+// 静默落 0 或原样存下会让 ③ 的召回下限形同不存在（三个内置后端走的都是它）
+export { assertFiniteVector, cosine, hashKey, normalizeKey } from "./VectorMath.ts";
 export { composeScope } from "./Scope.ts";
 export {
 	assertDiscriminates,

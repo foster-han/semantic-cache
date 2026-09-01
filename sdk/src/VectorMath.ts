@@ -18,6 +18,26 @@ export function cosine(a: ReadonlyArray<number>, b: ReadonlyArray<number>): numb
 }
 
 /**
+ * 非有限分量在这里一次性拦下。**三个后端必须是同一种行为。**
+ *
+ * 先前 pgvector 抛错、Redis 把分量静默写成 `0`、内存原样存下 NaN —— 同一个坏掉的
+ * 编码器在三个后端上三种症状，而内存那一种是**假命中**：NaN 进了 `cosine` 之后
+ * 相似度是 NaN，而 ③ 的 `similarity < floor` 对 NaN 恒为 false，召回下限形同不存在，
+ * 一个毫不相干的问题也能拿到复用。
+ *
+ * 选「抛」而不是「静默替换成 0」：编码器返回 NaN 是配置错误，不是能兜的输入 ——
+ * 和上面 `cosine` 的维度检查同一族取舍，那里也不肯给一个没有意义的数。
+ */
+export function assertFiniteVector(name: string, vector: ReadonlyArray<number>): void {
+	const bad = vector.findIndex(v => !Number.isFinite(v));
+	if (bad === -1) return;
+	throw new Error(
+		`${name}第 ${bad} 维是 ${String(vector[bad])}，不是有限数。多半是编码器返回了 NaN —— ` +
+			"零向量、空输入、维度不匹配的池化都会导致它，先查编码器而不是查这里。",
+	);
+}
+
+/**
  * 归一化缓存键：折叠空白、统一大小写、去掉句末标点。
  *
  * **空白是折叠成一个空格，不是删掉。**先前是全删，那在中文里无害（分词本来就不确定），

@@ -159,6 +159,28 @@ function assertReason(field: string, value: string | undefined): string | null {
 	return value;
 }
 
+/**
+ * 归一化之后的缓存键。**空白 `matchText` 在这里拦下。**
+ *
+ * `""` 与 `"   "` 归一化之后是同一个空串，于是它们互为 ② 精确命中：上游只要有一次
+ * 「prompt 拼装出来是空的」，之后每一次空 prompt 都会拿到那条答案，而且是**精确
+ * 命中**那条最可信的路 —— 不过闸、不算相似度、trace 上一切正常。
+ *
+ * 空 prompt 一定是上游的 bug，不是一类需要兜的输入，所以抛而不是当未命中：
+ * 当未命中的话它会照常写入，等于把这条假命中的源头留在库里。
+ */
+function matchKeyOf(prompt: CachePrompt): { normalized: string; matchHash: string } {
+	if (typeof prompt.matchText !== "string" || prompt.matchText.trim() === "") {
+		throw new Error(
+			`matchText 是空的（收到 ${JSON.stringify(prompt.matchText)}）。归一化之后是空串，` +
+				"而空串之间互为 ② 精确命中 —— 上游一次空 prompt 写进去，之后每一次空 prompt 都会" +
+				"精确命中它。缓存键必须来自真正的问题文本。",
+		);
+	}
+	const normalized = normalizeKey(prompt.matchText);
+	return { normalized, matchHash: hashKey(normalized) };
+}
+
 function bypassTicket(reason: string): () => Promise<WriteTicket> {
 	return async function refuse(): Promise<WriteTicket> {
 		throw new Error(`这个 prompt 被 CachePolicy 判定为不进缓存（${reason}），拿不到写入票据。要写入请先让 policy 放行。`);
@@ -188,10 +210,14 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	const instance = `${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 6)}`;
 	const newId = options.newId ?? (() => `${now().toString(36)}-${(counter += 1).toString(36)}-${instance}`);
 
-	if (recallLimit < 2) {
+	if (!Number.isInteger(recallLimit) || recallLimit < 2) {
 		throw new Error(
-			"recallLimit 必须大于 1。只召回 1 条时没有候选集：④ 精排无从排起（现在或以后加上时），" +
-				"任何关于「精排值不值」的 A/B 也都不成立 —— 你比的是两个二元判断。",
+			`recallLimit 必须是大于 1 的整数，收到 ${String(options.recallLimit)}。` +
+				"只召回 1 条时没有候选集：④ 精排无从排起（现在或以后加上时），任何关于「精排值不值」的 A/B " +
+				"也都不成立 —— 你比的是两个二元判断。" +
+				// 非整数不会在这里出事，它会在后端上出事，而且三个后端各出一种
+				"非整数则是又一种静默分歧：内存后端 slice(2.5) 照样跑，pgvector 的 LIMIT $4 与 Redis 的 " +
+				"VSIM COUNT 会在运行期报「不是整数」—— 本地跑通、上真库才炸。",
 		);
 	}
 
@@ -267,8 +293,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 
 		const { scope, shared } = await resolveScope(prompt);
 		const guard = makeRedactionGuard(prompt, scope, shared);
-		const normalized = normalizeKey(prompt.matchText);
-		const matchHash = hashKey(normalized);
+		const { normalized, matchHash } = matchKeyOf(prompt);
 
 		/**
 		 * 召回向量只有走到写入路径才用得上。② 精确命中时急着算它，等于让
@@ -671,7 +696,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		return {
 			scope,
 			shared,
-			matchHash: hashKey(normalizeKey(prompt.matchText)),
+			matchHash: matchKeyOf(prompt).matchHash,
 			matchVector: (await recall.scorer.embedQuestions([prompt.matchText]))[0],
 			ttlMs,
 		};
@@ -733,7 +758,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		const prepared: Array<{ scope: string; shared: boolean; matchHash: string; matchVector: ReadonlyArray<number> | null; ttlMs?: number | null }> = [];
 		for (const item of items) {
 			const { scope, shared } = await resolveScope(item.prompt);
-			const matchHash = hashKey(normalizeKey(item.prompt.matchText));
+			const { matchHash } = matchKeyOf(item.prompt);
 			const ticket = item.options?.ticket;
 			if (ticket) assertTicketMatches(ticket, item.prompt, scope, shared, matchHash);
 			/**
@@ -764,6 +789,29 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		if (missing.length > 0) {
 			const vectors = await recall.scorer.embedQuestions(missing.map(i => items[i].prompt.matchText));
 			for (let k = 0; k < missing.length; k++) prepared[missing[k]].matchVector = vectors[k];
+		}
+
+		/**
+		 * 版本指纹按「同一组 sourceIds」去重。
+		 *
+		 * 批量预热与从日志回填时，整批共用一组资料是常态（同一门课的同一批大纲），
+		 * 而 `SourceVersionResolver` 通常要查一次库或算一次摘要。先前每条都调一次，
+		 * 30 条回填就是 30 次往返 —— 而两个向量早就各自合并成一次调用了，指纹是这条
+		 * 批量路径上最后一个逐条付费的地方。
+		 *
+		 * **缓存只活在这一次 `writeMany` 里。**跨调用缓存会把「资料改版了」缓存住，
+		 * 那正是 ⑤ 要抓的东西 —— 省一次调用换一次读不出来的失效，不值。
+		 */
+		const versions = new Map<string, Promise<string>>();
+		function sourceVersionOf(sourceIds: ReadonlyArray<string>): Promise<string> {
+			// 顺序不同就当不同的一组：指纹算法是调用方的，库不假设它与顺序无关
+			const key = sourceIds.join("\u0000");
+			let pending = versions.get(key);
+			if (pending === undefined) {
+				pending = Promise.resolve(options.sourceVersion(sourceIds));
+				versions.set(key, pending);
+			}
+			return pending;
 		}
 
 		/* 一次编码所有答案。答案向量必须落在 passage 空间才能和检索片段比；plan 不需要 */
@@ -806,7 +854,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				plan: isAnswer ? {} : payload.plan,
 				answerVector: answerVectors.get(i) ?? [],
 				sourceIds,
-				sourceVersion: isAnswer ? await options.sourceVersion(sourceIds) : "",
+				sourceVersion: isAnswer ? await sourceVersionOf(sourceIds) : "",
 				createdAt: created,
 				expiresAt: ttl === null || ttl === undefined ? null : created + ttl,
 				meta: items[i].options?.meta,
@@ -874,11 +922,24 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	/**
 	 * 清空一个 scope，返回删掉的条数。课程归档、租户注销、老师要求重置走这里。
 	 *
+	 * **收 `{ org, key }`，不收拼好的字符串。** 先前收的是 `composeScope()` 的结果，
+	 * 于是漏掉组织 id 的那种写法 —— `clear("course:ml101")` —— 删掉 0 条、返回 0、
+	 * 不报错，而调用方以为课程已经归档了。这正是这个库自己一路在防的静默失效，
+	 * 而 README 与 `example/Smoke.ts` 里的示例当时就是这么写的：`npm run smoke`
+	 * 一直在打印「删掉 0 条」，没人看出那是错的。拼接交给库之后这种写法不存在了。
+	 *
 	 * **必须给 scope。** 无参数的全清在生产上几乎总是误操作，真要全清就对存储调
 	 * `InspectableCacheStore.clear()` —— 让它显眼一点，别藏在缓存对象的方法里。
 	 */
-	async function clear(scope: string): Promise<number> {
-		return options.store.clearScope(scope);
+	async function clear(scope: { readonly org: string; readonly key: string }): Promise<number> {
+		// JS 调用方绕得过类型。旧签名收字符串，静默删 0 条正是要消除的那种失败
+		if (typeof scope === "string") {
+			throw new Error(
+				`clear() 收的是 { org, key }，不是拼好的 scope 字符串（收到 ${JSON.stringify(scope)}）。` +
+					"少了组织 id 的字符串只会删掉 0 条而不报错，所以拼接由库来做：clear({ org, key })。",
+			);
+		}
+		return options.store.clearScope(composeScope(scope.org, scope.key));
 	}
 
 	/**
@@ -955,9 +1016,17 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	 * **`retrievalText` 必须在键里。** 上游做了匿名化时，两个学生问同一句话会得到
 	 * 相同的 `matchText`，但 `retrievalText` 里的实体不同 —— 那正是 ⑥ 存在的理由。
 	 * 只按 matchText 合流，等于亲手制造这套东西一路在防的占位符塌陷。
-	 */
-	/**
-	 * 合流键。
+	 *
+	 * **解析出来的 scope 也必须在键里。** `CachePrompt` 的四个字段都在键里了，所以
+	 * 只要 `ScopeResolver` 是 prompt 的纯函数，scope 就是它们的函数 —— 但那是**契约**，
+	 * 不是**校验**，而这个库对 ③ 的存储层 pre-filter 用的是同一条规矩（拿回来再复核
+	 * 一次 scope）。一个从请求外的环境读租户的 resolver（AsyncLocalStorage、请求头，
+	 * 多租户里很常见的形状）会让两个租户的同一句话合流，**后到的租户拿到前一个租户
+	 * 缓存里的答案**。写路径有票据比 scope 挡着，读命中这条路先前没有任何东西挡。
+	 *
+	 * 代价是每次 `resolve` 多一次 `ScopeResolver` 调用（合流判定必须在解析之后）。
+	 * `writeMany` 已经为同一件事付过同一笔钱：那里也是「scope 每条都现算，带了票据
+	 * 也算」，理由一样 —— 一次通常是纯函数的调用便宜，配错 scope 的后果不便宜。
 	 *
 	 * **分隔符只能用 `\u0000`，不能用 `=` / `&`。**先前 context 拼成 `k=v&k=v`，
 	 * 于是 `{a: "b&c=d"}` 和 `{a: "b", c: "d"}` 得到同一个键 —— 两个不同的请求合流，
@@ -967,11 +1036,12 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	 * 用不可能出现在文本字段里的字符，比转义省 —— 同一条规矩在 `Scope.ts` 里
 	 * 因为要存进库、要人读，所以走的是转义。
 	 */
-	function flightKey(prompt: CachePrompt): string {
+	function flightKey(scope: string, prompt: CachePrompt): string {
 		const context = Object.entries(prompt.context)
 			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 			.flatMap(([k, v]) => [k, v]);
 		return [
+			scope,
 			normalizeKey(prompt.matchText),
 			prompt.retrievalText,
 			context.join("\u0000"),
@@ -994,7 +1064,9 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 
 	async function resolve(prompt: CachePrompt, generate: Generate, writeOptions?: WriteOptions): Promise<CacheResult> {
 		if (!singleFlight) return resolveOnce(prompt, generate, writeOptions);
-		const key = flightKey(prompt);
+		// 合流之前先解析 scope —— 它必须进键，理由见 flightKey
+		const { scope } = await resolveScope(prompt);
+		const key = flightKey(scope, prompt);
 		const running = flights.get(key);
 		if (running) return running;
 		const started = resolveOnce(prompt, generate, writeOptions).finally(() => flights.delete(key));

@@ -9,13 +9,17 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
 import { createSemanticCache } from "../src/SemanticCache.ts";
-import { cosine, hashKey, normalizeKey } from "../src/VectorMath.ts";
+import { assertFiniteVector, cosine, hashKey, normalizeKey } from "../src/VectorMath.ts";
 import type { RecallStage, RerankStage, SupportStage } from "../src/types/Calibration.ts";
 import type { RerankTarget } from "../src/types/Encoders.ts";
 import { harness } from "./Fakes.ts";
 
-test("recallLimit 必须大于 1 —— 只召回一条时 ④ 没有候选可排", () => {
-	assert.throws(() => harness({ recallLimit: 1 }), /recallLimit 必须大于 1/u);
+test("recallLimit 必须是大于 1 的整数 —— 非整数在真库上才炸，本地跑得通", () => {
+	assert.throws(() => harness({ recallLimit: 1 }), /recallLimit 必须是大于 1 的整数/u);
+	// 2.5 先前构造得出来：内存后端 slice(2.5) 照样跑，pgvector 的 LIMIT 与 Redis 的
+	// VSIM COUNT 会在运行期报「不是整数」—— 一个只在上真库时才现形的配置错
+	assert.throws(() => harness({ recallLimit: 2.5 }), /recallLimit 必须是大于 1 的整数/u);
+	assert.throws(() => harness({ recallLimit: Number.NaN }), /recallLimit 必须是大于 1 的整数/u);
 	assert.doesNotThrow(() => harness({ recallLimit: 2 }));
 });
 
@@ -93,6 +97,27 @@ test("cosine 的维度检查 —— 混用两个模型角色的输出必须炸�
 	assert.equal(cosine([1, 0, 0], [0, 1, 0]), 0);
 	// 零向量没有方向，约定为 0 —— pgvector 那边的 NaN 也归到这个值
 	assert.equal(cosine([0, 0, 0], [1, 0, 0]), 0);
+});
+
+test("非有限分量三个后端一律抛 —— 一个坏编码器不能在内存后端上变成假命中", async () => {
+	assert.throws(() => assertFiniteVector("matchVector ", [1, Number.NaN, 0]), /matchVector 第 1 维是 NaN/u);
+	assert.throws(() => assertFiniteVector("查询向量", [Number.POSITIVE_INFINITY]), /不是有限数/u);
+	assert.doesNotThrow(() => assertFiniteVector("空向量", []));
+
+	/**
+	 * 内存后端先前原样存下 NaN：`cosine` 于是返回 NaN，而 ③ 的 `similarity < floor`
+	 * 对 NaN 恒为 false —— 召回下限形同不存在，一个毫不相干的问题也拿得到复用。
+	 * 同一个输入在 pgvector 上是硬错、在 Redis 上被静默写成 0：三种症状。
+	 */
+	const store = createMemoryCacheStore();
+	const entry = {
+		id: "e1", scope: "s", matchText: "q", matchHash: "h", matchVector: [Number.NaN, 0, 0],
+		kind: "answer" as const, answer: "a", plan: {}, answerVector: [1, 0, 0],
+		sourceIds: [], sourceVersion: "", createdAt: 1, expiresAt: null,
+	};
+	await assert.rejects(() => store.put(entry), /matchVector 第 0 维是 NaN/u);
+	await assert.rejects(() => store.put({ ...entry, matchVector: [1, 0, 0], answerVector: [0, Number.NaN, 0] }), /answerVector 第 1 维/u);
+	await assert.rejects(() => store.searchNearest("s", [Number.NaN, 0, 0], 5), /查询向量第 0 维/u);
 });
 
 test("normalizeKey 折叠空白、统一大小写、去句末标点；hashKey 稳定", () => {

@@ -12,11 +12,22 @@ import type { CacheResult, GateId } from "./types/Pipeline.ts";
  * 把一个需要标签的数摆在只有计数的看板上，等于请人误读。
  */
 export interface MetricsSnapshot {
+	/** 喂进来的全部请求，含策略绕开的那些 */
 	readonly requests: number;
+	/**
+	 * **真的查了缓存的请求** = `requests − byOutcome.bypassed`。
+	 *
+	 * 命中率的分母是它，不是 `requests`。绕开的请求一道闸都没跑，把它们算进分母，
+	 * 一个策略绕开了大半流量的部署在看板上就长得像「一个什么都命中不了的缓存」——
+	 * 而那正是 `bypassedByReason` 这一栏当初要防的误读，只是先前防在了明细上、
+	 * 没防在总数上。三个数对得上：`requests = hits + misses + byOutcome.bypassed`。
+	 */
+	readonly attempted: number;
 	/** 复用了缓存（含精确命中与微调复用） */
 	readonly hits: number;
+	/** **查了但没命中** = `attempted − hits`。绕开的请求不在里面 */
 	readonly misses: number;
-	/** hits / requests。requests 为 0 时是 0，不是 NaN */
+	/** hits / attempted。attempted 为 0 时是 0，不是 NaN */
 	readonly hitRate: number;
 	readonly byOutcome: Readonly<Record<"exact" | "reuse" | "refine" | "generated" | "bypassed", number>>;
 	/**
@@ -43,10 +54,15 @@ export interface MetricsSnapshot {
 	/**
 	 * 延迟分位。**命中与未命中分开** —— 混在一起的均值会被命中的那几毫秒拉平，
 	 * 看不出未命中要付的那次生成。
+	 *
+	 * **绕开自成一档**，和 `byOutcome` 里一样。它是「什么缓存都不用」的那条基线：
+	 * 未命中付的是召回 + 检索 + 支撑度 + 生成，绕开只付生成。混进 `miss` 会把未命中
+	 * 的延迟报低，而那个数正是用来算「缓存这层加了多少开销」的。
 	 */
 	readonly latencyMs: {
 		readonly hit: LatencyStats;
 		readonly miss: LatencyStats;
+		readonly bypassed: LatencyStats;
 	};
 	/**
 	 * **完整省下的生成次数** = `exact + reuse`。给了 `costPerGeneration` 才折算成钱 ——
@@ -58,8 +74,17 @@ export interface MetricsSnapshot {
 	 * 单价折算用它自己乘 —— 长短两种生成的单价不一样，库不替调用方假设那个比例。
 	 */
 	readonly saved: { readonly generations: number; readonly cost: number | null };
-	/** 分段命中率，段由调用方给（scope、租户、话题…）。对应 LangCache 的按类别看命中率 */
-	readonly bySegment: ReadonlyArray<{ readonly segment: string; readonly requests: number; readonly hits: number; readonly hitRate: number }>;
+	/**
+	 * 分段命中率，段由调用方给（scope、租户、话题…）。对应 LangCache 的按类别看命中率。
+	 * 分母和全局一样是「真的查了的」（`requests − bypassed`），否则两个命中率会打架。
+	 */
+	readonly bySegment: ReadonlyArray<{
+		readonly segment: string;
+		readonly requests: number;
+		readonly bypassed: number;
+		readonly hits: number;
+		readonly hitRate: number;
+	}>;
 	/**
 	 * ⑥ 支撑度的分布。**命中率回答「省了多少」，这个回答「离翻车多远」。**
 	 *
@@ -69,7 +94,17 @@ export interface MetricsSnapshot {
 	 * 不需要额外计算。
 	 */
 	readonly support: {
-		/** 命中时的支撑度。闸关着时的 `would-exit` 也算在这里 —— 那次确实复用了 */
+		/**
+		 * 命中时的支撑度。闸关着时的 `would-exit` 也算在这里 —— 那次确实复用了。
+		 *
+		 * **影子模式下的「本会命中」也算在这里。**那时 `outcome` 恒为 `generated`
+		 * （从不复用），所以按 outcome 认命中的话这一栏是空的 —— 而影子模式的用处
+		 * 恰恰是「上线前先看看那些命中有多险」，`headroomP10` / `midBandRate` 全靠
+		 * 这一栏。⑥ 判出来的那个分数，本会命中和真命中在分布上是同一个点。
+		 *
+		 * 它**不进** `hits` / `hitRate` / `latencyMs.hit`：那三个数记的是实际发生的事，
+		 * 影子模式下实际发生的是一次生成。「本会命中多少」在 `shadow.wouldReuseRate`。
+		 */
 		readonly onHit: SupportStats;
 		/**
 		 * **被 ⑥ 判负时**的支撑度。它贴近 θa低 说明阈值太紧，正在杀合法复用。
@@ -219,11 +254,13 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 	let evictedByAnswer = 0;
 	let hitLatency: Array<number> = [];
 	let missLatency: Array<number> = [];
-	const segments = new Map<string, { requests: number; hits: number }>();
+	let bypassLatency: Array<number> = [];
+	const segments = new Map<string, { requests: number; bypassed: number; hits: number }>();
 
 	/** 环形替换：超过上限就覆盖最早的样本，保持内存有界又不整体丢弃分布 */
 	let hitCursor = 0;
 	let missCursor = 0;
+	let bypassCursor = 0;
 	function push(buf: Array<number>, cursor: number, ms: number): number {
 		if (buf.length < cap) {
 			buf.push(ms);
@@ -237,9 +274,10 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 		record({ result, ms, segment }) {
 			requests += 1;
 			const hit = HIT_OUTCOMES.has(result.outcome);
+			const bypassed = result.outcome === "bypassed";
 			if (hit) hits += 1;
 			byOutcome[result.outcome] += 1;
-			if (result.outcome === "bypassed") {
+			if (bypassed) {
 				bump(bypassedByReason, result.bypassReason ?? "（未给理由）", previous => (previous ?? 0) + 1);
 			}
 
@@ -260,7 +298,8 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 				 */
 				if (step.gate === 6 && step.score !== undefined) {
 					if (step.verdict === "exit") evictCursor = push(supportOnEvict, evictCursor, step.score);
-					else if (hit) supportCursor = push(supportOnHit, supportCursor, step.score);
+					// 影子模式下 outcome 恒为 generated，「本会命中」只能从 wouldReuse 认（见 onHit）
+					else if (hit || result.wouldReuse === true) supportCursor = push(supportOnHit, supportCursor, step.score);
 				}
 				/**
 				 * **认 `evicted` 而不是认 verdict。**理由见 `GateTrace.evicted` —— 反推的话
@@ -272,13 +311,16 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 			}
 
 			if (ms !== undefined) {
+				// 三档，和 byOutcome 一致：绕开的那次没查缓存，混进 miss 会把未命中报便宜
 				if (hit) hitCursor = push(hitLatency, hitCursor, ms);
+				else if (bypassed) bypassCursor = push(bypassLatency, bypassCursor, ms);
 				else missCursor = push(missLatency, missCursor, ms);
 			}
 			if (segment !== undefined) {
 				bump(segments, segment, previous => {
-					const bucket = previous ?? { requests: 0, hits: 0 };
+					const bucket = previous ?? { requests: 0, bypassed: 0, hits: 0 };
 					bucket.requests += 1;
+					if (bypassed) bucket.bypassed += 1;
 					if (hit) bucket.hits += 1;
 					return bucket;
 				});
@@ -288,11 +330,14 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 		snapshot() {
 			const gates: Partial<Record<GateId, number>> = {};
 			for (const [gate, n] of [...missedAtGate.entries()].sort((a, b) => a[0] - b[0])) gates[gate] = n;
+			// 绕开的请求一道闸都没跑 —— 命中率的分母里不该有它们（见 attempted）
+			const attempted = requests - byOutcome.bypassed;
 			return {
 				requests,
+				attempted,
 				hits,
-				misses: requests - hits,
-				hitRate: requests === 0 ? 0 : hits / requests,
+				misses: attempted - hits,
+				hitRate: attempted === 0 ? 0 : hits / attempted,
 				byOutcome: { ...byOutcome },
 				support: (() => {
 					const onHit = supportStats(supportOnHit);
@@ -320,14 +365,17 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 					bySourceVersion: evictedByVersion,
 					byAnswerCheck: evictedByAnswer,
 				},
-				latencyMs: { hit: stats(hitLatency), miss: stats(missLatency) },
+				latencyMs: { hit: stats(hitLatency), miss: stats(missLatency), bypassed: stats(bypassLatency) },
 				// refine 跑了一次短生成，不算整次省下 —— 见 saved 的注释
 				saved: (() => {
 					const fully = byOutcome.exact + byOutcome.reuse;
 					return { generations: fully, cost: cost === undefined ? null : fully * cost };
 				})(),
 				bySegment: [...segments.entries()]
-					.map(([segment, b]) => ({ segment, requests: b.requests, hits: b.hits, hitRate: b.requests === 0 ? 0 : b.hits / b.requests }))
+					.map(([segment, b]) => {
+						const tried = b.requests - b.bypassed;
+						return { segment, requests: b.requests, bypassed: b.bypassed, hits: b.hits, hitRate: tried === 0 ? 0 : b.hits / tried };
+					})
 					.sort((a, b) => b.requests - a.requests),
 			};
 		},
@@ -352,8 +400,10 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 			evictedByAnswer = 0;
 			hitLatency = [];
 			missLatency = [];
+			bypassLatency = [];
 			hitCursor = 0;
 			missCursor = 0;
+			bypassCursor = 0;
 			segments.clear();
 		},
 	};

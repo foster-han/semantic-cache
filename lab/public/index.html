@@ -595,7 +595,12 @@ function renderMetrics(m) {
   const saved =
     (m.saved.cost === null ? `完整省下 ${m.saved.generations} 次` : `完整省下 $${m.saved.cost.toFixed(4)}`) + refineNote;
   const top = [
-    tile("命中率", pctOf(m.hitRate), `${m.hits} 命中 / ${m.requests} 请求`),
+    // 分母是 attempted（真的查了缓存的），不是 requests —— 策略绕开的那些一道闸都没跑
+    tile(
+      "命中率",
+      pctOf(m.hitRate),
+      `${m.hits} 命中 / ${m.attempted} 查询` + (m.byOutcome.bypassed ? `　另有 ${m.byOutcome.bypassed} 次绕开` : ""),
+    ),
     tile("命中延迟", ms(m.latencyMs.hit.p50), m.latencyMs.hit.count ? `p95 ${ms(m.latencyMs.hit.p95)}` : "无样本"),
     tile("未命中延迟", ms(m.latencyMs.miss.p50), m.latencyMs.miss.count ? `p95 ${ms(m.latencyMs.miss.p95)}` : "无样本"),
     tile("省下的生成", String(m.saved.generations), saved),

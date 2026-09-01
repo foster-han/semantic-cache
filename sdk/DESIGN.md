@@ -420,8 +420,12 @@ JS 单线程，没有数据竞争。
 
 **同一个问题的并发请求只走一次完整流程**（进程内合流，默认开）。合流键里带
 `retrievalText` —— 匿名化之后两个学生的 `matchText` 会相同而实体不同，只按
-matchText 合流等于亲手制造占位符塌陷。合流的请求共享第一个请求的 `generate`
-与 `writeOptions`。
+matchText 合流等于亲手制造占位符塌陷。**也带解析出来的 scope**：`ScopeResolver`
+的契约是「prompt 的纯函数」，但契约不是校验（③ 对存储层 pre-filter 用的就是这条
+规矩），而一个从 AsyncLocalStorage 或请求头读租户的 resolver 会让两个租户的同一
+句话合流，后到的租户拿到前一个租户缓存里的答案。代价是每次 `resolve` 多一次
+resolver 调用 —— `writeMany` 早就为同一件事付过同一笔钱。合流的请求共享第一个
+请求的 `generate` 与 `writeOptions`。
 
 ### 三处仍然存在的竞态，以及为什么这样取舍
 
@@ -465,15 +469,27 @@ key 里，分桶就只靠这个字符串，它错了不是少一次命中，是*
 一个组织 id 里带冒号就能读到另一个组织的桶）。所以拼接交给 `composeScope()`，
 转义后一一对应。单租户部署也要给一个固定值，让它是个显式的决定而不是遗漏。
 
-### 对存储实现的两条硬要求
+**按 scope 操作的入口同样不收拼好的字符串。**`clear()` 先前收的是 `composeScope()`
+的结果，于是漏掉 org 的那种写法删掉 0 条、返回 0、不报错 —— README 与 `Smoke.ts`
+里的示例当时就是这么写的，`npm run smoke` 一直在打印「删掉 0 条」而没人看出不对。
+现在它收 `{ org, key }`，库自己拼：这类写法在类型上就不存在了。存储层的
+`clearScope()` 仍然收那一个字符串 —— 那是存储看到的分桶键，不是调用方该拼的东西。
 
-写自己的 `CacheStore` 时，这两条不能省，否则同一个 bug 在不同后端会有不同症状：
+### 对存储实现的三条硬要求
+
+写自己的 `CacheStore` 时，这三条不能省，否则同一个 bug 在不同后端会有不同症状：
 
 - **`put` 遇到 id 重复必须抛错。** 不能静默丢弃（条目凭空消失），更不能覆盖
   （一个进程改写另一个进程内容完全不同的条目）。id 由库生成，重复只可能是生成器碰撞。
 - **`getByHash` 必须确定性地返回最新那条。** 先前内存实现用 `find()`（取先插入的），
   而 pgvector 用 `ORDER BY created_at DESC`（取最新的）—— 一旦并发造出重复，
-  换个后端 ② 命中的就是不同的答案。`lab/scripts/storeConformance.ts` 把这两条写成了判据。
+  换个后端 ② 命中的就是不同的答案。
+- **非有限分量（NaN / Infinity）必须抛，用 `assertFiniteVector`。** 先前 pgvector 抛、
+  Redis 静默把分量写成 0、内存原样存下 NaN —— 一个坏掉的编码器三个后端三种症状，
+  而内存那一种是**假命中**：NaN 进了 `cosine` 之后相似度是 NaN，而 `similarity < floor`
+  对 NaN 恒为 false，③ 的召回下限形同不存在，一个毫不相干的问题也拿得到复用。
+
+`lab/scripts/storeConformance.ts` 把这些写成了判据。
 
 ### 契约不等于校验：③ 拿回候选后复核 scope
 

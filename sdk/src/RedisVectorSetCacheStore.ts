@@ -1,5 +1,6 @@
 import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
 import { lfuCount } from "./EvictionOrder.ts";
+import { assertFiniteVector } from "./VectorMath.ts";
 import type { EvictionConfig } from "./types/Eviction.ts";
 import type { RedisExecutor } from "./types/RedisExecutor.ts";
 
@@ -481,9 +482,18 @@ export function createRedisVectorSetCacheStore(
 		return removed;
 	}
 
-	/** 向量分量交出去之前一律转成字符串，非有限值落 0（同内存实现对零向量的处理） */
-	function vectorArgs(vector: ReadonlyArray<number>): Array<string> {
-		return vector.map(v => (Number.isFinite(v) ? String(v) : "0"));
+	/**
+	 * 向量分量交出去之前一律转成字符串。
+	 *
+	 * **非有限分量抛，不落 0。**先前落 0 是想着「别让一条脏向量弄坏整次写入」，
+	 * 但同一个输入在 pgvector 上是硬错、在内存里原样存下 —— 三个后端三种症状，
+	 * 而一个坏掉的编码器最先撞上的就是这里。理由与统一之处见 `assertFiniteVector`。
+	 * 注意 hash 里那份 `JSON.stringify(matchVector)` 会把 NaN 写成 `null`，
+	 * 读回来是 0：静默的路不止这一条，所以要在入口一次拦掉。
+	 */
+	function vectorArgs(name: string, vector: ReadonlyArray<number>): Array<string> {
+		assertFiniteVector(name, vector);
+		return vector.map(String);
 	}
 
 	return {
@@ -541,7 +551,7 @@ export function createRedisVectorSetCacheStore(
 				await evalScript(
 					SCRIPT_SEARCH,
 					[keys.vector],
-					[namespace, String(limit), filter, options.ann ? "" : "TRUTH", ...vectorArgs(vector)],
+					[namespace, String(limit), filter, options.ann ? "" : "TRUTH", ...vectorArgs("查询向量", vector)],
 				),
 			);
 			const out: Array<Candidate> = [];
@@ -558,6 +568,8 @@ export function createRedisVectorSetCacheStore(
 		},
 
 		async put(entry) {
+			// 答案向量不进向量集，但同样不能带 NaN —— ⑥ 拿它算支撑度
+			assertFiniteVector("answerVector ", entry.answerVector);
 			const fields: Array<string> = [
 				"id", entry.id,
 				"scope", entry.scope,
@@ -601,7 +613,7 @@ export function createRedisVectorSetCacheStore(
 					String(entry.createdAt),
 					JSON.stringify(fields),
 					JSON.stringify(entry.sourceIds.map(keys.source)),
-					...vectorArgs(entry.matchVector),
+					...vectorArgs("matchVector ", entry.matchVector),
 				],
 			);
 			if (asText(done) === "DUP") {
