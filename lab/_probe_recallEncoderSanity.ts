@@ -1,7 +1,7 @@
 /**
  * ③ 换成**为语义缓存微调过的**编码器会怎样。
  *
- * QQP 上现在的 ③（paraphrase-multilingual-MiniLM）正命中率只有 72.4%，而 GPTCache
+ * QQP 上当时的 ③（paraphrase-multilingual-MiniLM）正命中率只有 72.4%，而 GPTCache
  * 公布的是 >97%。差距未必是「语义缓存做不到」，更可能是**通用模型零样本不够** ——
  * Redis 那篇 Closing the Calibration Gap 的卖点就是在 langcache-sentencepairs 上微调，
  * 而他们把模型公开了：`redis/langcache-embed-v1`（gte-modernbert-base 微调，有 ONNX）。
@@ -25,7 +25,7 @@ const PROBES: ReadonlyArray<readonly [string, string, string, boolean]> = [
 ];
 
 const CONFIGS = [
-	["现在的 ③（多语种句对模型）", "Xenova/paraphrase-multilingual-MiniLM-L12-v2", "mean"],
+	["当时的 ③（多语种句对模型）—— 现默认已是 all-MiniLM-L6-v2", "Xenova/paraphrase-multilingual-MiniLM-L12-v2", "mean"],
 	["langcache-embed-v1 · CLS（正确）", "redis/langcache-embed-v1", "cls"],
 	["langcache-embed-v1 · mean（**故意配错**）", "redis/langcache-embed-v1", "mean"],
 ] as const;

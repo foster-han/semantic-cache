@@ -117,8 +117,14 @@ for (const d of raw.datasets) {
 		row("GPTCache 默认（出厂阈值）", `θ=${GPTCACHE_DEFAULT_THRESHOLD}`, rates(gpt.scores, labels, GPTCACHE_DEFAULT_THRESHOLD));
 	}
 
-	// ② 各单闸编码器在精度约束下的最好工作点 —— 单阈值架构的上限
-	for (const key of ["gptcache-albert", "semcache-pair", "langcache-embed"]) {
+	/**
+	 * ② 各单闸编码器在精度约束下的最好工作点 —— 单阈值架构的上限。
+	 *
+	 * **列表从 `scores.json` 里取，不写死。**先前这里硬编码三个 key，
+	 * 于是给 `scorePairs.ts` 加一个 ③ 的候选并不会让它出现在表里 ——
+	 * 算了分却看不见，和「算不出来」一样管用。
+	 */
+	for (const key of raw.scorers.filter(x => x.kind === "bi").map(x => x.key)) {
 		const e = raw.scores[key]?.[d.name];
 		if (!e) continue;
 		const r = bestHitAtPrecision(sweep(e.scores, labels), labels, PRECISION_FLOOR);

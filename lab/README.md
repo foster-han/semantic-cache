@@ -36,7 +36,8 @@ npm run typecheck
 | `_probe_thresholdConfidence.ts` | 那个 θq 有多可信（平台宽度 / 留一 / bootstrap） | 课程语料 18 对 |
 | `_probe_recallEncodersZh.ts` | 中文上还有没有判别力（**方向已定不再推进**，留作那条结论的复现入口） | 中文探针 |
 
-**分数算一次，分析随便跑。**模型推理是这里唯一贵的东西（五个打分器 × 四份数据约半小时），
+**分数算一次，分析随便跑。**模型推理是这里唯一贵的东西（九个打分器 × 四份数据约半小时，
+不过**复用按 (模型 id × pooling) 认**，加一个候选只算那一个；`RESCORE=1` 才全部重算），
 而「套 GPTCache 的默认阈值」「扫 ③④ 串联的二维阈值」「换 precision 约束」全是纯计算。
 所以 `scorePairs.ts` 先把分数与耗时存进 `data/scores.json`（入库，它是那些表的直接凭据），
 `benchPairs.ts` 与 `compareBaselines.ts` 都只读它、秒级跑完。**先前 benchPairs 自己跑模型，
@@ -75,7 +76,7 @@ MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm s
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `MODE` | `local` | `local` 真模型（ONNX，本地跑）/ `stub` 字符 Jaccard 的哈希投影 |
-| `PAIR_MODEL` | `Xenova/all-MiniLM-L6-v2` | ③ 缓存匹配（问题↔问题） |
+| `PAIR_MODEL` | `Xenova/all-MiniLM-L6-v2` | ③ 缓存匹配（问题↔问题）。六个候选的横评见 [FINDINGS](../FINDINGS.md)：**没有普适最优**，现默认赢在 qqp（真人问题对，最像 ③ 的活）且最快，但在 Twitter 短句那份上输给旧的多语种默认 |
 | `RETR_MODEL` | `Xenova/e5-small-v2` | 检索 + ⑥ 的答案侧编码 |
 | `CE_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | ④ 精排。**默认这个在中文上全盲**（18 对真实对子 margin −0.0003）。想跑 ④ 的真实精度：`CE_MODEL=Xenova/bge-reranker-base`，换完必须重标 θq。候选实测见 [FINDINGS](../FINDINGS.md) |
 | `CE_TARGET` | `question` | ④ 把**旧问题**还是**旧答案**递给重排器。`answer` 才是 query→passage，手上可得的重排器都是那么训练的 —— 同一个 `bge-reranker-base`，留一交叉验证 27.8%（问↔答，假负 0）对 50%（问↔问，假负 1）。**换形态就是换尺度，θq 不通用**，所以标定表按 (模型 × 形态) 索引 |

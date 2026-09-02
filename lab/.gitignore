@@ -4,3 +4,5 @@ data/*
 !data/README.md
 !data/qqp.json
 !data/langcache-*.json
+# 分数也是凭据：FINDINGS 的表全是从它算出来的，而重算一遍要跑九个模型
+!data/scores.json

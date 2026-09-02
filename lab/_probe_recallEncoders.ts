@@ -57,7 +57,7 @@ function report(scores: ReadonlyArray<number>, labels: ReadonlyArray<number>): v
 }
 
 const CONFIGS = [
-	["现在的 ③（多语种句对模型 + mean）", "Xenova/paraphrase-multilingual-MiniLM-L12-v2", "mean"],
+	["当时的 ③（多语种句对模型 + mean）—— 现默认已是 all-MiniLM-L6-v2", "Xenova/paraphrase-multilingual-MiniLM-L12-v2", "mean"],
 	["langcache-embed-v1 · CLS（正确用法）", "redis/langcache-embed-v1", "cls"],
 	["langcache-embed-v1 · mean（**故意配错**）", "redis/langcache-embed-v1", "mean"],
 ] as const;

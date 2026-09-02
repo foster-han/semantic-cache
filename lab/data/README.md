@@ -46,8 +46,22 @@
 跨数据集比 precision 之前先看基线。`ProbeMetrics.bestHitAtPrecision` 会在门槛低于基线时
 返回 `baseline-already-passes` 而不给数字。
 
-跑分：`node --experimental-strip-types scripts/benchPairs.ts`（四份 × 四个打分器，
-十几分钟）。
+## `scores.json`
+
+每个 (打分器 × 数据集) 的**原始分数与耗时**，`scripts/scorePairs.ts` 写的。
+FINDINGS 里那几张表（基线对比、③ 编码器横评、性能）全是从这一份算出来的 ——
+分析是纯计算，`benchPairs.ts` 与 `compareBaselines.ts` 都只读它、秒级跑完，
+不碰模型。**所以它和上面那些数据文件一样是凭据，不是缓存**：重算一遍要跑九个模型。
+
+复用**按 (模型 id × pooling) 认，不按 key 认** —— 加一个候选只算那一个，
+`RESCORE=1` 才全部重算。这条规矩是撞出来的：`semcache-pair` 这个 key 曾经
+挂着 `paraphrase-multilingual-MiniLM-L12-v2` 的分数，而 `Models.ts` 的默认早已
+换成 `all-MiniLM-L6-v2`，于是 FINDINGS 里标着「③ 现在的默认」的四列量的是上一个模型。
+
+数据文件换了（标签不同）也不会复用 —— 那等于把两轮取样混进同一张表。
+
+跑分：`scripts/scorePairs.ts` 算分存盘（只算缺的），
+`scripts/benchPairs.ts` 与 `scripts/compareBaselines.ts` 读盘出表。
 
 ## 它补不上什么
 

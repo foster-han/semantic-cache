@@ -11,7 +11,16 @@
  * 打分器里有一个**主流基线**：`gptcache-albert` 是 GPTCache 的默认编码器
  * （`paraphrase-albert-small-v2`，mean pooling），用来和自研的几档放在同一把尺子上。
  *
- *   node --experimental-strip-types scripts/scorePairs.ts
+ * **`key` 是给表用的名字，`id` 才是被测的东西 —— 两者会脱钩。**
+ * `semcache-pair` 这个 key 的注释一直写着「③ 现在的默认」，而默认在
+ * `Models.ts` 里早已从 `paraphrase-multilingual-MiniLM-L12-v2` 换成
+ * `all-MiniLM-L6-v2`，这里没跟着改：于是 FINDINGS 里标着「现在的默认」的四列，
+ * 量的全是上一个模型。又一次「不报错的错配」，这次错在元数据上。
+ * 所以下面的复用是**按 (id × pooling) 认的，不按 key 认** —— 改了 id 就必然重算，
+ * 一个 key 不可能挂着另一个模型的分数。
+ *
+ *   node --experimental-strip-types scripts/scorePairs.ts   # 只算缺的
+ *   RESCORE=1 node --experimental-strip-types scripts/scorePairs.ts   # 全部重算
  */
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -32,10 +41,24 @@ interface Pair {
 	readonly label: number;
 }
 
-/** 打分器：`kind` 决定它是 ③ 那类（两句各自编码算余弦）还是 ④ 那类（一次前向） */
+/**
+ * 打分器：`kind` 决定它是 ③ 那类（两句各自编码算余弦）还是 ④ 那类（一次前向）。
+ *
+ * `pooling` 每个都按仓库的 `1_Pooling/config.json` 填，**不按系列推广** ——
+ * 同一条规矩在 `Models.ts` 的 `POOLING_BY_MODEL` 上已经栽过一次（gte 两代相反）。
+ * 拿 mean 跑一个 CLS 模型不报错，只是少一成多的命中率。
+ *
+ * ③ 那一档现在有五个候选，都是 384 维（换了不动存储 —— 表名与 key 前缀带维度）：
+ * 现默认、上一个默认、同族大一档，外加两个 MTEB 小模型档。**谁最好按数据说话，
+ * 而 out-of-domain 那两行此前的答案是「三个编码器互有胜负」。**
+ */
 const SCORERS = [
 	{ key: "gptcache-albert", kind: "bi", id: "Xenova/paraphrase-albert-small-v2", pooling: "mean", note: "GPTCache 默认编码器（主流基线）" },
-	{ key: "semcache-pair", kind: "bi", id: "Xenova/paraphrase-multilingual-MiniLM-L12-v2", pooling: "mean", note: "semcache ③ 现在的默认" },
+	{ key: "semcache-pair", kind: "bi", id: "Xenova/all-MiniLM-L6-v2", pooling: "mean", note: "semcache ③ 现在的默认（22M，英文对称句对）" },
+	{ key: "pair-multilingual", kind: "bi", id: "Xenova/paraphrase-multilingual-MiniLM-L12-v2", pooling: "mean", note: "semcache ③ 的上一个默认（多语种，118M）" },
+	{ key: "all-minilm-l12", kind: "bi", id: "Xenova/all-MiniLM-L12-v2", pooling: "mean", note: "同族大一档（33M）—— 量这条曲线的斜率" },
+	{ key: "bge-small-en", kind: "bi", id: "Xenova/bge-small-en-v1.5", pooling: "cls", note: "MTEB 小模型档（33M，CLS pooling）" },
+	{ key: "gte-small", kind: "bi", id: "Xenova/gte-small", pooling: "mean", note: "MTEB 小模型档（33M，thenlper 那一代用 mean）" },
 	{ key: "langcache-embed", kind: "bi", id: "redis/langcache-embed-v1", pooling: "cls", note: "Redis 为语义缓存微调（CLS pooling）" },
 	{ key: "ce-msmarco", kind: "cross", id: "Xenova/ms-marco-MiniLM-L-6-v2", pooling: undefined, note: "semcache ④ 现在的默认重排器" },
 	{ key: "ce-bge", kind: "cross", id: "Xenova/bge-reranker-base", pooling: undefined, note: "semcache ④ 的可用替代" },
@@ -66,8 +89,53 @@ interface Entry {
 }
 const out: Record<string, Record<string, Entry>> = {};
 
+interface Snapshot {
+	readonly scorers: ReadonlyArray<{ key: string; id: string; kind: string; pooling?: string; note: string }>;
+	readonly datasets: ReadonlyArray<{ name: string; source: string; labels: Array<number> }>;
+	readonly scores: Record<string, Record<string, Entry>>;
+}
+
+/**
+ * 上一轮的分数，用来跳过没变的模型。**认的是 (id × pooling)，不是 key。**
+ *
+ * 加一个 ③ 的候选先前意味着把五个打分器全重算一遍（其中 `ce-bge` 87.6 ms/对、
+ * `langcache-embed` 108.3 ms/对，两个就占掉大半时间），于是「顺手多量一个模型」
+ * 变成了二十分钟的决定 —— 而这正是那张表长期停在旧模型上的原因之一。
+ */
+let prev: Snapshot | null = null;
+try {
+	prev = JSON.parse(await readFile(OUT, "utf8")) as Snapshot;
+} catch {
+	prev = null;
+}
+const RESCORE = process.env.RESCORE === "1";
+const prevByModel = new Map<string, string>();
+for (const s of prev?.scorers ?? []) prevByModel.set(`${s.id}|${s.pooling ?? ""}`, s.key);
+/** 标签变了就是另一份数据 —— 数据换过还复用旧分数，是把两轮取样混成一张表 */
+const prevLabels = new Map<string, string>();
+for (const d of prev?.datasets ?? []) prevLabels.set(d.name, JSON.stringify(d.labels));
+
+function reusableFrom(id: string, pooling: string | undefined): Record<string, Entry> | null {
+	if (RESCORE || !prev) return null;
+	const key = prevByModel.get(`${id}|${pooling ?? ""}`);
+	if (key === undefined) return null;
+	const entry = prev.scores[key];
+	if (!entry) return null;
+	for (const d of datasets) {
+		if (!entry[d.name]) return null;
+		if (prevLabels.get(d.name) !== JSON.stringify(d.labels)) return null;
+	}
+	return entry;
+}
+
 for (const s of SCORERS) {
 	process.stdout.write(`\n=== ${s.key} · ${s.id} ===\n`);
+	const reuse = reusableFrom(s.id, s.pooling);
+	if (reuse) {
+		out[s.key] = reuse;
+		process.stdout.write(`  复用上一轮的分数（同 id 同 pooling 同标签）。要重算：RESCORE=1\n`);
+		continue;
+	}
 	const t0 = Date.now();
 	const bi = s.kind === "bi" ? await pipeline("feature-extraction", s.id, { dtype: "fp32" }) : null;
 	const tok = s.kind === "cross" ? await AutoTokenizer.from_pretrained(s.id) : null;
