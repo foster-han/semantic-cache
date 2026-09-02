@@ -1,68 +1,88 @@
 import type { Chunk } from "./Retrieval.ts";
 
 /**
- * 一次提问。
+ * One question.
  *
- * 叫 prompt 不叫 request：它是 RedisVL `store(prompt, …)` / LangChain
- * `lookup(prompt, …)` 里的那个 prompt，跟 HTTP 请求没有关系 —— 这个仓库里
- * `req` 已经是 lab/Server.ts 的 http 请求了，两个概念不该共用一个词。
- * 之所以不退化成一个字符串，是因为除了问题文本，还得带上 `redacted`
- * （守卫要用）和 `context`（ScopeResolver 判隔离边界要用）。
+ * Called a prompt rather than a request: it is the prompt from RedisVL's `store(prompt, …)` and
+ * LangChain's `lookup(prompt, …)`, and has nothing to do with an HTTP request — in this repository
+ * `req` already means lab/Server.ts's HTTP request, and the two concepts should not share a word.
+ * It does not collapse to a plain string because, besides the question text, it has to carry
+ * `redacted` (needed by the guard) and `context` (needed by `ScopeResolver` to decide the
+ * isolation boundary).
  *
- * **`matchText` 和 `retrievalText` 是两个字段，这是有意的。**
- * 上游做了 PII 匿名化时，缓存键必须建在匿名化后的文本上（`matchText`），
- * 而检索必须用保留实体的原文（`retrievalText`）—— 否则回答侧校验拦不住
- * 占位符塌陷。没有匿名化的应用把两者传成同一个字符串即可。
+ * **`matchText` and `retrievalText` are two fields on purpose.** When the caller anonymizes PII,
+ * the cache key must be built on the anonymized text (`matchText`) while retrieval must use the
+ * entity-preserving original (`retrievalText`) — otherwise answer-side validation cannot catch
+ * placeholder collapse. Applications that do not anonymize simply pass the same string as both.
  */
 export interface CachePrompt {
 	readonly matchText: string;
 	readonly retrievalText: string;
 	/**
-	 * 上层是否对 `matchText` 做过脱敏（实体被占位符替换）。
+	 * Whether the layer above redacted `matchText` (entities replaced by placeholders).
 	 *
-	 * 置为 true 时，SDK **拒绝**把这条请求落进共享 scope。原因是脱敏之后
-	 * 两个不同的人可能塌成同一个缓存键，而答案里带着占位符 —— 跨用户复用时
-	 * 用当前请求的实体映射去还原，就会把甲的答案还原成乙的名字。
-	 * 这不是概率问题，是构造上必然的错误，所以在类型与运行期都堵死。
+	 * When true, the SDK **refuses** to put this request into a shared scope. Redaction can collapse
+	 * two different people onto one cache key while the answer still carries placeholders — reused
+	 * across users and rehydrated with the current request's entity mapping, one person's answer
+	 * comes back under another person's name. That is not a matter of probability but a
+	 * constructive certainty, so it is blocked in the types and at runtime.
 	 */
 	readonly redacted?: boolean;
-	/** 传给 Retriever 与 ScopeResolver 的上下文，如 courseId、unit、userId */
+	/** Context handed to `Retriever` and `ScopeResolver` — courseId, unit, userId, and so on. */
 	readonly context: Readonly<Record<string, string>>;
 }
 
 /**
- * scope 决策。三个字段都必填 —— 没有「返回一个字符串就算共享 scope」这种简写，
- * 那会让 `org` 与 `shared` 变成可以忘掉的东西，而它们各自的失效都是静默的。
+ * A scope decision. All three fields are required — there is no shorthand where returning a bare
+ * string implies a shared scope, because that would make `org` and `shared` forgettable, and each
+ * of them fails silently.
  *
- * PII 过滤留在 SDK 之上：库不认识 PII，只认这里返回的隔离边界。
+ * PII filtering stays above the SDK: the library knows nothing about PII, only about the isolation
+ * boundary returned here.
  */
 export interface ScopeDecision {
-	/** 业务隔离边界,比如某门课、某个知识库 */
+	/**
+	 * The business isolation boundary — a course, a knowledge base, a space.
+	 *
+	 * **This is also the only record of what an entry was built from.** Entries do not track which
+	 * documents an answer cited, so the space is both the isolation boundary and the invalidation
+	 * unit: material changed means `clearScope()` on that space.
+	 */
 	readonly key: string;
 	readonly shared: boolean;
 	/**
-	 * 组织 / 租户 id。**必填,而且不能靠拼进 `key` 来代替。**
+	 * Organization / tenant id. **Required, and not substitutable by concatenating it into `key`.**
 	 *
-	 * ③ 是 scope **内**的向量召回 —— 问题文本不在 key 里,分桶就只靠这个字符串。
-	 * 拼错的后果不是少一次命中,是**跨租户返回别人的答案**,而且完全静默。
-	 * 库用 `composeScope()` 转义后拼接,所以 `("a", "b|c")` 和 `("a|b", "c")`
-	 * 落在不同的桶里 —— 自己拼字符串挡不住这一类。
+	 * Gate ③ is vector recall **within** a scope — with the question text absent from the key, this
+	 * string is the only thing bucketing entries. Getting it wrong does not cost a hit, it
+	 * **returns another tenant's answer**, and it does so completely silently. The library
+	 * concatenates via `composeScope()` with escaping, so `("a", "b|c")` and `("a|b", "c")` land in
+	 * different buckets — hand-built strings do not stop that class of mistake.
 	 *
-	 * 单租户部署也要给一个固定值(比如 `"default"`),让它是个显式的决定。
+	 * Single-tenant deployments must still supply a fixed value (`"default"`, say), so that it is
+	 * an explicit decision.
 	 */
 	readonly org: string;
 }
 /**
- * 判这一次提问属于哪个隔离边界。
+ * Decides which isolation boundary a question belongs to.
  *
- * **必须是 `prompt` 的纯函数。**决策只能来自参数（`context` 就是为此存在的），
- * 不能从请求外的环境里读 —— AsyncLocalStorage 里的租户、请求头、模块级的
- * 「当前用户」都不行。库把解析出来的 scope 放进了进程内合流键，所以一个不纯的
- * resolver 会让两个租户的同一句话合流，后到的租户拿到前一个租户的答案。
- * 需要租户信息就把它放进 `prompt.context`，让它成为请求的一部分。
+ * **Must be a pure function of `prompt`.** The decision may only come from the arguments — that is
+ * what `context` is for — and never from the environment outside the request: not a tenant in
+ * AsyncLocalStorage, not a request header, not a module-level "current user". The library puts the
+ * resolved scope into its in-process single-flight key, so an impure resolver merges the same
+ * sentence from two tenants and hands the later tenant the earlier one's answer. If tenant
+ * information is needed, put it in `prompt.context` and make it part of the request.
  */
 export type ScopeResolver = (prompt: CachePrompt) => Promise<ScopeDecision> | ScopeDecision;
 
+/**
+ * ①–④ are the read gates; **⑤ is the write step**, which is not a gate at all.
+ *
+ * ⑤ used to be source-version comparison *and* the slot the write-side traces borrowed, so one id
+ * meant two things. The source dimension has been removed — entries record the space they belong to
+ * and nothing finer — which leaves ⑤ with the one meaning the code was already using it for.
+ */
 export type GateId = 1 | 2 | 3 | 4 | 5;
 
 export type GateVerdict =
@@ -70,7 +90,7 @@ export type GateVerdict =
 	| "hit"
 	| "miss"
 	| "exit"
-	/** 这道闸本会拦下，但被配置关掉了 —— 用于 A/B 时看清代价 */
+	/** This gate would have stopped it, but is switched off — used during A/B to see the cost. */
 	| "would-exit"
 	| "off";
 
@@ -80,259 +100,248 @@ export interface GateTrace {
 	readonly verdict: GateVerdict;
 	readonly detail: string;
 	readonly score?: number;
-	/**
-	 * 这一步**真的删掉了一条条目**。
-	 *
-	 * **驱逐必须由这个字段声明，不能从 `verdict === "exit"` 反推。** 有一半的
-	 * `exit` 什么都没删：无资料依据的答案不写入也不删，影子模式下 ⑤ 判负也不删。
-	 *
-	 * 反推的话，一次上游故障会让看板报出「N 次判负驱逐」而缓存一条没动 ——
-	 * 「一次故障不改变缓存状态」这条不变量会被指标自己打穿，而且是从最可信的那一侧
-	 * （看板）打穿。`Metrics.ts` 因此只认这个字段。
-	 */
-	readonly evicted?: boolean;
 }
 
+/**
+ * **No step on the read path deletes anything, and there is no `evicted` flag to say one did.**
+ *
+ * ⑤ was the only gate that evicted: a source-version mismatch condemned the entry as it was read.
+ * `GateTrace` therefore carried an `evicted` boolean, and `Metrics` counted it — with the rule that
+ * an eviction must be *declared* by that field and never inferred from `verdict === "exit"`, since
+ * inferring it made one upstream outage fill the dashboard with evictions the cache never
+ * performed. With ⑤ gone nothing sets the flag, and a metric that is structurally always zero is
+ * worse on a dashboard than no metric at all, so the field and its counter were removed together.
+ *
+ * Any future gate that deletes on a read has to bring both back — and the rule above with them.
+ */
+
 export type Outcome =
-	/** 精确命中并通过全部校验 */
+	/** Exact hit that passed every check. */
 	| "exact"
-	/** 语义命中并通过全部校验 */
+	/** Semantic hit that passed every check. */
 	| "reuse"
-	/** 未命中或被某道闸拦下，走了完整生成 */
+	/** Missed or stopped by a gate; full generation ran. */
 	| "generated"
 	/**
-	 * `CachePolicy` 的 `noCache` 生效 —— **有意没查缓存**，直接生成。
+	 * `CachePolicy`'s `noCache` applied — **the cache was deliberately not consulted** and
+	 * generation ran directly.
 	 *
-	 * 不并进 `generated`：那样一次「策略绕开」和一次「查了但没命中」在看板上
-	 * 完全一样，于是「上游某个信号一直是开的」这种事只表现为命中率下降，
-	 * 查不出原因。这正是 litellm 那类框架里静默 no-op 的病根。
+	 * Not folded into `generated`: that would make a policy bypass and a genuine miss identical on
+	 * the dashboard, so "some upstream signal has been stuck on" shows up only as a falling hit
+	 * rate with no way to find the cause. That is exactly the disease behind silent no-ops in
+	 * frameworks like litellm.
 	 */
 	| "bypassed";
 
 export interface CacheResult {
 	/**
-	 * 命中或新生成的载荷。**只有这一个读取入口。**
+	 * The hit or newly generated payload. **The only way to read it.**
 	 *
-	 * 早先这里还并排放过一个 `answer: string`，plan 时为空串 —— 读 `.answer`
-	 * 会静默拿到空串而不报错，正是这套 API 一路在消灭的那种失效。删掉了，
-	 * 调用方必须 `switch (payload.kind)`。
+	 * There used to be an `answer: string` alongside it, empty for plans — reading `.answer` would
+	 * silently yield an empty string with no error, precisely the failure this API keeps
+	 * eliminating. It was removed; callers must `switch (payload.kind)`.
 	 */
 	readonly payload: CachedPayload;
 	readonly outcome: Outcome;
 	/**
-	 * `outcome === "bypassed"` 时是 `noCache` 的理由，其余为 null。
+	 * The `noCache` reason when `outcome === "bypassed"`, otherwise null.
 	 *
-	 * 指标要按理由分组才有诊断价值：只知道「绕开变多了」查不出是哪条规则，
-	 * 而上游某个信号一直是开的，恰恰是这类系统最常见的静默失效。
+	 * Metrics only have diagnostic value grouped by reason: knowing only that bypasses went up
+	 * does not identify which rule, and an upstream signal stuck on is the most common silent
+	 * failure in systems like this.
 	 */
 	readonly bypassReason: string | null;
 	/**
-	 * 影子模式下这一次**本来会不会复用**；非影子模式为 null。
+	 * Under shadow mode, whether this request **would have** been reused; null outside shadow mode.
 	 *
-	 * 指标层靠它算「本会命中率」—— 那是决定要不要真开缓存的那个数。
+	 * The metrics layer computes the would-be hit rate from it — the number that decides whether to
+	 * turn the cache on for real.
 	 */
 	readonly wouldReuse: boolean | null;
-	/** 被哪道闸拦下；未被拦下时为 null */
+	/** Which gate stopped it; null when nothing did. */
 	readonly exitedAt: GateId | null;
 	/**
-	 * 这次结果对应的条目 id —— **永远指向存储里现存的那一条**。
+	 * The entry id this result corresponds to — **always one that currently exists in the store.**
 	 *
-	 * `generated` 时是刚写进去的那条；`refine` 时是替换后的新条目（旧的已经删了，
-	 * 返回旧 id 的话调用方拿它去 `get()` 只会拿到 null）。
+	 * For `generated` it is the entry just written; for `refine` it is the replacement entry (the
+	 * old one is already deleted, so returning the old id would give callers something that
+	 * `get()` only answers with null).
 	 */
 	readonly entryId: string | null;
-	readonly sourceIds: ReadonlyArray<string>;
+	/**
+	 * The resolved scope this result belongs to — the space the answer was built from.
+	 *
+	 * **This replaced a `sourceIds` array.** Per-document basis is no longer tracked, so the space
+	 * is the annotation: it says which body of material the answer rests on, and it is what
+	 * `clearScope()` takes when that material is revised.
+	 */
+	readonly scope: string;
 	readonly trace: ReadonlyArray<GateTrace>;
 }
 
-/** 调用方自己的生成。库决定要不要调它，并把已检索的片段递进来避免重复检索。 */
+/** The caller's own generation. The library decides whether to call it, and passes in the already-retrieved chunks to avoid retrieving twice. */
 export type Generate = (prompt: CachePrompt, chunks: ReadonlyArray<Chunk>) => Promise<CachedPayload>;
 
 /**
- * 缓存里存的是什么 —— 这个区分决定了哪些闸适用，也决定了脱敏后能不能跨主体共享。
+ * What is stored — this distinction decides which gates apply, and whether redacted entries can be
+ * shared across subjects.
  *
- * **answer**：文本答案，含实体特定内容。依赖语料，所以要过 ⑤ 版本比对；
- * 脱敏后**不能**跨主体共享，否则甲的答案会被安上乙的名字。
+ * **answer**: a text answer containing entity-specific content. Once redacted it **cannot** be
+ * shared across subjects, or one person's answer arrives under another's name.
  *
- * **plan**：工具调用计划，实体是**参数**而不是内容。不依赖语料（⑤ 不适用），
- * 执行时用当前请求的实体填参、当场做授权检查。
- * 脱敏后跨主体共享**正是所求** —— 一个模板服务所有人，塌得越彻底缓存效率越高。
+ * **plan**: a tool-call plan, where entities are **parameters** rather than content. At execution
+ * time parameters are filled from the current request and authorization is checked there and then.
+ * Once redacted, sharing across subjects **is the point** — one template serves everyone, and the
+ * more thoroughly it collapses the more efficient the cache.
  *
- * 贵的是 LLM 判断"该调哪个工具、传什么参数"，工具调用本身很便宜，
- * 所以这一支缓存计划、不缓存结果；结果每次实时取。
+ * The expensive part is the LLM deciding which tool to call with which arguments; the tool call
+ * itself is cheap. So this branch caches the plan and not the result, and the result is fetched
+ * live every time.
  */
 export type CachedPayload =
 	| {
 			readonly kind: "answer";
 			readonly answer: string;
-			/**
-			 * 据以生成的资料，顺序即重要性。
-			 *
-			 * **空数组的 answer 条目 ⑤ 和 `invalidateSource` 都够不着**：版本指纹恒为
-			 * 空串所以永远"一致"，而按资料 id 的批量失效匹配不到空数组。移除 ⑥ 之后
-			 * 它连答案侧的兜底也没有了 —— 所以 `cacheable()` 直接拒绝写入这种条目，
-			 * 那道守卫从「多一层保险」变成了唯一一层。
-			 */
-			readonly sourceIds: ReadonlyArray<string>;
 	  }
 	| {
 			readonly kind: "plan";
-			/** 工具名与参数。参数值用字符串；更复杂的计划请由调用方自行序列化。 */
+			/** Tool name and arguments. Argument values are strings; serialize a richer plan yourself. */
 			readonly plan: Readonly<Record<string, string>>;
 	  };
 
 /**
- * @deprecated 用 `CachedPayload`。保留以免旧代码断裂。
+ * The request-independent derived information a write needs.
  *
- * 先前这个接口在本文件里声明了**两次**（第二次多了一行字段注释）。两次的成员恰好
- * 一致，于是 interface merging 让它合法通过了类型检查 —— 改动其中一份才会炸，
- * 而那时看到的报错是「同名声明不一致」，不是「这里有两份」。合成一份。
- */
-export interface GeneratedAnswer {
-	readonly answer: string;
-	/** 实际据以生成的资料，顺序即重要性 */
-	readonly sourceIds: ReadonlyArray<string>;
-}
-
-/**
- * 闸门开关。
+ * `lookup()` has already resolved the scope once, hashed once, and (on most paths) embedded once.
+ * Carrying those out to `write()` means that on the most common manual path — miss, generate
+ * yourself, write back — the caller does not pay for a second embedding.
  *
- * **④ 精排不在这里** —— 它由 `RerankStage` 提供与否决定。开关和阈值分家，
- * 正是尺度混用的温床：关掉开关却留着阈值，那个阈值就会被套到另一个尺度上。
- *
- * 先前这里还有 ⑥ 回答有效性校验的开关。⑥ 已移除 —— 它对应的两类失效
- * （同词不同指、实体塌陷）源于缓存键有损，而那该由键的设计和读侧条件解决，
- * 不该由一道在答案侧兜底的闸解决。
- */
-export interface GateSwitches {
-	/** ⑤ 资料版本比对 */
-	readonly sourceVersion: boolean;
-}
-
-/**
- * 一次写入需要的、与请求无关的派生信息。
- *
- * `lookup()` 已经把 scope 解过一遍、哈希算过一遍、（多数路径上）向量也编过一遍。
- * 把它们带出来交给 `write()`，调用方在「未命中 → 自己生成 → 写回」这条最常见的
- * 手工路径上就不用重付一次 embedding。
- *
- * **票据省的只有 embedding。** scope 和哈希 `write()` 每次都重算，然后跟票据核对 ——
- * 那两样本来就便宜（一次字符串哈希、一次通常是纯函数的 ScopeResolver 调用），
- * 而拿 A 问题的票据去写 B 问题的答案，后果是一条永远读不回来、甚至落错 scope
- * 的缓存。省那两次调用换不来这个风险。
+ * **A ticket saves the embedding and nothing else.** `write()` recomputes the scope and the hash
+ * every time and checks them against the ticket — both are cheap anyway (one string hash, one
+ * usually-pure `ScopeResolver` call), whereas using question A's ticket to write question B's
+ * answer produces a cache entry that can never be read back, possibly in the wrong scope. Saving
+ * those two calls does not buy that risk.
  */
 export interface WriteTicket {
 	readonly scope: string;
-	/** scope 是否共享 —— 脱敏守卫要用 */
+	/** Whether the scope is shared — needed by the redaction guard. */
 	readonly shared: boolean;
 	readonly matchHash: string;
-	/** PairEncoder 空间 */
+	/** PairEncoder space. */
 	readonly matchVector: ReadonlyArray<number>;
 	/**
-	 * `CachePolicy` 为这一条定的 TTL，随票据流到写入路径。
+	 * The TTL `CachePolicy` set for this entry, carried along with the ticket to the write path.
 	 *
-	 * 优先级：`WriteOptions.ttlMs`（调用方显式给的）> 这里 > 全局 `ttlMs`。
-	 * 策略说「这类只活十分钟」不该压过调用方在具体某一条上的明确指定。
+	 * Precedence: `WriteOptions.ttlMs` (explicitly given by the caller) > this > global `ttlMs`.
+	 * A policy saying "this kind lives ten minutes" should not override the caller being explicit
+	 * about one particular entry.
 	 */
-	readonly ttlMs?: number | null;
+	readonly ttlMs?: number | null | undefined;
 }
 
 export type LookupOutcome =
-	/** 精确命中且过了全部校验 */
+	/** Exact hit that passed every check. */
 	| "exact"
-	/** 语义命中且过了全部校验 */
+	/** Semantic hit that passed every check. */
 	| "reuse"
-	/** 没有可用条目 */
+	/** No usable entry. */
 	| "miss"
 	/**
-	 * 影子模式：**闸全跑了，但结果不作数** —— 真实结果在 `wouldHave` 里。
+	 * Shadow mode: **every gate ran, but the result does not count** — the real one is in
+	 * `wouldHave`.
 	 *
-	 * 上线一个概率型缓存最需要的一步：在生产流量上跑完整条判定链，却仍然每次都
-	 * 真生成，用来回答「开了会不会返回错答案」。所以影子模式下读路径**严格只读** ——
-	 * 不复用、不驱逐、不 touch，评估本身不该改变被评估的东西。
+	 * The step most needed when rolling out a probabilistic cache: run the whole decision chain on
+	 * production traffic while still generating for real every time, to answer "would enabling this
+	 * return a wrong answer". So in shadow mode the read path is **strictly read-only** — no reuse,
+	 * no eviction, no touch. An evaluation should not change the thing being evaluated.
 	 */
 	| "shadow"
 	/**
-	 * `CachePolicy` 的 `noCache` 生效 —— **一道闸都没跑**。
+	 * `CachePolicy`'s `noCache` applied — **not one gate ran**.
 	 *
-	 * 和 `miss` 是两回事：`miss` 是查过了没有，`bypass` 是压根没查。
-	 * 注意它只说明**没读**；写不写由 `noStoreReason` 决定，两者正交。
+	 * Different from `miss`: a miss means it was looked up and not found, a bypass means it was
+	 * never looked up. Note this says only that nothing was **read**; whether anything is written is
+	 * decided by `noStoreReason`, and the two are orthogonal.
 	 */
 	| "bypass";
 
 /**
- * 只读匹配的结果。
+ * The result of a read-only match.
  *
- * **`lookup` 不生成、也不写入新条目**，但它会驱逐被 ⑤ 判定为失效的旧条目 ——
- * 那是维护，不是写入：一条版本已过期的缓存，读到它的那一刻就该消失，
- * 留着只会让下一个请求再判一次。
+ * **`lookup` neither generates nor writes a new entry, and never evicts.** It used to evict entries
+ * that ⑤ judged stale; with the source dimension gone there is no read-time verdict that can
+ * condemn an entry, so the read path leaves the store untouched.
  */
 export interface LookupResult {
 	readonly outcome: LookupOutcome;
-	/** 命中时的载荷；miss 时为 null */
+	/** The payload on a hit; null on a miss. */
 	readonly payload: CachedPayload | null;
 	readonly entryId: string | null;
-	readonly sourceIds: ReadonlyArray<string>;
-	/** 被哪道闸拦下；命中时为 null */
+	/** The resolved scope this lookup ran in — see `CacheResult.scope`. */
+	readonly scope: string;
+	/** Which gate stopped it; null on a hit. */
 	readonly exitedAt: GateId | null;
 	readonly trace: ReadonlyArray<GateTrace>;
 	/**
-	 * `CachePolicy` 说「别读」的理由；没说就是 null。
+	 * `CachePolicy`'s reason for "do not read"; null when it said nothing.
 	 *
-	 * 放在结果上而不是 `trace` 里，是因为一道闸都没跑 —— 记成某道闸的判定
-	 * 就是假话。非 null 等价于 `outcome === "bypass"`。
+	 * On the result rather than in `trace`, because not one gate ran — recording it as some gate's
+	 * verdict would be a lie. Non-null is equivalent to `outcome === "bypass"`.
 	 */
 	/**
-	 * 影子模式下**本来会是什么结果**；非影子模式为 null。
+	 * Under shadow mode, **what the result would have been**; null outside shadow mode.
 	 *
-	 * `outcome === "shadow"` 时它必然非 null。和 `GateVerdict` 的 `would-exit`
-	 * 是同一个思路，只是抬到了整条链路的层面。
+	 * Necessarily non-null when `outcome === "shadow"`. Same idea as `GateVerdict`'s `would-exit`,
+	 * lifted to the level of the whole chain.
 	 */
 	readonly wouldHave: LookupOutcome | null;
 	readonly noCacheReason: string | null;
 	/**
-	 * `CachePolicy` 说「别写」的理由；没说就是 null。
+	 * `CachePolicy`'s reason for "do not write"; null when it said nothing.
 	 *
-	 * 非 null 时 `prepareWrite()` 必然抛。它和 `noCacheReason` 正交：
-	 * 「重新回答」只有前者，「出五道练习题」只有后者。
+	 * When non-null, `prepareWrite()` necessarily throws. Orthogonal to `noCacheReason`: "answer
+	 * again" has only the former, "give me five practice problems" only the latter.
 	 */
 	readonly noStoreReason: string | null;
 	/**
-	 * 取写入票据。**是个函数而不是字段**：② 精确命中那条路径本来不需要召回向量，
-	 * 为了填一个多半用不上的字段去付一次模型调用，正好毁掉那一层的全部价值。
-	 * 结果记忆化，调几次都只算一次。
+	 * Obtain a write ticket. **A function rather than a field**: the gate ② exact-hit path needs no
+	 * recall vector at all, and paying for a model call to populate a field that will most likely go
+	 * unused destroys exactly the value that layer provides. The result is memoized, so calling it
+	 * repeatedly still computes once.
 	 */
 	prepareWrite(): Promise<WriteTicket>;
 }
 
-/** 写入时的可选项。三项都不给就是「用 lookup 的票据、无 meta、走全局 TTL」。 */
+/** Write options. All three absent means "use the lookup's ticket, no meta, global TTL". */
 export interface WriteOptions {
 	/**
-	 * `lookup()` 那次已经解好的 scope / 哈希 / 向量。不传就现算 ——
-	 * 代价是多一次 scope 解析和一次 embedding。
+	 * The scope / hash / vector already resolved by that `lookup()`. Omit it and they are computed
+	 * now — at the cost of one more scope resolution and one more embedding.
 	 */
 	readonly ticket?: WriteTicket;
-	/** 调用方自己的记账字段（模型名、请求 id、成本…）。库不解释它的内容 */
-	readonly meta?: Readonly<Record<string, string>>;
+	/** The caller's own bookkeeping fields (model name, request id, cost, …). The library does not interpret them. */
+	readonly meta?: Readonly<Record<string, string>> | undefined;
 	/**
-	 * 这一条的存活时长，覆盖全局 `ttlMs`。`null` = 不过期。
+	 * How long this entry lives, overriding the global `ttlMs`. `null` means never expire.
 	 *
-	 * 有per-entry TTL 才谈得上「课务问答缓一天、时效性内容缓十分钟」——
-	 * 全局一个值的话，最短的那类需求会把所有条目的 TTL 一起拉下来。
+	 * Per-entry TTL is what makes "cache course-admin answers for a day, time-sensitive content for
+	 * ten minutes" possible — with a single global value, the shortest requirement drags every
+	 * entry's TTL down with it.
 	 */
-	readonly ttlMs?: number | null;
+	readonly ttlMs?: number | null | undefined;
 	/**
-	 * 写入成功后要驱逐的旧条目 id —— 用于「替换」而不是「新增」。
+	 * The id of an old entry to evict after a successful write — for "replace" rather than "add".
 	 *
-	 * 顺序是**先写后删**：窗口里存在的是两条而不是零条。宁可让并发读者看到一条
-	 * 稍旧的，也不要让它看到未命中然后又生成一条；写失败时旧条目还在。
+	 * The order is **write, then delete**: the window contains two entries rather than zero. Better
+	 * that a concurrent reader see a slightly stale entry than see a miss and generate another one;
+	 * and if the write fails the old entry is still there.
 	 */
 	readonly supersedes?: string;
 }
 
-/** 批量写入的一项。 */
+/** One item of a batch write. */
 export interface WriteItem {
 	readonly prompt: CachePrompt;
 	readonly payload: CachedPayload;
-	readonly options?: WriteOptions;
+	readonly options?: WriteOptions | undefined;
 }

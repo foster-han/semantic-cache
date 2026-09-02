@@ -228,6 +228,7 @@
     <span>承接 <b>语义缓存后端选型</b></span>
     <span>状态 <b>提案</b></span>
   </div>
+  <p class="note" style="margin-bottom:0"><b>这篇是提案，不是当前实现（2026-09）。</b>文中的六道闸现在只剩 <b>①②③④</b>。第 ⑥ 道回答侧校验先移除——它管的两类失效（同词不同指、实体塌陷）源于<b>缓存键有损</b>，该在键和 scope 的构成上解决，而不是在答案侧兜底。第 ⑤ 道语料版本比对随后移除——它要求每个条目记下自己引了哪些文档（<code>source_chunk_ids</code> / <code>corpus_version</code> 这两列），而那整条维度已经拆掉：条目现在只记它属于哪个 space，「资料改版了」由清掉那个 space 来处理，读路径上没有任何一道闸看得见改版。下文关于 ⑤ ⑥ 的论证与实测都仍然成立，请读成<b>历史记录</b>；代价的明细在 <code>FINDINGS.md</code> 顶部两节。</p>
 </header>
 
 <div class="verdict">

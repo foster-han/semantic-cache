@@ -1,38 +1,46 @@
-import type { Chunk } from "./types/Retrieval.ts";
-import type { CachePrompt, Generate } from "./types/Pipeline.ts";
 import type { SemanticCache } from "./SemanticCache.ts";
+import type { CachePrompt, Generate } from "./types/Pipeline.ts";
 
 /**
- * 离线标定用的评测。
+ * Evaluation for offline calibration.
  *
- * **判据是「答案的首要依据是不是那篇资料」，不是「有没有复用」。**
- * 一旦缓存里有真实规模的历史条目，探测问题可能命中另一条**内容正确**的缓存 ——
- * 那是成功不是失败。而且判据必须落在首要依据上：期望文档只要出现在 top-k 里
- * 就算过，会把「复用了过拟合的答案给问欠拟合的学生」判成通过。
+ * **The criterion is which space the answer came from, not whether anything was reused.** Once the
+ * cache holds history at realistic scale, a probe question may hit a different entry whose content
+ * is **correct** — that is a success, not a failure.
+ *
+ * The criterion used to be finer: entries recorded the source documents they cited, and a scenario
+ * asserted that the probe's answer rested primarily on one named document. That dimension has been
+ * removed — an entry now records only the space it belongs to — so the assertion is coarser by
+ * exactly that much. **On a corpus with a single space it is very nearly a tautology**, and a
+ * scenario suite living in one space will report a false-hit count of zero because there is no
+ * second space to be wrong about, not because nothing went wrong. Sizing a suite across several
+ * spaces is what gives this criterion teeth.
  */
 export interface Scenario {
 	readonly key: string;
 	readonly label: string;
-	/** 先问一次，让它进缓存 */
+	/** Asked first, to put it in the cache. */
 	readonly seed: CachePrompt;
-	/** 再问一次，看怎么判 */
+	/** Asked again, to see how it is judged. */
 	readonly probe: CachePrompt;
-	/** 探测的答案必须以哪篇资料为首要依据 */
-	readonly expectSourceId: string;
-	/** 播种与探测之间执行，用于模拟语料改版 */
+	/**
+	 * Which space the probe's answer must come from — the resolved scope, as `composeScope(org, key)`
+	 * builds it, not the bare `ScopeDecision.key`.
+	 */
+	readonly expectSpace: string;
+	/** Runs between seeding and probing, to simulate the material being revised. */
 	readonly between?: () => Promise<void>;
 }
 
 export interface ScenarioOutcome {
 	readonly key: string;
 	readonly label: string;
-	readonly expectSourceId: string;
-	readonly actualSourceIds: ReadonlyArray<string>;
-	readonly primarySource: string | null;
+	readonly expectSpace: string;
+	readonly actualSpace: string;
 	readonly outcome: string;
 	readonly exitedAt: number | null;
 	readonly ok: boolean;
-	/** 复用了缓存但首要依据不对 —— 学生拿到错答案 */
+	/** The cache was reused but the answer came from another space — the student got somebody else's answer. */
 	readonly falseHit: boolean;
 }
 
@@ -44,17 +52,18 @@ export interface EvaluationReport {
 }
 
 export interface EvaluationHooks {
-	/** 每条场景前调用，用于清空缓存与还原语料 */
+	/** Called before each scenario, to clear the cache and restore the corpus. */
 	readonly reset: () => Promise<void>;
-	/** 灌入干扰缓存。不灌的话召回永远只有 1 条候选，精排没有候选可排 */
+	/** Seeds distractor entries. Without them recall only ever has one candidate and reranking has nothing to rank. */
 	readonly warm?: (cache: SemanticCache, generate: Generate) => Promise<void>;
 }
 
 /**
- * 「复用了旧答案」的那几种结果。假命中只可能发生在它们身上 ——
- * `generated` 是新生成的，`bypassed` 是压根没查缓存，都谈不上假命中。
+ * The outcomes that mean "an old answer was reused". A false hit can only occur among these —
+ * `generated` produced something new and `bypassed` never consulted the cache, so neither can be
+ * a false hit.
  */
-const REUSED_OUTCOMES: ReadonlySet<string> = new Set(["exact", "reuse", "refine"]);
+const REUSED_OUTCOMES: ReadonlySet<string> = new Set(["exact", "reuse"]);
 
 export async function evaluate(
 	cache: SemanticCache,
@@ -65,24 +74,27 @@ export async function evaluate(
 	const rows: Array<ScenarioOutcome> = [];
 	for (const s of scenarios) {
 		await hooks.reset();
-		if (hooks.warm) await hooks.warm(cache, generate);
+		if (hooks.warm) {
+			await hooks.warm(cache, generate);
+		}
 		await cache.resolve(s.seed, generate);
-		if (s.between) await s.between();
+		if (s.between) {
+			await s.between();
+		}
 		const result = await cache.resolve(s.probe, generate);
-		const primary = result.sourceIds[0] ?? null;
-		const ok = primary === s.expectSourceId;
+		const ok = result.scope === s.expectSpace;
 		rows.push({
 			key: s.key,
 			label: s.label,
-			expectSourceId: s.expectSourceId,
-			actualSourceIds: result.sourceIds,
-			primarySource: primary,
+			expectSpace: s.expectSpace,
+			actualSpace: result.scope,
 			outcome: result.outcome,
 			exitedAt: result.exitedAt,
 			ok,
-			// **正向判据。**先前是 `outcome !== "generated"` —— 加一个新的 Outcome
-			// （比如 "bypassed"：压根没查缓存、真生成的）就会被误计成假命中。
-			// 假命中的定义是「复用了缓存，但答案的依据不对」，只有命中类才算得上。
+			// **A positive criterion.** It used to be `outcome !== "generated"`, which meant adding a
+			// new Outcome (say "bypassed": the cache was never consulted and generation really ran)
+			// would be miscounted as a false hit. A false hit is defined as "the cache was reused but
+			// the answer came from the wrong space", so only hit-like outcomes can qualify.
 			falseHit: !ok && REUSED_OUTCOMES.has(result.outcome),
 		});
 	}
@@ -95,14 +107,14 @@ export async function evaluate(
 }
 
 /**
- * A/B：同一批场景跑两套配置，差值就是那道闸的价值。
- * 差值为 0 时如实返回 0 —— 一道闸在你的数据上没用，这个事实本身有价值。
+ * A/B: run the same scenarios under two configurations, and the difference is that gate's value.
+ * A difference of 0 is reported as 0 — a gate being useless on your data is itself a valuable fact.
  */
 export interface ComparisonReport {
 	readonly a: EvaluationReport;
 	readonly b: EvaluationReport;
 	readonly falseHitDelta: number;
-	/** 在 A 里通过、在 B 里失败的场景 */
+	/** Scenarios that passed in A and failed in B. */
 	readonly regressed: ReadonlyArray<string>;
 }
 
@@ -114,9 +126,4 @@ export function compare(a: EvaluationReport, b: EvaluationReport): ComparisonRep
 		falseHitDelta: b.falseHits - a.falseHits,
 		regressed: a.rows.filter(r => r.ok && bByKey.get(r.key)?.ok === false).map(r => r.label),
 	};
-}
-
-/** 便利：把一组片段拼成 sourceIds，顺序即重要性。 */
-export function sourceIdsOf(chunks: ReadonlyArray<Chunk>): Array<string> {
-	return chunks.map(c => c.id);
 }

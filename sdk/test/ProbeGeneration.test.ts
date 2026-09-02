@@ -1,13 +1,16 @@
 /**
- * 课程资料 → 判别力探针。
+ * Course sources to discrimination probes.
  *
- * 这里测的全是「不报错但标出错阈值」那一族：难负例被容易负例稀释、正例用模板凑出来、
- * 同一批资料两次跑出不同探针。三件事都不会抛，只会让 `calibratedOn` 变成一句假话。
+ * Everything here belongs to the family that raises no error and calibrates the wrong threshold:
+ * hard negatives diluted by easy ones, positives padded out of a template, the same sources
+ * yielding different probes on two runs. None of the three throws; they only turn `calibratedOn`
+ * into a lie.
  */
-import { strict as assert } from "node:assert";
-import { test } from "node:test";
+
 import { generateProbes } from "../src/ProbeGenerator.ts";
 import type { ProbeSource } from "../src/types/ProbeGeneration.ts";
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
 
 const COURSE: ReadonlyArray<ProbeSource> = [
 	{ id: "n3", unit: "ch3", title: "L1 正则化" },
@@ -17,28 +20,32 @@ const COURSE: ReadonlyArray<ProbeSource> = [
 	{ id: "n9", unit: "ch5", title: "残差连接" },
 ];
 
-test("同章负例与跨章负例分档 —— 混在一起会把 margin 撑得虚宽", async () => {
+test("same-chapter and cross-chapter negatives are separate tiers — blended, they inflate the margin", async () => {
 	const report = await generateProbes(COURSE);
-	// ch3 三篇两两配对 = 3 对，ch5 两篇 = 1 对
+	// ch3's three sources pair up into 3, ch5's two into 1.
 	assert.equal(report.counts.sibling, 4);
-	// 3×2 跨章对子
+	// 3x2 cross-chapter pairs.
 	assert.equal(report.counts.distant, 6);
 	for (const probe of report.probes) {
-		if (probe.tier === "sibling") assert.equal(probe.shouldMatch, false);
-		if (probe.tier === "distant") assert.equal(probe.shouldMatch, false);
+		if (probe.tier === "sibling") {
+			assert.equal(probe.shouldMatch, false);
+		}
+		if (probe.tier === "distant") {
+			assert.equal(probe.shouldMatch, false);
+		}
 	}
 });
 
-test("没有改写来源时一条正例都不造，而不是用模板凑", async () => {
+test("with no paraphrase source no positives are fabricated, rather than padding from a template", async () => {
 	const report = await generateProbes(COURSE);
 	assert.equal(report.counts.paraphrase, 0);
 	assert.equal(report.usableFor.positives, false);
 	assert.equal(report.usableFor.negatives, true);
-	assert.match(report.warnings.join("\n"), /一条正例都没有/u);
-	assert.match(report.warnings.join("\n"), /退回用标题当问句/u);
+	assert.match(report.warnings.join("\n"), /Not a single positive/u);
+	assert.match(report.warnings.join("\n"), /falls back to using the title as the question/u);
 });
 
-test("给了两条以上问法才造正例，并同时造出逐字相同那一档", async () => {
+test("positives are built only once two or more phrasings are given, and the byte-identical tier is built alongside", async () => {
 	const withQuestions = COURSE.map(s => ({
 		...s,
 		questions: [`什么是${s.title}？`, `${s.title}用来做什么？`],
@@ -46,16 +53,20 @@ test("给了两条以上问法才造正例，并同时造出逐字相同那一�
 	const report = await generateProbes(withQuestions);
 	assert.equal(report.counts.paraphrase, 5);
 	assert.equal(report.usableFor.positives, true);
-	// 逐字相同是天花板检查，默认只取两对
+	// Byte-identical is a ceiling check, and only two pairs are taken by default.
 	assert.equal(report.counts.identical, 2);
 	for (const probe of report.probes) {
-		if (probe.tier === "identical") assert.equal(probe.a, probe.b);
-		if (probe.tier === "paraphrase") assert.notEqual(probe.a, probe.b);
+		if (probe.tier === "identical") {
+			assert.equal(probe.a, probe.b);
+		}
+		if (probe.tier === "paraphrase") {
+			assert.notEqual(probe.a, probe.b);
+		}
 	}
 	assert.deepEqual(report.warnings, []);
 });
 
-test("phrasing 只在 questions 不够时才补，够了就不调用", async () => {
+test("phrasing fills in only when questions are too few, and is never called once there are enough", async () => {
 	const calls: Array<string> = [];
 	const sources = [
 		{ ...COURSE[0], questions: ["什么是 L1 正则化？", "L1 正则化怎么用？"] },
@@ -63,17 +74,17 @@ test("phrasing 只在 questions 不够时才补，够了就不调用", async () 
 		{ ...COURSE[2] },
 	];
 	const report = await generateProbes(sources, {
-		phrasing: async (concept, count) => {
+		phrasing: (concept, count) => {
 			calls.push(concept);
-			return Array.from({ length: count }, (_, i) => `${concept}的第${i + 1}种问法`);
+			return Promise.resolve(Array.from({ length: count }, (_, i) => `${concept}的第${i + 1}种问法`));
 		},
 	});
-	// 第一篇自带两条，不该被补
+	// The first source brings two of its own and should not be filled in.
 	assert.deepEqual(calls, ["L2 正则化", "过拟合"]);
 	assert.equal(report.counts.paraphrase, 3);
 });
 
-test("同一批资料跑两次必须得到同一组探针 —— 否则 calibratedOn 是假话", async () => {
+test("the same sources run twice must yield the same probe set — otherwise calibratedOn is a lie", async () => {
 	const many: Array<ProbeSource> = Array.from({ length: 12 }, (_, i) => ({
 		id: `d${i}`,
 		unit: `ch${i % 2}`,
@@ -82,15 +93,16 @@ test("同一批资料跑两次必须得到同一组探针 —— 否则 calibrat
 	const first = await generateProbes(many);
 	const second = await generateProbes(many);
 	assert.deepEqual(first.probes, second.probes);
-	// 12 篇分两个 unit，同章对子共 30 对，被默认额度截到 20
+	// 12 sources across two units make 30 same-chapter pairs, cut to 20 by the default quota.
 	assert.equal(first.counts.sibling, 20);
 });
 
-test("换个上传顺序必须还是同一组探针 —— 否则阈值跟着上传顺序漂", async () => {
+test("a different upload order must still yield the same probe set — otherwise the threshold drifts with upload order", async () => {
 	/**
-	 * 负例对是 `i < j` 配出来的，所以实参顺序决定同一对里谁是 `a` 谁是 `b`，
-	 * 而 `takeStable` 的排序键就是 `[tier, a, b]`：先前把资料倒序传进来，选出的
-	 * 20 对同章负例和正序几乎不重叠 —— 而标定跑的就是这组探针。
+	 * Negative pairs are formed with `i < j`, so argument order decides which of a pair is `a` and
+	 * which is `b` — and `takeStable`'s sort key is exactly `[tier, a, b]`. Passing the sources in
+	 * reverse order used to select 20 same-chapter negatives that barely overlapped the forward
+	 * order's, and that probe set is what calibration runs on.
 	 */
 	const many: Array<ProbeSource> = Array.from({ length: 8 }, (_, i) => ({
 		id: `d${i}`,
@@ -100,7 +112,7 @@ test("换个上传顺序必须还是同一组探针 —— 否则阈值跟着上
 	}));
 	const forward = await generateProbes(many);
 	const reversed = await generateProbes([...many].reverse());
-	// 8 篇同章共 28 对，截到 20 —— 必须是同样的 20 对
+	// 8 same-chapter sources make 28 pairs, cut to 20 — and it must be the same 20.
 	assert.equal(forward.counts.sibling, 20);
 	const pairs = (r: Awaited<ReturnType<typeof generateProbes>>) =>
 		r.probes.map(p => `${p.tier}:${p.aDoc}/${p.bDoc}`).sort();
@@ -108,29 +120,29 @@ test("换个上传顺序必须还是同一组探针 —— 否则阈值跟着上
 	assert.deepEqual(forward.probes, reversed.probes, "连顺序都该一样：库自己先按 id 定序");
 });
 
-test("每档额度可以单独调，难负例给得比容易负例多是默认", async () => {
+test("each tier's quota is tunable on its own, and more hard negatives than easy ones is the default", async () => {
 	const report = await generateProbes(COURSE, { limits: { distant: 2 } });
 	assert.equal(report.counts.distant, 2);
 	assert.equal(report.counts.sibling, 4);
 });
 
-test("calibratedOn 由生成方给出，含正负例构成 —— 人手写的那句半年后一定对不上", async () => {
+test("calibratedOn comes from the generator and names the positive and negative composition — a hand-written sentence is guaranteed to be stale in six months", async () => {
 	const withQuestions = COURSE.map(s => ({ ...s, questions: [`什么是${s.title}？`, `${s.title}有什么用？`] }));
 	const report = await generateProbes(withQuestions);
-	assert.match(report.calibratedOn, /5 篇资料 \/ 2 个单元/u);
-	assert.match(report.calibratedOn, /同章 4、跨章 6/u);
+	assert.match(report.calibratedOn, /5 documents \/ 2 units/u);
+	assert.match(report.calibratedOn, /same unit 4, cross unit 6/u);
 	assert.doesNotMatch(report.calibratedOn, /告警/u);
 });
 
-test("资料少于两篇、id 重复、问法数下限：三个都在构造期抛", async () => {
-	await assert.rejects(() => generateProbes([COURSE[0]]), /至少需要两篇资料/u);
-	await assert.rejects(() => generateProbes([COURSE[0], { ...COURSE[1], id: "n3" }]), /id 有 1 个重复/u);
-	await assert.rejects(() => generateProbes(COURSE, { phrasingsPerConcept: 1 }), /造不出正例/u);
+test("fewer than two sources, duplicate ids, and a phrasing-count floor: all three throw at construction", async () => {
+	await assert.rejects(() => generateProbes([COURSE[0]]), /needs at least two documents/u);
+	await assert.rejects(() => generateProbes([COURSE[0], { ...COURSE[1], id: "n3" }]), /1 duplicate document id/u);
+	await assert.rejects(() => generateProbes(COURSE, { phrasingsPerConcept: 1 }), /cannot produce a positive/u);
 });
 
-test("全部资料同属一个 unit 时要告警 —— 没有跨章对照就看不出 margin 的来源", async () => {
+test("a warning when every source belongs to one unit — without a cross-chapter contrast the margin's origin is invisible", async () => {
 	const oneUnit = COURSE.map(s => ({ ...s, unit: "ch3", questions: [`什么是${s.title}？`, `${s.title}呢？`] }));
 	const report = await generateProbes(oneUnit);
 	assert.equal(report.counts.distant, 0);
-	assert.match(report.warnings.join("\n"), /没有跨章负例/u);
+	assert.match(report.warnings.join("\n"), /there are no cross-unit negatives/u);
 });

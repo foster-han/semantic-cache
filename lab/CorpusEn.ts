@@ -130,117 +130,123 @@ export const RERANK_PROBES: ReadonlyArray<RerankProbe> = [
 	{ label: "unrelated (should DIFFER)", a: "What is overfitting?", b: "When are grades released?", bDoc: "faq", shouldMatch: false },
 ];
 
+/**
+ * 与中文那份一一对应。判据同样是「答案来自哪个 space」—— 而这 26 条全在一门课里，
+ * 也就是同一个 space，所以假命中判定几乎恒为 0。原来那个 doc 级的 `expectDoc` 标注
+ * 随「答案引了哪些文档」这个维度一起移除了；`catches: 5 / 6` 标着的是已移除的闸，
+ * 留作历史记录。
+ */
 export const SCENARIOS: ReadonlyArray<LabScenario> = [
-	{ key: "para-overfit", expectDoc: "n5", label: "Paraphrase · overfitting", note: "Same intent, two phrasings",
+	{ key: "para-overfit", label: "Paraphrase · overfitting", note: "Same intent, two phrasings",
 	  seed: { text: "What is overfitting?", user: "s1", unit: "Chapter 4" },
 	  probe: { text: "What does overfitting mean?", user: "s2", unit: "Chapter 4" }, expect: "reuse" },
 
-	{ key: "para-lr", expectDoc: "n3", label: "Paraphrase · learning rate", note: "More colloquial phrasing",
+	{ key: "para-lr", label: "Paraphrase · learning rate", note: "More colloquial phrasing",
 	  seed: { text: "What happens if the learning rate is too large?", user: "s1", unit: "Chapter 3" },
 	  probe: { text: "What goes wrong when you set the learning rate too high?", user: "s3", unit: "Chapter 3" }, expect: "reuse" },
 
-	{ key: "para-cv", expectDoc: "n13", label: "Paraphrase · cross-validation", note: "Phrasings differ a lot, intent is the same",
+	{ key: "para-cv", label: "Paraphrase · cross-validation", note: "Phrasings differ a lot, intent is the same",
 	  seed: { text: "Why do we do k-fold cross-validation?", user: "s1", unit: "Chapter 6" },
 	  probe: { text: "What is cross-validation good for?", user: "s4", unit: "Chapter 6" }, expect: "reuse" },
 
-	{ key: "para-bias", expectDoc: "n7", label: "Paraphrase · bias/variance", note: "Textbook phrasing vs plain phrasing",
+	{ key: "para-bias", label: "Paraphrase · bias/variance", note: "Textbook phrasing vs plain phrasing",
 	  seed: { text: "How are bias and variance related?", user: "s1", unit: "Chapter 4" },
 	  probe: { text: "How do you trade off bias against variance?", user: "s2", unit: "Chapter 4" }, expect: "reuse" },
 
-	{ key: "para-norm", expectDoc: "n14", label: "Paraphrase · feature normalisation", note: "\"How\" vs \"why\" — same intent, almost no wording overlap",
+	{ key: "para-norm", label: "Paraphrase · feature normalisation", note: "\"How\" vs \"why\" — same intent, almost no wording overlap",
 	  seed: { text: "How do you normalise features?", user: "s1", unit: "Chapter 7" },
 	  probe: { text: "Why should features be normalised?", user: "s3", unit: "Chapter 7" }, expect: "reuse" },
 
-	{ key: "para-prune", expectDoc: "n18", label: "Paraphrase · pruning", note: "Colloquial \"cutting back\" vs the term \"pruning\"",
+	{ key: "para-prune", label: "Paraphrase · pruning", note: "Colloquial \"cutting back\" vs the term \"pruning\"",
 	  seed: { text: "Why do decision trees need pruning?", user: "s1", unit: "Chapter 8" },
 	  probe: { text: "What problem does pruning solve?", user: "s4", unit: "Chapter 8" }, expect: "reuse" },
 
-	{ key: "para-early", expectDoc: "n9", label: "Paraphrase · early stopping", note: "\"When to stop\" is how students actually ask",
+	{ key: "para-early", label: "Paraphrase · early stopping", note: "\"When to stop\" is how students actually ask",
 	  seed: { text: "What is early stopping?", user: "s1", unit: "Chapter 5" },
 	  probe: { text: "When should training be stopped?", user: "s2", unit: "Chapter 5" }, expect: "reuse" },
 
-	{ key: "para-f1", expectDoc: "n12", label: "Paraphrase · F1", note: "Abbreviation vs spelled out",
+	{ key: "para-f1", label: "Paraphrase · F1", note: "Abbreviation vs spelled out",
 	  seed: { text: "What is the F1 score?", user: "s1", unit: "Chapter 6" },
 	  probe: { text: "How should F1 be interpreted?", user: "s3", unit: "Chapter 6" }, expect: "reuse" },
 
-	{ key: "para-loss", expectDoc: "n2", label: "Paraphrase · loss function", note: "\"What is it for\" — the most common beginner phrasing",
+	{ key: "para-loss", label: "Paraphrase · loss function", note: "\"What is it for\" — the most common beginner phrasing",
 	  seed: { text: "What is a loss function for?", user: "s1", unit: "Chapter 2" },
 	  probe: { text: "Why do we need a loss function?", user: "s4", unit: "Chapter 2" }, expect: "reuse" },
 
-	{ key: "para-ensemble", expectDoc: "n19", label: "Paraphrase · ensemble methods", note: "\"Several models together\" is the term-free phrasing",
+	{ key: "para-ensemble", label: "Paraphrase · ensemble methods", note: "\"Several models together\" is the term-free phrasing",
 	  seed: { text: "What are ensemble methods?", user: "s1", unit: "Chapter 9" },
 	  probe: { text: "Why does combining several models work better?", user: "s2", unit: "Chapter 9" }, expect: "reuse" },
 
-	{ key: "anti-fit", expectDoc: "n6", label: "Near-antonym · over/underfitting", note: "Near-identical phrasing, opposite concepts",
+	{ key: "anti-fit", label: "Near-antonym · over/underfitting", note: "Near-identical phrasing, opposite concepts",
 	  seed: { text: "What is overfitting?", user: "s1", unit: "Chapter 4" },
 	  probe: { text: "What is underfitting?", user: "s2", unit: "Chapter 4" }, expect: "regenerate", catches: [3, 4] },
 
-	{ key: "anti-pr", expectDoc: "n11", label: "Near-antonym · precision/recall", note: "Two metrics one word apart",
+	{ key: "anti-pr", label: "Near-antonym · precision/recall", note: "Two metrics one word apart",
 	  seed: { text: "What is precision?", user: "s1", unit: "Chapter 6" },
 	  probe: { text: "What is recall?", user: "s2", unit: "Chapter 6" }, expect: "regenerate", catches: [3, 4] },
 
-	{ key: "anti-l1l2", expectDoc: "n8", label: "Near-antonym · L1/L2", note: "One character apart",
+	{ key: "anti-l1l2", label: "Near-antonym · L1/L2", note: "One character apart",
 	  seed: { text: "What are the properties of L1 regularisation?", user: "s1", unit: "Chapter 5" },
 	  probe: { text: "What are the properties of L2 regularisation?", user: "s2", unit: "Chapter 5" }, expect: "regenerate", catches: [3, 4] },
 
-	{ key: "unit-norm", expectDoc: "n16", label: "Same word, different chapter · normalisation",
+	{ key: "unit-norm", label: "Same word, different chapter · normalisation",
 	  note: "Chapter 7 feature scaling vs chapter 10 batch norm. Assumes the product knows which chapter the student is on",
 	  caveat: "Without that chapter context the two inputs are identical and reuse is correct — then it is a retrieval ambiguity, not a cache failure.",
 	  seed: { text: "How does normalisation work?", user: "s1", unit: "Chapter 7" },
-	  probe: { text: "How does normalisation work?", user: "s2", unit: "Chapter 10" }, expect: "regenerate", catches: 6 },
+	  probe: { text: "How does normalisation work?", user: "s2", unit: "Chapter 10" }, expect: "regenerate", catches: 6, nowHandledBy: "unit-scope" },
 
-	{ key: "unit-conv", expectDoc: "n17", label: "Same word, different chapter · convergence",
+	{ key: "unit-conv", label: "Same word, different chapter · convergence",
 	  note: "Gradient descent in chapter 3 vs EM in chapter 11",
 	  caveat: "Same caveat as above.",
 	  seed: { text: "What does convergence mean?", user: "s1", unit: "Chapter 3" },
-	  probe: { text: "What does convergence mean?", user: "s2", unit: "Chapter 11" }, expect: "regenerate", catches: 6 },
+	  probe: { text: "What does convergence mean?", user: "s2", unit: "Chapter 11" }, expect: "regenerate", catches: 6, nowHandledBy: "unit-scope" },
 
-	{ key: "entity-method", expectDoc: "h2", label: "Entity collapse · method history",
+	{ key: "entity-method", label: "Entity collapse · method history",
 	  note: "Collapses to the same string after anonymisation, yet both are legitimate subject questions",
 	  seed: { text: "What method did Hinton propose?", user: "s1", unit: "Chapter 12" },
-	  probe: { text: "What method did LeCun propose?", user: "s2", unit: "Chapter 12" }, expect: "regenerate", catches: 6 },
+	  probe: { text: "What method did LeCun propose?", user: "s2", unit: "Chapter 12" }, expect: "regenerate", catches: 6, nowHandledBy: "user-scope" },
 
-	{ key: "entity-method2", expectDoc: "h4", label: "Entity collapse · method history 2", note: "Same, another pair",
+	{ key: "entity-method2", label: "Entity collapse · method history 2", note: "Same, another pair",
 	  seed: { text: "What method did Vapnik propose?", user: "s3", unit: "Chapter 12" },
-	  probe: { text: "What method did Breiman propose?", user: "s4", unit: "Chapter 12" }, expect: "regenerate", catches: 6 },
+	  probe: { text: "What method did Breiman propose?", user: "s4", unit: "Chapter 12" }, expect: "regenerate", catches: 6, nowHandledBy: "user-scope" },
 
-	{ key: "staleness-syllabus", expectDoc: "syl", label: "Corpus revision · midterm scope",
+	{ key: "staleness-syllabus", label: "Corpus revision · midterm scope",
 	  note: "Instructor revises the syllabus mid-term: scope widens, closed book becomes open book",
 	  seed: { text: "How many chapters does the midterm cover?", user: "s1", unit: "Syllabus" }, bumpCorpus: true,
-	  probe: { text: "How many chapters does the midterm cover?", user: "s2", unit: "Syllabus" }, expect: "regenerate", catches: 5 },
+	  probe: { text: "How many chapters does the midterm cover?", user: "s2", unit: "Syllabus" }, expect: "regenerate" },
 
-	{ key: "staleness-grade", expectDoc: "syl", label: "Corpus revision · grade weights",
+	{ key: "staleness-grade", label: "Corpus revision · grade weights",
 	  note: "Weights changed in the same revision; different question, same source document",
 	  seed: { text: "What percentage of the grade is homework?", user: "s1", unit: "Syllabus" }, bumpCorpus: true,
-	  probe: { text: "What percentage of the grade is homework?", user: "s2", unit: "Syllabus" }, expect: "regenerate", catches: 5 },
+	  probe: { text: "What percentage of the grade is homework?", user: "s2", unit: "Syllabus" }, expect: "regenerate" },
 
-	{ key: "neg-unrelated", expectDoc: "hw3", label: "Control · unrelated topics", note: "Two distant topics in the same course",
+	{ key: "neg-unrelated", label: "Control · unrelated topics", note: "Two distant topics in the same course",
 	  seed: { text: "How do you prune a decision tree?", user: "s1", unit: "Chapter 8" },
 	  probe: { text: "Which metrics does homework three ask for?", user: "s2", unit: "Chapter 8" }, expect: "regenerate", catches: [3, 4] },
 
-	{ key: "anti-acc-prec", expectDoc: "n11", label: "Near-synonym · accuracy/precision", note: "One word apart, and they live in different documents — the criterion can see the error",
+	{ key: "anti-acc-prec", label: "Near-synonym · accuracy/precision", note: "One word apart, and they live in different documents — the criterion can see the error",
 	  seed: { text: "What is accuracy?", user: "s1", unit: "Chapter 6" },
 	  probe: { text: "What is precision?", user: "s2", unit: "Chapter 6" }, expect: "regenerate", catches: [3, 4] },
 
-	{ key: "anti-early-prune", expectDoc: "n18", label: "Near-synonym · early stopping/pruning", note: "Both are \"ways to fight overfitting\", phrased almost identically, chapters 5 and 8",
+	{ key: "anti-early-prune", label: "Near-synonym · early stopping/pruning", note: "Both are \"ways to fight overfitting\", phrased almost identically, chapters 5 and 8",
 	  seed: { text: "How does early stopping prevent overfitting?", user: "s1", unit: "Chapter 5" },
 	  probe: { text: "How does pruning prevent overfitting?", user: "s2", unit: "Chapter 8" }, expect: "regenerate", catches: [3, 4, 6] },
 
-	{ key: "anti-tree-ensemble", expectDoc: "n19", label: "Near-synonym · trees/ensembles", note: "One is a single model, one is many — students mix them up",
+	{ key: "anti-tree-ensemble", label: "Near-synonym · trees/ensembles", note: "One is a single model, one is many — students mix them up",
 	  seed: { text: "How does a decision tree work?", user: "s1", unit: "Chapter 8" },
 	  probe: { text: "How do ensemble methods work?", user: "s2", unit: "Chapter 9" }, expect: "regenerate", catches: [3, 4] },
 
-	{ key: "anti-norm-encode", expectDoc: "n15", label: "Near-synonym · normalising/encoding", note: "Both are chapter-7 feature engineering: \"features need preprocessing first\"",
+	{ key: "anti-norm-encode", label: "Near-synonym · normalising/encoding", note: "Both are chapter-7 feature engineering: \"features need preprocessing first\"",
 	  seed: { text: "How should numeric features be preprocessed?", user: "s1", unit: "Chapter 7" },
 	  probe: { text: "How should categorical features be preprocessed?", user: "s2", unit: "Chapter 7" }, expect: "regenerate", catches: [3, 4, 6] },
 
-	{ key: "entity-method3", expectDoc: "h3", label: "Placeholder collapse · Hinton/Vapnik", note: "Third name pair — more entity samples",
+	{ key: "entity-method3", label: "Placeholder collapse · Hinton/Vapnik", note: "Third name pair — more entity samples",
 	  seed: { text: "What method did Hinton propose?", user: "s1", unit: "Chapter 12" },
-	  probe: { text: "What method did Vapnik propose?", user: "s2", unit: "Chapter 12" }, expect: "regenerate", catches: 6 },
+	  probe: { text: "What method did Vapnik propose?", user: "s2", unit: "Chapter 12" }, expect: "regenerate", catches: 6, nowHandledBy: "user-scope" },
 
-	{ key: "entity-method4", expectDoc: "h4", label: "Placeholder collapse · LeCun/Breiman", note: "Fourth name pair",
+	{ key: "entity-method4", label: "Placeholder collapse · LeCun/Breiman", note: "Fourth name pair",
 	  seed: { text: "What method did LeCun propose?", user: "s1", unit: "Chapter 12" },
-	  probe: { text: "What method did Breiman propose?", user: "s2", unit: "Chapter 12" }, expect: "regenerate", catches: 6 },
+	  probe: { text: "What method did Breiman propose?", user: "s2", unit: "Chapter 12" }, expect: "regenerate", catches: 6, nowHandledBy: "user-scope" },
 ];
 
 /** Compose an answer. The template language must match the corpus language —

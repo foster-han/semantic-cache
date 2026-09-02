@@ -149,16 +149,18 @@ export const DISTRACTORS: ReadonlyArray<string> = [
 ];
 
 /**
- * 带标注的用例。全部在这一门课里。
+ * 带标注的用例。全部在这一门课里 —— 也就是**同一个 space**。
  *
- * **判据是 expectDoc，不是 reuse/regenerate。**
+ * **判据是「答案来自哪个 space」，不是 reuse/regenerate。**
  * 一开始按「该不该重生成」判，但加了干扰缓存之后这个判据就错了：探测问题可能
- * 命中另一条**内容正确**的缓存，那是成功不是失败。真正要判的是「返回给学生的
- * 答案是不是基于正确的那篇资料」。
+ * 命中另一条**内容正确**的缓存，那是成功不是失败。
  *
- *   expectDoc —— 答案必须基于哪篇资料（rec:X 表示某个学生的个人成绩记录）
+ * 判据接着做过一次 doc 级（`expectDoc`：答案必须基于哪篇资料），随「答案引了哪些文档」
+ * 这个维度一起移除了。现在只剩 space —— 而这 26 条全在一个 space 里，所以**这份场景集
+ * 的假命中判定几乎恒为 0**，它测得出 scope 路由错，测不出检索精度错。
+ *
  *   expect    —— 顺带记录预期的复用行为，只作参考不作判据
- *   catches   —— 期望由哪道闸拦下
+ *   catches   —— 期望由哪道闸拦下（⑤⑥ 已移除，标着它们的那些是历史记录）
  */
 /**
  * ④ 的判别力探针。**问句全部取自这门课**，不是通用例子 —— 先前用的是
@@ -179,7 +181,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	/* ---- 正例：缓存本来就该吃下的 ---- */
 	{
 		key: "para-overfit",
-		expectDoc: "n5",
 		label: "同义改写 · 过拟合",
 		note: "同一个意图的两种问法",
 		seed: { text: "什么是过拟合？", user: "s1", unit: "第四章" },
@@ -188,7 +189,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "para-lr",
-		expectDoc: "n3",
 		label: "同义改写 · 学习率",
 		note: "口语化的另一种问法",
 		seed: { text: "学习率太大会怎么样？", user: "s1", unit: "第三章" },
@@ -197,7 +197,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "para-cv",
-		expectDoc: "n13",
 		label: "同义改写 · 交叉验证",
 		note: "问法差得比较远，但仍是同一个意图",
 		seed: { text: "为什么要做 k 折交叉验证？", user: "s1", unit: "第六章" },
@@ -207,7 +206,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 
 	{
 		key: "para-bias",
-		expectDoc: "n7",
 		label: "同义改写 · 偏差方差",
 		note: "术语问法 vs 大白话问法",
 		seed: { text: "偏差和方差是什么关系？", user: "s1", unit: "第四章" },
@@ -216,7 +214,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "para-norm",
-		expectDoc: "n14",
 		label: "同义改写 · 特征归一化",
 		note: "「怎么做」和「为什么要做」——意图相同，措辞几乎不重叠",
 		seed: { text: "特征归一化怎么做？", user: "s1", unit: "第七章" },
@@ -225,7 +222,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "para-prune",
-		expectDoc: "n18",
 		label: "同义改写 · 剪枝",
 		note: "口语「砍枝」vs 术语「剪枝」",
 		seed: { text: "决策树为什么要剪枝？", user: "s1", unit: "第八章" },
@@ -234,7 +230,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "para-early",
-		expectDoc: "n9",
 		label: "同义改写 · 早停",
 		note: "「什么时候停」是学生实际会用的问法",
 		seed: { text: "早停是怎么回事？", user: "s1", unit: "第五章" },
@@ -243,7 +238,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "para-f1",
-		expectDoc: "n12",
 		label: "同义改写 · F1",
 		note: "缩写 vs 展开",
 		seed: { text: "F1 分数是什么？", user: "s1", unit: "第六章" },
@@ -252,7 +246,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "para-loss",
-		expectDoc: "n2",
 		label: "同义改写 · 损失函数",
 		note: "「干什么用的」——最常见的初学者问法",
 		seed: { text: "损失函数是干什么的？", user: "s1", unit: "第二章" },
@@ -261,7 +254,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "para-ensemble",
-		expectDoc: "n19",
 		label: "同义改写 · 集成方法",
 		note: "「多个模型一起用」是不带术语的问法",
 		seed: { text: "集成方法是什么？", user: "s1", unit: "第九章" },
@@ -272,7 +264,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	/* ---- 近义反义对：单门课内最主要的假命中来源 ---- */
 	{
 		key: "anti-fit",
-		expectDoc: "n6",
 		label: "反义对 · 过拟合/欠拟合",
 		note: "问法极像、概念相反，学生真的会连着问",
 		seed: { text: "什么是过拟合？", user: "s1", unit: "第四章" },
@@ -282,7 +273,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "anti-pr",
-		expectDoc: "n11",
 		label: "反义对 · 精确率/召回率",
 		note: "两个指标名字只差一个词",
 		seed: { text: "精确率是什么？", user: "s1", unit: "第六章" },
@@ -292,7 +282,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "anti-l1l2",
-		expectDoc: "n8",
 		label: "反义对 · L1/L2",
 		note: "同一节里的两个东西，问法只差一个字符",
 		seed: { text: "L1 正则化有什么特点？", user: "s1", unit: "第五章" },
@@ -304,7 +293,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	/* ---- 课内跨章：同一个词在两章里指不同东西 ---- */
 	{
 		key: "unit-norm",
-		expectDoc: "n16",
 		label: "课内跨章 · 归一化",
 		note: "第七章的特征缩放 vs 第十章的批归一化。前提：产品知道学生当前学到哪一章",
 		caveat: "没有「学生当前章节」这个上下文时，两条输入完全相同，复用其实是对的 —— 那时它不是缓存问题，而是检索歧义。",
@@ -312,10 +300,10 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 		probe: { text: "归一化是怎么做的？", user: "s2", unit: "第十章" },
 		expect: "regenerate",
 		catches: 6,
+		nowHandledBy: "unit-scope",
 	},
 	{
 		key: "unit-conv",
-		expectDoc: "n17",
 		label: "课内跨章 · 收敛",
 		note: "第三章梯度下降的收敛 vs 第十一章 EM 的收敛。同样依赖「当前章节」上下文",
 		caveat: "同上：没有章节上下文时这不算缓存失效。",
@@ -323,58 +311,56 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 		probe: { text: "收敛是什么意思？", user: "s2", unit: "第十一章" },
 		expect: "regenerate",
 		catches: 6,
+		nowHandledBy: "unit-scope",
 	},
 
 	/* ---- 实体塌陷：学科内容里的人名（正当的 RAG 问题）---- */
 	{
 		key: "entity-method",
-		expectDoc: "h2",
 		label: "实体塌陷 · 方法史",
 		note: "匿名化后同样塌成一句，但两者都是正当的学科问题",
 		seed: { text: "Hinton 提出了什么方法？", user: "s1", unit: "第十二章" },
 		probe: { text: "LeCun 提出了什么方法？", user: "s2", unit: "第十二章" },
 		expect: "regenerate",
 		catches: 6,
+		nowHandledBy: "user-scope",
 	},
 	{
 		key: "entity-method2",
-		expectDoc: "h4",
 		label: "实体塌陷 · 方法史 2",
 		note: "同上，换一对",
 		seed: { text: "Vapnik 提出了什么方法？", user: "s3", unit: "第十二章" },
 		probe: { text: "Breiman 提出了什么方法？", user: "s4", unit: "第十二章" },
 		expect: "regenerate",
 		catches: 6,
+		nowHandledBy: "user-scope",
 	},
 
 	/* ---- 语料改版 ---- */
 	{
 		key: "staleness-syllabus",
-		expectDoc: "syl",
 		label: "语料改版 · 期中范围",
 		note: "老师学期中改了大纲：范围扩大、闭卷改开卷",
 		seed: { text: "期中考试考到第几章？", user: "s1", unit: "大纲" },
 		bumpCorpus: true,
 		probe: { text: "期中考试考到第几章？", user: "s2", unit: "大纲" },
 		expect: "regenerate",
-		catches: 5,
+		// ⑤ 资料版本比对已移除 —— 现在没有任何一道闸看得见改版。
+		// `bumpCorpus` 因此在回放时会连着「清掉那个 space」一起跑，那才是新机制。
 	},
 	{
 		key: "staleness-grade",
-		expectDoc: "syl",
 		label: "语料改版 · 评分构成",
 		note: "评分权重也一起改了，问法不同但依赖同一篇大纲",
 		seed: { text: "平时作业占总分多少？", user: "s1", unit: "大纲" },
 		bumpCorpus: true,
 		probe: { text: "平时作业占总分多少？", user: "s2", unit: "大纲" },
 		expect: "regenerate",
-		catches: 5,
 	},
 
 	/* ---- 对照组：完全无关 ---- */
 	{
 		key: "neg-unrelated",
-		expectDoc: "hw3",
 		label: "对照组 · 无关主题",
 		note: "同一门课的两个远主题，③ 就该拦住",
 		seed: { text: "决策树怎么剪枝？", user: "s1", unit: "第八章" },
@@ -385,7 +371,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 
 	{
 		key: "anti-acc-prec",
-		expectDoc: "n11",
 		label: "近义对 · 准确率/精确率",
 		note: "两个词差一个字，住在不同文档里 —— 判据够得着",
 		seed: { text: "准确率是什么？", user: "s1", unit: "第六章" },
@@ -395,7 +380,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "anti-early-prune",
-		expectDoc: "n18",
 		label: "近义对 · 早停/剪枝",
 		note: "都是「防过拟合的手段」，问法极像，分属第五章和第八章",
 		seed: { text: "早停怎么防止过拟合？", user: "s1", unit: "第五章" },
@@ -405,7 +389,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "anti-tree-ensemble",
-		expectDoc: "n19",
 		label: "近义对 · 决策树/集成",
 		note: "一个是单模型一个是多模型，学生常混",
 		seed: { text: "决策树是怎么工作的？", user: "s1", unit: "第八章" },
@@ -415,7 +398,6 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "anti-norm-encode",
-		expectDoc: "n15",
 		label: "近义对 · 归一化/编码",
 		note: "同属第七章特征工程，都是「特征要先处理一下」",
 		seed: { text: "数值特征要怎么预处理？", user: "s1", unit: "第七章" },
@@ -425,23 +407,23 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 	{
 		key: "entity-method3",
-		expectDoc: "h3",
 		label: "实体塌陷 · Hinton/Vapnik",
 		note: "第三对人名，扩大实体用例的样本",
 		seed: { text: "Hinton 提出了什么方法？", user: "s1", unit: "第十二章" },
 		probe: { text: "Vapnik 提出了什么方法？", user: "s2", unit: "第十二章" },
 		expect: "regenerate",
 		catches: 6,
+		nowHandledBy: "user-scope",
 	},
 	{
 		key: "entity-method4",
-		expectDoc: "h4",
 		label: "实体塌陷 · LeCun/Breiman",
 		note: "第四对人名",
 		seed: { text: "LeCun 提出了什么方法？", user: "s1", unit: "第十二章" },
 		probe: { text: "Breiman 提出了什么方法？", user: "s2", unit: "第十二章" },
 		expect: "regenerate",
 		catches: 6,
+		nowHandledBy: "user-scope",
 	},
 ];
 

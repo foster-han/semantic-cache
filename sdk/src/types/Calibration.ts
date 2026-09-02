@@ -1,45 +1,51 @@
 import type { PairEncoder, Reranker, RerankTarget } from "./Encoders.ts";
 
 /**
- * 一个打分器和**为它标定的**阈值绑在一起。
+ * Binds a scorer to the thresholds **calibrated for it**.
  *
- * 分开放是错的。`rerankFloor` 这类字段在换了打分器之后尺度完全不同 ——
- * 重排器的 sigmoid 和 bi-encoder 的余弦不是一回事，0.979 在前者是"勉强可分"，
- * 在后者是"几乎什么都过不去"。实测里我就因此造出过一个看起来正常、
- * 实则严到荒谬的对照实验，并据此差点写下"精排没有价值"的结论。
+ * Keeping them apart is a mistake. A field like `rerankFloor` lives on a completely different
+ * scale once the scorer changes — a reranker's sigmoid and a bi-encoder's cosine are not the same
+ * quantity, and 0.979 means "barely separable" for the former and "almost nothing gets through"
+ * for the latter. That confusion once produced a control experiment here that looked normal and
+ * was in fact absurdly strict, and very nearly yielded the conclusion that reranking has no value.
  *
- * **阈值属于打分器，不属于流水线。**换打分器必须连阈值一起重标，
- * 所以类型上把它们捆在一起，换一个就拿不到旧的。
+ * **A threshold belongs to its scorer, not to the pipeline.** Swapping the scorer means
+ * recalibrating, so the types tie them together: take a new scorer and you cannot keep the old
+ * numbers.
  */
 export interface Calibrated<TScorer, TThresholds> {
 	readonly scorer: TScorer;
 	readonly thresholds: TThresholds;
 	/**
-	 * 这组阈值在什么数据、什么算子下标出来的。**必填。**
+	 * What data and what operator these thresholds were calibrated on. **Required.**
 	 *
-	 * 阈值离开标定语境就没有意义 —— 换语料要重标，换算子要重标，
-	 * 换模型更要重标。写一句话记下来，比事后考古便宜得多。
+	 * A threshold means nothing outside its calibration context — new corpus, recalibrate; new
+	 * operator, recalibrate; new model, recalibrate above all. One sentence written down now is
+	 * far cheaper than archaeology later.
 	 */
 	readonly calibratedOn: string;
 }
 
-/** ③ 召回：问题↔问题的余弦尺度 */
+/** Gate ③ recall: the question-to-question cosine scale. */
 export type RecallStage = Calibrated<PairEncoder, { readonly floor: number }>;
 
 /**
- * ④ 精排：该重排器自己的分数尺度。
+ * Gate ④ rerank: the reranker's own score scale.
  *
- * **不提供就是没有这道闸**，不会退化成"拿这个闸值去卡召回余弦" ——
- * 那条退化路径正是尺度混用的来源，所以直接删掉了。想收紧问题侧，
- * 提高 `RecallStage` 的 floor（那才是余弦尺度）。
+ * **Omitting it means the gate does not exist.** It does not degrade into "reuse this floor
+ * against the recall cosine" — that degradation is exactly where scale confusion comes from, so
+ * the path was removed. To tighten the question side, raise `RecallStage`'s floor, which is the
+ * value actually denominated in cosine.
  *
- * **`target` 住在 thresholds 里，而不是另开一个字段。** 它不是阈值，但它决定
- * 分数尺度：同一个 `bge-reranker-base`，问↔问的最优闸值是 0.1228，问↔答是
- * 0.3494。换形态不重标 θq 和换模型不重标 θq 是同一个错，所以类型上让它们
- * 共用一个对象 —— 改形态就必须给出新的 floor，拿不到旧的。
+ * **`target` lives inside `thresholds` rather than in a field of its own.** It is not a threshold,
+ * but it determines the score scale: for one and the same `bge-reranker-base`, the optimal floor
+ * is 0.1228 for question-to-question and 0.3494 for question-to-answer. Changing the form without
+ * recalibrating θq is the same mistake as changing the model without recalibrating θq, so the
+ * types put them in one object — change the form and you must supply a new floor, because the old
+ * one is out of reach.
  *
- * 没有默认值：`"question"` 看着像自然的默认，但它恰好是让唯一可得的那类模型
- * （query→passage 训练的重排器）任务错配的那一支。默认一个会静默失效的值，
- * 等于把这套类型设计的意义抵消掉。
+ * There is no default. `"question"` looks like the natural one, but it is precisely the branch
+ * that misapplies the only kind of model readily available (rerankers trained for query→passage).
+ * Defaulting to a value that fails silently would cancel out the point of this type.
  */
 export type RerankStage = Calibrated<Reranker, { readonly floor: number; readonly target: RerankTarget }>;

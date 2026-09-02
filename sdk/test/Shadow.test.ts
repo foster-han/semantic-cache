@@ -1,21 +1,23 @@
 /**
- * 影子模式：闸全跑，但结果不作数。
+ * Shadow mode: every gate runs, and none of the verdicts count.
  *
- * 上线一个概率型缓存最需要的一步 —— 在真实流量上跑完整条判定链，却仍然每次都真生成，
- * 用来回答「真开了会不会返回错答案」。所以这里测的核心是**只读**：
- * 不复用、不驱逐、不 touch、被降级的那次不写回。一边评估一边按评估结果删数据，
- * 等于用没验证过的判据毁掉证据。
+ * The step a probabilistic cache most needs before it ships — run the whole decision chain on
+ * real traffic while still generating for real every time, to answer whether turning it on would
+ * return a wrong answer. So what is under test here is **read-only**: no reuse, no eviction, no
+ * touch, and no write-back on the downgraded request. Deleting data by an evaluation's own
+ * verdicts while that evaluation runs destroys the evidence using an unvalidated criterion.
  */
+
+import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
+import { answering, harness } from "./Fakes.ts";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
-import { answering, forCosine, harness } from "./Fakes.ts";
 
 const ASK = { matchText: "什么是过拟合？", retrievalText: "什么是过拟合？", context: {} };
 
-test("本会命中时：照常真生成，标出 wouldReuse，且原条目一条不动", async () => {
+test("on a would-be hit: generate for real as usual, report wouldReuse, and touch no existing entry", async () => {
 	const store = createMemoryCacheStore();
-	// 先用正常模式灌一条
+	// Seed one entry in normal mode first.
 	const warm = harness({ store });
 	await warm.cache.resolve(ASK, answering("原答案"));
 	const [before] = await store.all();
@@ -27,46 +29,49 @@ test("本会命中时：照常真生成，标出 wouldReuse，且原条目一条
 	assert.equal(result.wouldReuse, true, "但要如实说「本来会命中」");
 	assert.equal(result.payload.kind === "answer" && result.payload.answer, "影子里新生成的");
 
-	// 原条目必须原样还在 —— 没被替换、没被驱逐
+	// The original entry has to still be there untouched — neither replaced nor evicted.
 	const after = await store.all();
 	assert.equal(after.length, 1);
 	assert.equal(after[0].id, before.id);
 	assert.equal(after[0].answer, "原答案");
 });
 
-test("真未命中照常写入 —— 否则影子模式下缓存永远暖不起来", async () => {
+test("a genuine miss writes as usual — otherwise the cache never warms up in shadow mode", async () => {
 	const store = createMemoryCacheStore();
 	const { cache } = harness({ store, shadow: true });
 	const result = await cache.resolve(ASK, answering("第一次"));
 	assert.equal(result.wouldReuse, false, "没命中就是没命中，要进影子模式的分母");
 	assert.equal((await store.all()).length, 1);
 
-	// 暖起来之后，同一个问题就会被记成「本会命中」
+	// Once warm, the same question is recorded as a would-be hit.
 	const again = await cache.resolve(ASK, answering("第二次"));
 	assert.equal(again.wouldReuse, true);
 	assert.equal((await store.all()).length, 1, "仍然只有一条");
 });
 
-test("⑤ 判负时不驱逐 —— 评估不该按未验证的判据删数据", async () => {
-	const store = createMemoryCacheStore();
-	let version = "v1";
-	const warm = harness({ store, sourceVersion: () => version });
-	await warm.cache.resolve(ASK, answering("按 v1 写的"));
-	assert.equal((await store.all()).length, 1);
+/**
+ * **This used to be about eviction.** ⑤ deleted an entry whose source version had moved on, and
+ * shadow mode had to suppress that — deleting data by the very criterion under evaluation destroys
+ * the evidence. ⑤ is gone and nothing on the read path deletes any more, so what is left of "an
+ * evaluation must not change what it evaluates" is `touch()`: it feeds `lru`/`lfu` ordering, and
+ * counting shadow reads as real uses would let the evaluation decide which entries survive.
+ */
+test("shadow mode does not touch — otherwise the evaluation rewrites the lru/lfu ordering under test", async () => {
+	const store = createMemoryCacheStore({ eviction: { policy: "lru", capacity: 10 } });
+	await harness({ store }).cache.resolve(ASK, answering("原答案"));
+	const [before] = await store.all();
+	assert.equal(before.lastUsedAt, undefined, "写入时不记 lastUsedAt —— 它等于 createdAt，存两遍没有信息");
 
-	version = "v2";
-	const shadowed = harness({ store, shadow: true, sourceVersion: () => version });
-	const found = await shadowed.cache.lookup(ASK);
-	assert.equal(found.exitedAt, 5, "⑤ 照常判负");
-	assert.equal((await store.all()).length, 1, "但条目必须留着");
+	const shadowed = harness({ store, shadow: true });
+	assert.equal((await shadowed.cache.lookup(ASK)).outcome, "shadow");
+	assert.equal((await store.all())[0].lastUsedAt, undefined, "影子模式下不许记账");
 
-	// 非影子模式下同样的判定会真的驱逐 —— 对照组
-	const real = harness({ store, sourceVersion: () => version });
-	await real.cache.lookup(ASK);
-	assert.equal((await store.all()).length, 0);
+	// Outside shadow mode the same read really does keep books — the control.
+	await harness({ store }).cache.lookup(ASK);
+	assert.notEqual((await store.all())[0].lastUsedAt, undefined);
 });
 
-test("lookup 在影子模式下把命中降级成 shadow，真实判定留在 wouldHave", async () => {
+test("in shadow mode lookup downgrades a hit to shadow and leaves the real verdict in wouldHave", async () => {
 	const store = createMemoryCacheStore();
 	await harness({ store }).cache.resolve(ASK, answering("原答案"));
 
@@ -76,7 +81,7 @@ test("lookup 在影子模式下把命中降级成 shadow，真实判定留在 wo
 	assert.notEqual(found.payload, null, "载荷仍然给出来 —— 调用方要能比较新旧答案");
 });
 
-test("非影子模式下 wouldReuse 恒为 null —— 别让它污染影子模式的分母", async () => {
+test("outside shadow mode wouldReuse is always null — it must not pollute shadow mode's denominator", async () => {
 	const { cache } = harness();
 	const first = await cache.resolve(ASK, answering("a"));
 	assert.equal(first.wouldReuse, null);

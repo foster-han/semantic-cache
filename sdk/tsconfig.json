@@ -15,7 +15,12 @@
 		"types": [
 			"node"
 		],
-		"allowImportingTsExtensions": true
+		"allowImportingTsExtensions": true,
+		// 区分「属性不存在」与「属性存在但是 undefined」。开着是为了**可移植性**：
+		// 下游消费方（jolliedu/backend 是第一个）普遍开这个选项，而它一旦开着，
+		// 把 `T | undefined` 赋给 `foo?: T` 就是错误。库这边不开，等于把这份修改
+		// 摊派给每一个严格的消费方去打补丁 —— 而补丁在每次同步时都会被覆盖掉。
+		"exactOptionalPropertyTypes": true
 	},
 	// 测试与示例一并纳入。先前只有 src/**，于是 example/Smoke.ts 从来没被类型检查过 ——
 	// 而它正是那种「契约变了没跟上」最容易漏掉的地方（验证台就为此吃过一次静默降级）。

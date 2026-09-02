@@ -63,6 +63,8 @@
   .dot { width:1.45rem; height:1.45rem; border-radius:6px; display:grid; place-items:center; font-size:11px; font-family:var(--mono); cursor:default; }
   .dot.ok { background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent); }
   .dot.no { background:var(--bad-soft); color:var(--bad); border:1px solid var(--bad); }
+  /* 已移交：不判对错，它测的是一道已经移除的闸 */
+  .dot.moved { background:transparent; color:var(--muted); border:1px dashed var(--border-strong); }
   .concl { margin-top:.8rem; padding:.6rem .8rem; border-radius:8px; font-size:13px; border-left:3px solid var(--border-strong); background:var(--surface-2); }
   .concl.good { border-left-color:var(--accent); }
   .concl.flat { border-left-color:var(--warn); }
@@ -87,11 +89,38 @@
   .dbody { padding:0 1.1rem 1.1rem; }
   .dnote { color:var(--muted); font-size:12.5px; margin:0 0 .9rem; }
 
-  .scen { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:.5rem; margin-bottom:1rem; }
-  .scard { text-align:left; padding:.6rem .7rem; border-radius:9px; border:1px solid var(--border-strong); background:var(--surface-2); cursor:pointer; }
+  /* 左边选、右边看。**两个折叠区是同一件事**：场景列表 / 提问表单在左，判定在右。
+     先前两边都是「控件在上、结果在下」，点完得往下翻才找得到判定，翻的过程中
+     又看不见自己点的是哪一条、开关是什么状态。左列宽度用 --side 各自调 */
+  .split { display:grid; grid-template-columns:var(--side, minmax(230px,300px)) 1fr; gap:1.1rem; align-items:stretch; }
+  /* 左列吃满这一行的高度，里面的 .sticky 才有地方跟着视口走 —— 右边判定长的时候
+     （④ 的判据能占半屏）列表不至于停在顶上只露出八条。`hidden auto` 是要的：
+     只写 overflow-y 时 overflow-x 会自己变成 auto，底下就多一条没用的横滚动条 */
+  .splitside { min-height:100%; }
+  .splitpane { min-width:0; }
+  .sticky { position:sticky; top:.7rem; max-height:calc(100vh - 3rem); overflow:hidden auto; padding-right:.35rem; }
+  .scen { display:grid; gap:.35rem; align-content:start; }
+  .scard { text-align:left; padding:.5rem .7rem; border-radius:9px; border:1px solid var(--border-strong); background:var(--surface-2); cursor:pointer; width:100%; }
   .scard:hover { border-color:var(--accent); }
-  .scard b { display:block; font-size:13px; margin-bottom:.2rem; }
+  .scard b { display:block; font-size:12.5px; margin-bottom:.12rem; line-height:1.35; }
   .scard span { display:block; font-family:var(--mono); font-size:10.5px; color:var(--muted); line-height:1.5; }
+  .scard.on { border-color:var(--accent); background:var(--accent-soft); }
+  .scard.on b { color:var(--accent-ink); }
+  .scard.on span { color:var(--accent); }
+  @media (max-width:860px) {
+    .split { grid-template-columns:1fr; }
+    .sticky { position:static; max-height:none; overflow:visible; }
+    .scen.sticky { max-height:16rem; overflow:hidden auto; }
+  }
+
+  /* 选中那条的题面。放在结果正上方 —— 「它问了什么、应该怎样」是读判定的前提 */
+  .scenhead { border:1px solid var(--border); background:var(--surface-2); border-radius:9px; padding:.6rem .8rem; margin-bottom:.6rem; }
+  .scenhead .t { font-weight:600; font-size:13.5px; margin-bottom:.3rem; }
+  .scenhead dl { display:grid; grid-template-columns:max-content 1fr; gap:.15rem .7rem; margin:0; font-family:var(--mono); font-size:11.5px; }
+  .scenhead dt { color:var(--muted); }
+  .scenhead dd { margin:0; }
+  .scenhead .note { color:var(--muted); font-size:11.5px; margin-top:.35rem; }
+  .scenhead .cav { color:var(--warn); font-size:11.5px; margin-top:.35rem; }
 
   /* 语料：一篇一个 tab。这个语料没有再切段，chunk 就是整篇文档，所以一篇=一段 */
   .doctabs { display:flex; gap:.3rem; flex-wrap:wrap; margin-bottom:.5rem; }
@@ -124,6 +153,28 @@
   .p-off,.p-miss { background:var(--surface); color:var(--muted); border-style:dashed; border-color:var(--border-strong); }
   .gate.g-exit { border-color:var(--bad); }
   .gate.g-would { border-color:var(--warn); }
+
+  /* 轨迹重放。**两组量分行放，不并到一根条里。** 页面的绿 (--accent) 和红 (--bad)
+     在正常视力下分得很开（ΔE 21.6），但绿红本来就是红绿色盲那一对：实测 deutan
+     下 ΔE 只有 4.5，低于「配合直接标数才勉强可用」的 6~8 那一档。所以身份由
+     行标题和数字承载，颜色只是冗余强化 —— 分不出颜色的人照样读得出这张图 */
+  .rp { border:1px solid var(--border); background:var(--surface); border-radius:11px; padding:.9rem 1.05rem; margin-bottom:.9rem; }
+  .rp-t { font-weight:700; font-size:14px; margin-bottom:.15rem; }
+  .rp-cfg { font-size:11.5px; color:var(--muted); }
+  .rp-note { font-size:12px; color:var(--muted); margin:.5rem 0 .2rem; }
+  .rp-not { font-size:11.5px; color:var(--warn); background:var(--warn-soft); border:1px solid var(--warn);
+            border-radius:8px; padding:.45rem .7rem; margin-top:.7rem; }
+  .rp-not b { display:block; margin-bottom:.15rem; }
+  .rp-bar { display:grid; grid-template-columns:5.5rem 1fr 4.5rem; gap:.5rem; align-items:center; margin:.18rem 0; font-size:12px; }
+  .rp-bar .tr { background:var(--border); border-radius:3px; height:.62rem; position:relative; }
+  .rp-bar .tr i { position:absolute; inset:0 auto 0 0; border-radius:3px; }
+  /* 上限刻度：一条竖线，不是一段填色 —— 它是个参照，不是一个量 */
+  .rp-bar .tr u { position:absolute; top:-.18rem; bottom:-.18rem; width:2px; background:var(--ink); opacity:.55; }
+  .rp-ex { border:1px solid var(--border); border-radius:8px; padding:.5rem .7rem; margin-top:.35rem; background:var(--surface-2); font-size:12.5px; }
+  .rp-ex .q { display:grid; grid-template-columns:2.6rem 1fr; gap:.4rem; }
+  .rp-ex .q + .q { margin-top:.15rem; }
+  .rp-ex .k { color:var(--muted); font-family:var(--mono); font-size:11px; }
+  .rp-ex .g { font-family:var(--mono); font-size:10.5px; color:var(--muted); }
 
   .outcome { font-size:13.5px; padding:.6rem .85rem; border-radius:9px; margin-bottom:.8rem; border:1px solid var(--border); }
   .outcome.right { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
@@ -200,56 +251,62 @@
   <details open>
     <summary>单条场景细看 —— 想知道某一条具体是怎么被拦下的</summary>
     <div class="dbody">
-      <p class="dnote">点一个场景，自动完成「清空 → 播种 → （必要时语料改版）→ 探测」，下面显示探测那一次逐道闸的判定。开关在最后一个折叠区里改。</p>
-      <div class="scen" id="scen"></div>
-      <div id="outcome"></div>
-      <div class="legend" id="legendScen"></div>
-      <div id="trace"><p class="empty">还没跑。点上面任意一个场景。（手动提问的结果显示在「手动探索」区里）</p></div>
-      <div id="answerBox"></div>
+      <p class="dnote">点左边一条场景，自动完成「清空 → 播种 → （必要时语料改版）→ 探测」，右边显示探测那一次逐道闸的判定。开关在最后一个折叠区里改。</p>
+      <div class="split">
+        <div class="splitside"><div class="scen sticky" id="scen"></div></div>
+        <div class="splitpane">
+          <div id="scenHead"></div>
+          <div id="outcome"></div>
+          <div class="legend" id="legendScen"></div>
+          <div id="trace"><p class="empty">还没跑。点左边任意一条场景。（手动提问的结果显示在「手动探索」区里）</p></div>
+          <div id="answerBox"></div>
+        </div>
+      </div>
     </div>
   </details>
 
   <details>
     <summary>手动探索 —— 自己出题、改闸门、调阈值</summary>
     <div class="dbody">
-      <div class="cols">
-        <div>
-          <label class="fld" for="q">问题</label>
-          <input type="text" id="q" value="怎么重置密码？">
-          <label class="fld" for="u">学生</label>
-          <select id="u"><option>s1</option><option>s2</option><option>s3</option><option>s4</option></select>
-          <label class="fld" for="c">学生当前学到哪一章</label>
-          <select id="c"></select>
-          <div class="row" style="margin-top:.9rem">
-            <button class="primary" id="ask">提问</button>
-            <button id="bump">语料改版</button>
-            <button id="reset">清空缓存</button>
-            <span class="mono" id="askStatus" style="color:var(--muted)"></span>
+      <div class="split" style="--side:minmax(280px,360px)">
+        <div class="splitside">
+          <div class="sticky">
+            <label class="fld" for="q" style="margin-top:0">问题</label>
+            <input type="text" id="q" value="怎么重置密码？">
+            <label class="fld" for="u">学生</label>
+            <select id="u"><option>s1</option><option>s2</option><option>s3</option><option>s4</option></select>
+            <label class="fld" for="c">学生当前学到哪一章</label>
+            <select id="c"></select>
+            <div class="row" style="margin-top:.9rem">
+              <button class="primary" id="ask">提问</button>
+              <button id="bump">语料改版</button>
+              <button id="reset">清空缓存</button>
+              <span class="mono" id="askStatus" style="color:var(--muted)"></span>
+            </div>
+            <label class="fld">闸门开关（只影响手动提问和「单条场景细看」，不影响对照实验）</label>
+            <div class="toggles" id="toggles"></div>
+            <label class="fld">阈值<small id="calibNote" style="display:block;font-weight:400;color:var(--muted);margin-top:.25rem"></small></label>
+            <div class="thr">
+              <div>θq <input type="number" id="thetaQ" step="0.001" min="0" max="1" placeholder="未标定"></div>
+              <div>召回下限 <input type="number" id="recallFloor" step="0.01" min="0" max="1"></div>
+            </div>
+            <label class="fld" for="scopeMode">缓存 pre-filter 粒度</label>
+            <select id="scopeMode">
+              <option value="course">course（全班共享一个缓存）</option>
+              <option value="unit">unit（再按学生当前章节切开）</option>
+            </select>
           </div>
         </div>
-        <div>
-          <label class="fld">闸门开关（只影响上面的手动提问和「单条场景细看」，不影响对照实验）</label>
-          <div class="toggles" id="toggles"></div>
-          <label class="fld">阈值<small id="calibNote" style="display:block;font-weight:400;color:var(--muted);margin-top:.25rem"></small></label>
-          <div class="thr">
-            <div>θq <input type="number" id="thetaQ" step="0.001" min="0" max="1" placeholder="未标定"></div>
-            <div>召回下限 <input type="number" id="recallFloor" step="0.01" min="0" max="1"></div>
-          </div>
-          <label class="fld" for="scopeMode">缓存 pre-filter 粒度</label>
-          <select id="scopeMode">
-            <option value="course">course（全班共享一个缓存）</option>
-            <option value="unit">unit（再按学生当前章节切开）</option>
-          </select>
+        <div class="splitpane">
+          <div id="manualOut"><p class="empty">还没问。左边写一句，点「提问」。（改开关不会重跑，要再点一次提问）</p></div>
         </div>
       </div>
-
-      <div id="manualOut" style="margin-top:1.2rem"></div>
 
       <div style="margin-top:1.6rem">
         <label class="fld">运行指标 —— 只统计手动提问，不含对照实验与场景回放</label>
         <p class="dnote" style="margin:.2rem 0 .7rem">
           上排是 Redis LangCache 看板给的那一组。下排是它给不出的：<b>未命中时被哪道闸拦下</b> ——
-          问题侧不像（③④）、资料改版（⑤），两种未命中的处置完全不同。
+          没有足够像的候选（③）、像但精排判定不是同一件事（④），两种未命中的处置完全不同。
           <b>这里没有「正命中率」</b>：那要知道复用的答案对不对，线上没有这个信息，只能靠标注集或抽样人工判。
         </p>
         <div id="metricsBox"></div>
@@ -274,6 +331,15 @@
     </div>
   </details>
 
+  <h2>轨迹重放 —— 真实流量</h2>
+  <p class="h2sub">
+    上面那些跑在 26 条手写场景上。这一节是把 <b>vCache 的公开基准</b>按顺序放进一个空缓存里，
+    让它自己长起来 —— 每条查询都带等价组标注，所以第一次能算出<b>正命中率</b>：复用的那条到底对不对。
+    数字是 <span class="mono">scripts/replayVCache.ts</span> 跑出来的，这一屏只读它的产物；
+    换阈值要重跑那个脚本。
+  </p>
+  <div id="replays"><p class="empty">加载中…</p></div>
+
 </div>
 
 <script type="module">
@@ -282,13 +348,12 @@ const GATE_PLAIN = {
   2: "问法一模一样时直接返回，微秒级",
   3: "找出语义最近的几条缓存（top-5，不是 top-1）",
   4: "把问题和缓存条目拼在一起送模型打分，比各自编码再算余弦准",
-  5: "比对语料版本号——确定性判据，不算相似度",
+  5: "写入这一步本身——不是闸，是「这次到底有没有落进缓存」",
 };
 
 const GATES = [
   { key:"gate1", label:"① Presidio 门控", desc:"检出实体就强制 user scope。开启后跨学生共享不再发生。" },
   { key:"gate4", label:"④ Cross-encoder 重排", desc:"没有这道闸时问题侧只由 ③ 的召回下限把关。" },
-  { key:"gate5", label:"⑤ 语料版本比对", desc:"关掉后过期答案会照常返回。" },
   { key:"declareRedacted", label:"如实声明已脱敏", desc:"声明后 SDK 拒绝把 answer 条目放进共享 scope —— 打开它并关掉 ① 会被当场拒绝，那是对的。" },
 ];
 
@@ -351,17 +416,31 @@ function renderExps() {
 }
 
 function sideHtml(tag, label, res) {
-  // 判据是「答案的首要依据是不是那篇资料」，所以 tooltip 要比的是文档 id，不是 reuse/regenerate
+  // 判据是「答案来自哪个 space」，所以 tooltip 比的是 space，不是 reuse/regenerate。
+  // 先前比的是文档 id（答案的首要依据），那个维度已从 SDK 移除。
   const dots = res.rows.map(r => {
     const how = r.got === "reuse" ? "复用" : "重新生成";
     const where = r.exitedAt ? `，第 ${r.exitedAt} 道闸拦下` : "";
-    const title = `${r.label}：应该依据 ${r.expectDoc}，实际 ${r.primarySource ?? "无"}（${how}${where}）`;
+    const title = `${r.label}：应该来自 ${r.expectSpace}，实际 ${r.space}（${how}${where}）`;
+    // 已移交的不判对错 —— 它测的是一道已经移除的闸。鼠标停上去给出「谁接住了它」
+    if (r.nowHandledBy) {
+      const c = r.coveredUnder;
+      const tail = !c ? "（那个配置没跑起来）"
+        : c.got === "regenerate" ? `；在「${c.config}」下重新生成 ✓`
+        : `；在「${c.config}」下仍然复用 ✗`;
+      return `<span class="dot moved" title="${esc(title + " —— 已移交，不计入假命中" + tail)}">–</span>`;
+    }
     return `<span class="dot ${r.ok ? "ok" : "no"}" title="${esc(title)}">${r.ok ? "✓" : "✗"}</span>`;
   }).join("");
+  const moved = res.movedOut
+    ? `　·　已移交 <b title="先前由 ⑥ 拦下的场景。⑥ 已移除，它们改由隔离边界负责，不计入假命中">${res.movedOut}</b>`
+    : "";
+  // 判据降到 space 之后这一格几乎恒为 0：跨 space 的复用在 ① 就被挡住、③ 还复核一遍，
+  // 它现在能抓的是 scope 路由错了，抓不到检索精度错了。
   return `<div class="side">
     <div class="lb">${tag}</div>
     <div class="nm">${esc(label)}</div>
-    <div class="fig">假命中 <b style="color:${res.falseHit ? "var(--bad)" : "var(--accent)"}">${res.falseHit}</b>　·　漏命中 ${res.missed}</div>
+    <div class="fig">假命中 <b style="color:${res.falseHit ? "var(--bad)" : "var(--accent)"}">${res.falseHit}</b>　·　漏命中 ${res.missed}${moved}</div>
     <div class="dots">${dots}</div>
   </div>`;
 }
@@ -462,8 +541,108 @@ function markCeCard(p) {
   hint.textContent = `自检通过（${form}，margin ${p.margin.toFixed(4)}），θq ${p.thetaQ} 落在两组之间 —— 这张卡的结果可以按字面读。`;
 }
 
+/* ---------- 轨迹重放 ---------- */
+
+const REPLAY_TITLE = {
+  lmarena: "LM Arena 聊天 prompt —— 最像 LLM 线上流量的一份",
+  search: "真实浏览器搜索查询 —— 短、口语、关键词",
+  classification: "分类任务",
+  combo: "混合 + 故意掺入的「不该命中」",
+};
+
+/**
+ * 一档一根条。**身份靠行标题和右边的数字，不靠颜色** —— 见 CSS 里那段：
+ * 这页的绿红在 deutan 下 ΔE 只有 4.5，颜色单独承载身份就等于对一部分人不显示。
+ */
+function rpBar(label, value, max, color, tick) {
+  const w = max === 0 ? 0 : (value / max) * 100;
+  const mark = tick === undefined || max === 0 ? "" : `<u style="left:${Math.min(100, (tick / max) * 100)}%"></u>`;
+  return `<div class="rp-bar">
+    <span class="mono">${esc(label)}</span>
+    <span class="tr"><i style="width:${w.toFixed(1)}%;background:${color}"></i>${mark}</span>
+    <span class="mono" style="text-align:right">${esc(String(value))}</span>
+  </div>`;
+}
+
+function replayHtml(r) {
+  const runs = r.runs ?? [];
+  if (runs.length === 0) return "";
+  const rows = runs.map(x => {
+    const hits = x.trueHits + x.falseHits;
+    return `<tr>
+      <td class="mono">${x.floor.toFixed(2)}</td>
+      <td>${x.gate4 ? "开" : "关"}</td>
+      <td class="mono">${share(hits, x.queries)}</td>
+      <td class="mono">${share(x.trueHits, x.queries)}</td>
+      <td class="mono">${hits === 0 ? "—" : share(x.trueHits, hits)}</td>
+      <td class="mono">${x.reusable === 0 ? "—" : share(x.trueHits, x.reusable)}</td>
+      <td class="mono">${x.trueHits}</td>
+      <td class="mono">${x.falseHits}</td>
+      <td class="mono">${x.missedReuse}</td>
+      <td class="mono">${x.savedSeconds > 0 ? Math.round(x.savedSeconds) + "s" : "—"}</td>
+    </tr>`;
+  }).join("");
+
+  // 两组条共用一根刻度，否则「买到多少 / 付出多少」看不出比例
+  const max = Math.max(1, ...runs.map(x => Math.max(x.trueHits, x.falseHits)));
+  const reusableMax = Math.max(...runs.map(x => x.reusable));
+  const bars =
+    `<label class="fld">正命中（越高越好）　<span style="text-transform:none;letter-spacing:0">竖线是上限 ${reusableMax} 条 —— 每组第一次必然 miss</span></label>` +
+    runs.map(x => rpBar(`下限 ${x.floor.toFixed(2)}`, x.trueHits, max, "var(--accent)", reusableMax)).join("") +
+    `<label class="fld">假命中（越低越好，与上面同一根刻度）</label>` +
+    runs.map(x => rpBar(`下限 ${x.floor.toFixed(2)}`, x.falseHits, max, "var(--bad)")).join("");
+
+  const top = runs.reduce((a, b) => (b.trueHits > a.trueHits ? b : a));
+  const examples = (top.examples ?? []).slice(0, 3).map(e => `
+    <div class="rp-ex">
+      <div class="q"><span class="k">问</span><span>${esc(e.query.replace(/\s+/gu, " ").slice(0, 150))}　<span class="g">[组 ${e.queryLabel}]</span></span></div>
+      <div class="q"><span class="k">复用</span><span>${esc(e.reused.replace(/\s+/gu, " ").slice(0, 150))}　<span class="g">[组 ${e.reusedLabel}]</span></span></div>
+    </div>`).join("");
+
+  const enc = r.encoder && r.encoder.mode === "local" ? `本地 ${r.encoder.model}` : (r.encoder ? r.encoder.mode : "?");
+  return `<div class="rp">
+    <div class="rp-t">${esc(REPLAY_TITLE[r.benchmark] ?? r.benchmark)}</div>
+    <div class="rp-cfg">${r.queries} 条查询 · ${r.groups} 个等价组 · 正命中上限 ${pctOf(r.trueHitCeiling)}　|　③ ${esc(enc)} · top-${r.topK} · 轨迹 seed ${r.traceSeed} · ④ ${r.reranker ? `开 θq=${r.reranker.thetaQ}` : "关"}</div>
+    <p class="rp-note">上限管的是<b>正命中占比</b>，不是命中率 —— 复用一条不同组的条目照样算命中，所以命中率可以越过它，越出去的都是假命中。${r.labelNoise ? `<br>⚠ ${esc(r.labelNoise)}` : ""}</p>
+    <div class="tw"><table>
+      <thead><tr><th>召回下限</th><th>④</th><th>命中率</th><th>正命中占比</th><th>正命中率</th><th>召回率</th><th>正命中</th><th>假命中</th><th>漏命中</th><th>省下生成</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div style="margin-top:.7rem">${bars}</div>
+    <label class="fld">假命中长什么样（下限 ${top.floor.toFixed(2)} 那一档）</label>
+    ${examples || '<p class="empty">这一档没有假命中。</p>'}
+    <div class="rp-not"><b>这一轮没有测到</b>${(r.notTested ?? []).map(t => `· ${esc(t)}`).join("<br>")}</div>
+  </div>`;
+}
+
+/** 占比。分母为 0 时是「没有样本」，不是 0% —— 写成 0% 会让空跑看起来像跑砸了 */
+function share(n, d) {
+  return d === 0 ? "—" : pctOf(n / d);
+}
+
+async function renderReplays() {
+  const box = $("replays");
+  try {
+    const res = await fetch("/api/replays");
+    // 这个路由是新加的 —— 老进程上会 404，那不是「没数据」，是服务端该重启了
+    if (res.status === 404) {
+      box.innerHTML = `<p class="empty">服务端还没有 <span class="mono">/api/replays</span> 这个路由 —— 重启一下验证台再看。</p>`;
+      return;
+    }
+    const { replays } = await res.json();
+    if (!replays || replays.length === 0) {
+      box.innerHTML = `<p class="empty">还没跑过。跑一次：<span class="mono">node --experimental-strip-types scripts/replayVCache.ts lmarena</span>（约一分钟），刷新即可。<br>没有数据文件的话先取样：<span class="mono">node --experimental-strip-types scripts/fetchVCache.ts lmarena 2000</span></p>`;
+      return;
+    }
+    box.innerHTML = replays.map(replayHtml).join("");
+  } catch (e) {
+    box.innerHTML = `<p class="empty">读不到重放结果：${esc(String(e && e.message ? e.message : e))}</p>`;
+  }
+}
+
 /* ---------- 单条场景 ---------- */
 
+// ⑤ 是写入那一步，不是第五道闸 —— 资料版本比对已从 SDK 移除
 const CIRCLED = ["", "①", "②", "③", "④", "⑤"];
 
 /* 图例只有一份 —— 先前静态 HTML 和手动提问各写了一份，改一处另一处就会漂 */
@@ -505,7 +684,7 @@ function verdictHtml(r, sc, extra) {
   const kind = verdictKind(r);
   const bits = [];
   if (r.exitedAt) bits.push(`第 ${CIRCLED[r.exitedAt] || r.exitedAt} 道闸拦下`);
-  if (kind === "hit" && r.entryId) bits.push(`条目 #${esc(String(r.entryId))}`);
+  if (r.entryId) bits.push(kind === "hit" ? `复用条目 #${esc(String(r.entryId))}` : `已写入条目 #${esc(String(r.entryId))}`);
   if (extra) bits.push(extra);
   let judge = "";
   if (sc) {
@@ -520,9 +699,30 @@ function verdictHtml(r, sc, extra) {
 }
 
 function renderResult(r, sc) {
-  $("outcome").innerHTML = verdictHtml(r, sc, null);
+  $("outcome").innerHTML = verdictHtml(r, sc, null) + handedToHtml(r, sc);
   $("trace").innerHTML = traceHtml(r);
   $("answerBox").innerHTML = answerHtml(r);
+}
+
+/**
+ * 「这条已经不归闸管了，那归谁管」——**跑给你看，不是说给你听**。
+ * 服务端已经按那个配置真的重放了一遍，这里只渲染结论。
+ */
+function handedToHtml(r, sc) {
+  const h = r.handedTo;
+  if (!h) return "";
+  if (h.rejected) {
+    return `<div class="concl odd"><b>移交给：${esc(h.config)}</b>　—— 但 SDK 拒绝了这个配置：${esc(h.rejected)}</div>`;
+  }
+  const good = h.decision === "regenerate";
+  const where = h.exitedAt ? `，第 ${h.exitedAt} 道闸拦下` : "，压根查不到对方那条";
+  return `<div class="concl ${good ? "good" : "odd"}">
+    <b>移交给：${esc(h.config)}</b><br>
+    同一对播种/探测在那个配置下 <b>${good ? "重新生成" : "仍然复用"}</b>${esc(where)}。
+    ${good
+      ? "取舍成立 —— 那道闸拿掉之后，这一类由隔离边界接住了。"
+      : "取舍<b>不成立</b>：说好接住它的那条路也没接住，这条要重新想。"}
+  </div>`;
 }
 
 function traceHtml(r) {
@@ -556,7 +756,7 @@ function exitRowHtml(r) {
       ? `复用了缓存条目 #${esc(String(r.entryId ?? "-"))}，没有调生成`
       : kind === "bypass"
         ? "策略要求不查缓存，直接生成"
-        : `${r.exitedAt ? `第 ${CIRCLED[r.exitedAt] || r.exitedAt} 道闸拦下，` : ""}重新生成了一次`;
+        : `${r.exitedAt ? `第 ${CIRCLED[r.exitedAt] || r.exitedAt} 道闸拦下，` : ""}重新生成了一次${r.entryId ? `，已写入条目 #${esc(String(r.entryId))}` : "，没有写入缓存"}`;
   return `<div class="exit-row ${kind}">
     <div class="n">→</div>
     <div><b>${kind === "hit" ? "命中" : kind === "bypass" ? "绕开" : "未命中"}</b>　${why}</div>
@@ -576,11 +776,60 @@ function answerHtml(r) {
   return `<label class="fld">返回给学生的答案（${src}）</label><div class="answer">${esc(r.answer)}</div>`;
 }
 
+/* 场景列表。**选中态要看得见** —— 结果搬到右边以后，「右边这份是哪条跑出来的」
+   只能靠左边那条高亮来回答 */
+function renderScenList(activeKey) {
+  $("scen").innerHTML = SCEN.map(sc => `
+    <button class="scard${sc.key === activeKey ? " on" : ""}" data-k="${esc(sc.key)}">
+      <b>${esc(sc.label)}</b>
+      <span>应该${sc.expect === "reuse" ? "命中复用" : "未命中重生成"}${sc.caveat ? "　⚠ 有前提" : ""}</span>
+    </button>`).join("");
+  for (const b of $("scen").querySelectorAll(".scard")) {
+    b.addEventListener("click", () => runScenario(SCEN.find(x => x.key === b.dataset.k)));
+  }
+}
+
+/* 题面。判定要能读，得先知道播的是什么、探的是什么、期望是哪一边 */
+function scenHeadHtml(sc) {
+  const side = s => `${esc(s.text)}　〔${esc(s.unit ?? "-")} · ${esc(s.user)}〕`;
+  return `<div class="scenhead">
+    <div class="t">${esc(sc.label)}</div>
+    <dl>
+      <dt>播种</dt><dd>${side(sc.seed)}</dd>
+      <dt>探测</dt><dd>${side(sc.probe)}</dd>
+      <dt>应该</dt><dd>${sc.expect === "reuse" ? "命中并复用" : "未命中，重新生成"}${sc.bumpCorpus ? "（探测前先给语料改版）" : ""}</dd>
+    </dl>
+    ${sc.note ? `<div class="note">${esc(sc.note)}</div>` : ""}
+    ${sc.caveat ? `<div class="cav">⚠ ${esc(sc.caveat)}</div>` : ""}
+    ${sc.nowHandledBy ? `<div class="cav">这条先前由 ⑥ 回答校验拦下，而 ⑥ 已经移除 ——
+      它命中是<b>预期</b>的，不算回归。现在负责它的是${HANDOFF[sc.nowHandledBy]}。
+      下面会用那个配置再跑一遍。</div>` : ""}
+  </div>`;
+}
+
+/** ⑥ 移除后，两族场景各自改由谁负责 */
+const HANDOFF = {
+  "user-scope": "<b>隔离边界</b>（① 检出实体就强制 user scope）—— 匿名化把两个人压成同一个 &lt;PERSON_1&gt;，缓存键因此逐字相同，② 精确匹配直接命中；调任何阈值都没用，② 不看分数",
+  "unit-scope": "<b>缓存键的构成</b>（scope 带上章节）—— 两句话本来就一模一样，能分开它们的只有「学生学到第几章」，那个上下文要么进键、要么进 scope",
+};
+
 async function runScenario(sc) {
   // 播种 → 改版 → 探测 全部在服务端一次做完，跑在场景自己的缓存上。
   // 先前这里第一步是 /api/reset，会把手动探索攒下的条目一起清掉 ——
   // 于是「问一句、再问同义的一句」看起来永远不命中。清理只该由「重置」按钮触发。
+  renderScenList(sc.key);
+  $("scenHead").innerHTML = scenHeadHtml(sc);
+  $("outcome").innerHTML = "";
+  $("answerBox").innerHTML = "";
+  // 真模型下一条要跑几秒到十几秒。先前这段时间右边一动不动，看着像点了没反应
+  $("trace").innerHTML = `<p class="empty">跑着…（清空 → 播种${sc.bumpCorpus ? " → 语料改版" : ""} → 探测）</p>`;
   const r = await post("/api/scenario", { key: sc.key, config: cfg });
+  // 服务端可能拒绝这个配置（例如 ④ 开着却没有标定过的 θq）—— 那不是一次未命中，
+  // 照着未命中渲染就是编一个没发生过的判定出来
+  if (r.error) {
+    $("trace").innerHTML = `<div class="outcome wrong">这个配置不成立：${esc(String(r.error))}</div>`;
+    return;
+  }
   $("q").value = sc.probe.text; $("u").value = sc.probe.user; $("c").value = sc.probe.unit ?? "";
   renderResult(r, sc); renderState(r.state);
 }
@@ -651,7 +900,6 @@ function syncGate4Toggle() {
 const GATE_MISS_LABEL = {
   3: "③ 向量召回：没有足够像的候选",
   4: "④ 精排：像但判定不是同一件事",
-  5: "⑤ 资料改版：旧答案引的是上一版",
 };
 
 function pctOf(x) { return `${(x * 100).toFixed(1)}%`; }
@@ -682,9 +930,8 @@ function renderMetrics(m) {
     tile("命中延迟", ms(m.latencyMs.hit.p50), m.latencyMs.hit.count ? `p95 ${ms(m.latencyMs.hit.p95)}` : "无样本"),
     tile("未命中延迟", ms(m.latencyMs.miss.p50), m.latencyMs.miss.count ? `p95 ${ms(m.latencyMs.miss.p95)}` : "无样本"),
     tile("省下的生成", String(m.saved.generations), saved),
-    // 驱逐 = 真删掉的条数。判负但没删的（无依据不写入 / 影子模式）不算在内，
-    // 那些看下面的「未命中被哪道闸拦下」
-    tile("驱逐", String(m.evictions.total), `⑤ ${m.evictions.bySourceVersion}`),
+    // 先前这里还有一格「驱逐」。读侧唯一会删条目的是 ⑤ 资料版本比对，它已经移除，
+    // 这一格于是恒为 0 —— 看板上一个结构性的零比没有这一格更误导人。
   ].join("");
 
   const outcomes = [
@@ -790,6 +1037,8 @@ async function boot() {
   CALIB = s.calibration ?? { summary:"", borrowed:false, overridden:[] };
   renderAxes(s);
   $("legendScen").innerHTML = LEGEND_HTML;
+  // 重放结果是读盘的，跟这一屏其余部分没有依赖 —— 不 await，别让它拖慢首屏
+  void renderReplays();
 
   /**
    * 横幅只留警告。**「现在跑的是什么」归上面那张配置表** ——
@@ -830,14 +1079,7 @@ async function boot() {
   else if (DEF.thetaQ === null) markCeCard({ available:true, usable:true, margin:0, minMargin:0.15, maxNegative:0, thetaQ:null, target:(s.models ?? {}).rerankTarget });
 
   $("c").innerHTML = s.units.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join("");
-  $("scen").innerHTML = SCEN.map(sc => `
-    <button class="scard" data-k="${sc.key}">
-      <b>${esc(sc.label)}</b>
-      <span>播种：${esc(sc.seed.text)}〔${esc(sc.seed.unit ?? "-")}〕<br>探测：${esc(sc.probe.text)}〔${esc(sc.probe.unit ?? "-")}〕<br>应该：${sc.expect === "reuse" ? "复用" : "重新生成"}${sc.caveat ? "<br>⚠ " + esc(sc.caveat) : ""}</span>
-    </button>`).join("");
-  for (const b of $("scen").querySelectorAll(".scard")) {
-    b.addEventListener("click", () => runScenario(SCEN.find(x => x.key === b.dataset.k)));
-  }
+  renderScenList(null);
 
   renderToggles();
   renderState(s);

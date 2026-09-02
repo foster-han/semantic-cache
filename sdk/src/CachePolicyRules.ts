@@ -1,19 +1,22 @@
-import type { CachePolicy, CacheDisposition } from "./types/CachePolicy.ts";
+import type { CacheDisposition, CachePolicy } from "./types/CachePolicy.ts";
 import type { CachePrompt } from "./types/Pipeline.ts";
 
 /**
- * 只用**结构信号**的默认策略。
+ * A default policy built from **structural signals** alone.
  *
- * 结构信号 = agent 规划阶段已经算出来的那几个布尔量：这轮要不要调工具、
- * 需不需要把对话历史拼进 prompt、任务是解释还是生成。它们比任何词表或分类器都准，
- * 而且已经在调用方手里 —— 这一层只负责把它们从 `prompt.context` 读出来，不做文本判断。
+ * Structural signals are the booleans an agent's planning stage has already computed: does this
+ * turn need tools, does the conversation history have to go into the prompt, is the task
+ * explanation or generation. They are more accurate than any word list or classifier, and they are
+ * already in the caller's hands — this layer only reads them out of `prompt.context` and makes no
+ * judgement about text.
  *
- * **刻意不内置任何关键词。**「现在/今天/最新」这类词表看着省事，实际是最脆的一档：
- * 漏一个就是持续的错答案，而且中英文各要维护一份。要用词表或分类器，自己写一个
- * `CachePolicy` 传进去，或者用 `combinePolicies` 串在这个后面。
+ * **No keywords are built in, deliberately.** A word list like "now / today / latest" looks
+ * convenient and is the most brittle option there is: one missing entry is a persistently wrong
+ * answer, and every language needs its own list. To use a word list or a classifier, write your own
+ * `CachePolicy` and pass it in, or chain it after this one with `combinePolicies`.
  */
 
-/** `context` 里值为这些时视为「没有这个信号」。其余任何值都算设置了。 */
+/** Values in `context` treated as "this signal is absent". Any other value counts as set. */
 const FALSY = new Set(["", "0", "false", "no", "off"]);
 
 function isSet(context: Readonly<Record<string, string>>, key: string): boolean {
@@ -22,79 +25,95 @@ function isSet(context: Readonly<Record<string, string>>, key: string): boolean 
 }
 
 /**
- * 默认允许走**语义**缓存的调用类型。
+ * Call types allowed through the **semantic** cache by default.
  *
- * 判据只有一条：**输出是不是输入的确定函数。**
+ * There is one criterion: **is the output a deterministic function of the input?**
  *
- * - `completion` / `responses` / `anthropic_messages` —— 有采样，同输入不同输出。
- *   「相似的问题能不能复用答案」才是个真问题，才需要这五道闸。**在列。**
- * - `embedding` —— 同文本必然同向量。拿相似度去匹配它，等于用「差不多的文本」
- *   换一个「差不多的向量」，正好摧毁向量本身的意义。**该走精确缓存（内容哈希）。**
- * - `rerank` —— 同 query + 同文档集必然同分数。同上。
- * - `transcription` —— 同文件必然同转写。两段「相似」的音频不是同一段音频。
- * - `text_completion` —— 老式接口，且 litellm 那边它本来就提不出 prompt。
+ * - `completion` / `responses` / `anthropic_messages` — sampled, so the same input gives different
+ *   outputs. "Can a similar question reuse this answer" is a real question here, and that is what
+ *   the gates are for. **Included.**
+ * - `embedding` — the same text necessarily gives the same vector. Matching it by similarity trades
+ *   "roughly similar text" for "roughly similar vector", destroying the very meaning of the vector.
+ *   **Belongs in an exact cache keyed by content hash.**
+ * - `rerank` — the same query plus the same document set necessarily gives the same scores. As above.
+ * - `transcription` — the same file necessarily gives the same transcript. Two "similar" recordings
+ *   are not the same recording.
+ * - `text_completion` — a legacy interface, and litellm cannot extract a prompt for it anyway.
  *
- * **被排除不等于不该缓存**，恰恰相反：后四类走精确缓存是零假命中风险、
- * 命中即赚的一档，应该先吃满。它们只是不该走**这一层**。
+ * **Being excluded does not mean it should not be cached** — quite the opposite: the other four
+ * belong in an exact cache, which carries zero false-hit risk and pays off on every hit, and should
+ * be exploited first. They just do not belong in **this** layer.
  *
- * 异步变体（`a` 前缀）不必单独列，匹配时会处理。
+ * Async variants (the `a` prefix) need no separate entry; matching handles them.
  */
 export const DEFAULT_SEMANTIC_CALL_TYPES: ReadonlyArray<string> = ["completion", "responses", "anthropic_messages"];
 
 /**
- * 调用类型匹配。**不能无脑剥 `a` 前缀** —— `anthropic_messages` 自己就以 a 开头，
- * 剥掉会变成 `nthropic_messages` 而漏判。所以先查原名，再查去掉前缀的名字：
- * `anthropic_messages` 走第一条，`aanthropic_messages` 走第二条。
+ * Call-type matching. **The `a` prefix cannot be stripped blindly** — `anthropic_messages` itself
+ * starts with an `a`, and stripping it yields `nthropic_messages` and a missed match. So the name is
+ * checked first and the stripped name second: `anthropic_messages` matches on the first,
+ * `aanthropic_messages` on the second.
  */
 function isAllowedCallType(callType: string, allowed: ReadonlySet<string>): boolean {
-	if (allowed.has(callType)) return true;
+	if (allowed.has(callType)) {
+		return true;
+	}
 	return callType.startsWith("a") && allowed.has(callType.slice(1));
 }
 
 export interface StructuralPolicyOptions {
 	/**
-	 * `context` 键 → 理由。命中就**不读**缓存（`no-cache`），但照常写回。
+	 * `context` key → reason. A match means **do not read** the cache (`no-cache`), while writing
+	 * proceeds as usual.
 	 *
-	 * 「重新回答」走这里：跳过查询强制重生成，新答案替换掉旧的那条。
+	 * "Answer again" belongs here: skip the lookup, force regeneration, and let the new answer
+	 * replace the old entry.
 	 */
 	readonly noCacheWhen?: Readonly<Record<string, string>>;
 	/**
-	 * `context` 键 → 理由。命中就**不写**缓存（`no-store`），但照常读。
+	 * `context` key → reason. A match means **do not write** the cache (`no-store`), while reading
+	 * proceeds as usual.
 	 *
-	 * 「出五道练习题」走这里：别人问过就用别人的，但别把我这份存成标准答案。
+	 * "Give me five practice problems" belongs here: use someone else's if they asked already, but do
+	 * not store mine as the canonical answer.
 	 */
 	readonly noStoreWhen?: Readonly<Record<string, string>>;
 	/**
-	 * `context` 键 → 理由。两个都设 —— 既不读也不写，最常用的那一档。
+	 * `context` key → reason. Sets both — neither read nor write, the most common case.
 	 *
-	 * **键名由调用方定**，这里不预设 `needsHistory` 之类的魔法字符串 ——
-	 * 那种约定在跨仓库时一定会拼错，而拼错的后果是策略静默失效。
+	 * **Key names are the caller's to choose.** No magic strings like `needsHistory` are assumed
+	 * here: such conventions get misspelled across repositories, and a misspelling makes the policy
+	 * fail silently.
 	 */
 	readonly bypassWhen?: Readonly<Record<string, string>>;
-	/** `context` 键 → 这一条的 TTL（毫秒）。多个键同时命中取**最短**的那个 */
+	/** `context` key → TTL for this entry, in milliseconds. When several keys match, the **shortest** wins. */
 	readonly shortTtlWhen?: Readonly<Record<string, number>>;
 	/**
-	 * 从 `context` 的哪个键读「这次是什么调用」。默认 `"callType"`。
+	 * Which `context` key says what kind of call this is. Defaults to `"callType"`.
 	 *
-	 * 值用 litellm 的那套名字（`completion` / `embedding` / `rerank` /
-	 * `transcription` / `responses` / `anthropic_messages` / `text_completion`，
-	 * 含 `a` 前缀的异步变体），这样网关和这里说的是同一种话。
+	 * Use litellm's names for the values (`completion` / `embedding` / `rerank` / `transcription` /
+	 * `responses` / `anthropic_messages` / `text_completion`, plus the `a`-prefixed async variants),
+	 * so the gateway and this layer speak the same language.
 	 */
 	readonly callTypeKey?: string;
 	/**
-	 * 允许走语义缓存的调用类型白名单。默认 {@link DEFAULT_SEMANTIC_CALL_TYPES}。
+	 * Allowlist of call types permitted through the semantic cache. Defaults to
+	 * {@link DEFAULT_SEMANTIC_CALL_TYPES}.
 	 *
-	 * 不在列的直接 `noCache` + `noStore`。**白名单而不是黑名单**：漏配一个新出现的
-	 * 调用类型，后果是「这类没走语义缓存」（少一次命中，便宜），而不是「一类不该
-	 * 语义匹配的东西被语义匹配了」（错答案，贵）。
+	 * Anything not listed gets `noCache` + `noStore`. **An allowlist rather than a denylist**:
+	 * forgetting to configure a newly introduced call type costs "this kind did not use the semantic
+	 * cache" (one missed hit, cheap) rather than "something that should never be matched semantically
+	 * was" (a wrong answer, expensive).
 	 */
 	readonly allowedCallTypes?: ReadonlyArray<string>;
 	/**
-	 * 没标 `callTypeKey` 时怎么办。默认 `false` = 放行。
+	 * What to do when `callTypeKey` is not set. Defaults to `false`, meaning let it through.
 	 *
-	 * 放行是因为这个库的入口只有 `resolve(prompt, generate)`，本来就只处理 chat 形态 ——
-	 * 没标的请求几乎必然就是它。但如果你把多种调用都路由到这一层，**打开它**：
-	 * 那时「忘了标」和「标成 embedding」的后果完全不同，前者会静默走完语义匹配。
+	 * Letting it through is reasonable because this library's only entry point is
+	 * `resolve(prompt, generate)` and it only ever handles the chat shape — an unlabelled request is
+	 * almost certainly that. But if you route several kinds of call into this layer, **turn it on**:
+	 * then "forgot to label it" and "labelled it embedding" have very different consequences, and the
+	 * former would silently run the full semantic match.
 	 */
 	readonly requireCallType?: boolean;
 }
@@ -107,14 +126,17 @@ export function createStructuralPolicy(options: StructuralPolicyOptions = {}): C
 
 	for (const [key, ttl] of Object.entries(shortTtlWhen)) {
 		if (!Number.isFinite(ttl) || ttl <= 0) {
-			throw new Error(`shortTtlWhen["${key}"]=${ttl} 不是正的毫秒数。想让它永不过期请用 ttlMs: null，想让它不进缓存请用 noStoreWhen。`);
+			throw new Error(
+				`shortTtlWhen["${key}"]=${ttl} is not a positive number of milliseconds. For never expiring use ttlMs: null; to keep it out of the cache use noStoreWhen.`,
+			);
 		}
 	}
 	/**
-	 * 四张表的键必须互不相交。
+	 * The four tables must have disjoint keys.
 	 *
-	 * 同一个键出现在两张表里，哪张赢只能靠读源码 —— 而这一层的全部意义就是
-	 * 让「为什么这条没缓存」有个明确答案。直接拒绝，比定一个优先级好。
+	 * With one key in two tables, which one wins can only be learned by reading the source — while
+	 * the entire point of this layer is that "why was this not cached" has a definite answer.
+	 * Rejecting outright beats defining a precedence.
 	 */
 	const seen = new Map<string, string>();
 	for (const [table, keys] of [
@@ -126,7 +148,9 @@ export function createStructuralPolicy(options: StructuralPolicyOptions = {}): C
 		for (const key of keys) {
 			const previous = seen.get(key);
 			if (previous !== undefined) {
-				throw new Error(`context 键 "${key}" 同时出现在 ${previous} 和 ${table} 里。哪个生效只能靠读源码，所以直接拒绝 —— 换个键名，或者合并成一条。`);
+				throw new Error(
+					`context key "${key}" appears in both ${previous} and ${table}. Which one applies could only be learned from the source, so this is rejected outright — rename one, or merge them into a single rule.`,
+				);
 			}
 			seen.set(key, table);
 		}
@@ -136,9 +160,15 @@ export function createStructuralPolicy(options: StructuralPolicyOptions = {}): C
 	const allowedCallTypes = new Set(options.allowedCallTypes ?? DEFAULT_SEMANTIC_CALL_TYPES);
 	const requireCallType = options.requireCallType ?? false;
 	if (allowedCallTypes.size === 0) {
-		throw new Error("allowedCallTypes 是空的 —— 那等于关掉整个缓存。真想全关就别装这个策略，别用一个空白名单表达它。");
+		throw new Error(
+			"allowedCallTypes is empty, which disables the entire cache. If that is genuinely what you want, do not install this policy at all rather than expressing it as an empty allowlist.",
+		);
 	}
 
+	// The branching is four independent table lookups plus the call-type allowlist, each producing
+	// one field of the disposition. Splitting them into helpers would hide that they are independent
+	// and reintroduce the question this layer exists to answer plainly: which rule decided.
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: flat, independent rule tables
 	return function structuralPolicy(prompt: CachePrompt): CacheDisposition {
 		let noCache: string | undefined;
 		let noStore: string | undefined;
@@ -146,12 +176,12 @@ export function createStructuralPolicy(options: StructuralPolicyOptions = {}): C
 		const callType = prompt.context[callTypeKey]?.trim();
 		if (callType === undefined || callType === "") {
 			if (requireCallType) {
-				const reason = `没有标注调用类型（context.${callTypeKey}）—— requireCallType 打开时不放行未标注的请求`;
+				const reason = `no call type labelled (context.${callTypeKey}) — unlabelled requests are not let through while requireCallType is on`;
 				noCache = reason;
 				noStore = reason;
 			}
 		} else if (!isAllowedCallType(callType, allowedCallTypes)) {
-			const reason = `调用类型 "${callType}" 不在语义缓存白名单里 —— 它的输出是输入的确定函数，该走精确缓存而不是相似度匹配`;
+			const reason = `call type "${callType}" is not on the semantic-cache allowlist — its output is a deterministic function of its input, so it belongs in an exact cache rather than similarity matching`;
 			noCache = reason;
 			noStore = reason;
 		}
@@ -162,33 +192,48 @@ export function createStructuralPolicy(options: StructuralPolicyOptions = {}): C
 			}
 		}
 		for (const [key, reason] of Object.entries(noCacheWhen)) {
-			if (isSet(prompt.context, key)) noCache ??= reason;
+			if (isSet(prompt.context, key)) {
+				noCache ??= reason;
+			}
 		}
 		for (const [key, reason] of Object.entries(noStoreWhen)) {
-			if (isSet(prompt.context, key)) noStore ??= reason;
+			if (isSet(prompt.context, key)) {
+				noStore ??= reason;
+			}
 		}
 		let ttlMs: number | undefined;
 		for (const [key, ttl] of Object.entries(shortTtlWhen)) {
-			if (isSet(prompt.context, key)) ttlMs = ttlMs === undefined ? ttl : Math.min(ttlMs, ttl);
+			if (isSet(prompt.context, key)) {
+				ttlMs = ttlMs === undefined ? ttl : Math.min(ttlMs, ttl);
+			}
 		}
 		const disposition: { noCache?: string; noStore?: string; ttlMs?: number } = {};
-		if (noCache !== undefined) disposition.noCache = noCache;
-		if (noStore !== undefined) disposition.noStore = noStore;
-		if (ttlMs !== undefined) disposition.ttlMs = ttlMs;
+		if (noCache !== undefined) {
+			disposition.noCache = noCache;
+		}
+		if (noStore !== undefined) {
+			disposition.noStore = noStore;
+		}
+		if (ttlMs !== undefined) {
+			disposition.ttlMs = ttlMs;
+		}
 		return disposition;
 	};
 }
 
 /**
- * 按顺序试。`noCache` / `noStore` **各自独立**取第一个说不的理由，TTL 取最短。
+ * Try policies in order. `noCache` and `noStore` **each independently** take the first reason to say
+ * no, and the TTL takes the shortest.
  *
- * 两个开关分开合并，是因为它们本来就正交：一个策略说「这条别写」、另一个说
- * 「这条别读」，合起来应该是两条都生效，而不是谁覆盖谁。TTL 取最短而不是取
- * 最后一个 —— 两个策略各自认为「最多活十分钟」和「最多活一天」时，
- * 唯一安全的合并是十分钟。
+ * The two switches merge separately because they are orthogonal: one policy saying "do not write
+ * this" and another saying "do not read this" should leave both in force, not have one override the
+ * other. The TTL takes the shortest rather than the last — when two policies believe "at most ten
+ * minutes" and "at most a day", the only safe merge is ten minutes.
  */
 export function combinePolicies(...policies: ReadonlyArray<CachePolicy>): CachePolicy {
-	if (policies.length === 0) throw new Error("combinePolicies 至少要一个策略 —— 零个策略等于没有策略，不如别传。");
+	if (policies.length === 0) {
+		throw new Error("combinePolicies needs at least one policy — zero policies is no policy, so do not pass any.");
+	}
 	return async function combined(prompt: CachePrompt): Promise<CacheDisposition> {
 		let noCache: string | undefined;
 		let noStore: string | undefined;
@@ -197,15 +242,26 @@ export function combinePolicies(...policies: ReadonlyArray<CachePolicy>): CacheP
 			const decision = await policy(prompt);
 			noCache ??= decision.noCache;
 			noStore ??= decision.noStore;
-			if (decision.ttlMs === undefined) continue;
-			// null = 永不过期，是最松的一档，不该覆盖任何有限值
-			if (decision.ttlMs === null) ttlMs = ttlMs === undefined ? null : ttlMs;
-			else ttlMs = typeof ttlMs === "number" ? Math.min(ttlMs, decision.ttlMs) : decision.ttlMs;
+			if (decision.ttlMs === undefined) {
+				continue;
+			}
+			// null means never expire, the loosest setting, so it must not override any finite value.
+			if (decision.ttlMs === null) {
+				ttlMs = ttlMs === undefined ? null : ttlMs;
+			} else {
+				ttlMs = typeof ttlMs === "number" ? Math.min(ttlMs, decision.ttlMs) : decision.ttlMs;
+			}
 		}
 		const disposition: { noCache?: string; noStore?: string; ttlMs?: number | null } = {};
-		if (noCache !== undefined) disposition.noCache = noCache;
-		if (noStore !== undefined) disposition.noStore = noStore;
-		if (ttlMs !== undefined) disposition.ttlMs = ttlMs;
+		if (noCache !== undefined) {
+			disposition.noCache = noCache;
+		}
+		if (noStore !== undefined) {
+			disposition.noStore = noStore;
+		}
+		if (ttlMs !== undefined) {
+			disposition.ttlMs = ttlMs;
+		}
 		return disposition;
 	};
 }

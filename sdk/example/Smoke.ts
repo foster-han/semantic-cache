@@ -1,5 +1,5 @@
 /**
- * 端到端冒烟：用确定性的假模型跑完五道闸，不下载任何东西。
+ * 端到端冒烟：用确定性的假模型跑完四道闸，不下载任何东西。
  *
  * 假模型的"向量"是词袋哈希投影 —— 分数没有语义意义，但足以让每道闸真正
  * 被触发一次，验证接线正确。真模型下的行为要用 evaluate() 在你自己的
@@ -41,11 +41,11 @@ const rerank: Reranker = {
 };
 
 /* 一门课的资料，syllabus 会被改版 */
-const docs = new Map<string, { text: string; version: number }>([
-	["syl", { text: "期中考试范围为第一章至第五章，闭卷。", version: 1 }],
-	["n5", { text: "过拟合是训练集表现好而验证集变差，模型学进了噪声。", version: 1 }],
-	["rec:alice", { text: "Alice 作业二得 82 分，缺少随机种子扣 10 分。", version: 1 }],
-	["rec:bob", { text: "Bob 作业二得 95 分，仅报告排版扣 5 分。", version: 1 }],
+const docs = new Map<string, { text: string }>([
+	["syl", { text: "期中考试范围为第一章至第五章，闭卷。" }],
+	["n5", { text: "过拟合是训练集表现好而验证集变差，模型学进了噪声。" }],
+	["rec:alice", { text: "Alice 作业二得 82 分，缺少随机种子扣 10 分。" }],
+	["rec:bob", { text: "Bob 作业二得 95 分，仅报告排版扣 5 分。" }],
 ]);
 
 /** 检索：个人记录只能靠实体名字够到 —— 匿名化后就够不到了 */
@@ -87,14 +87,12 @@ const cache = createSemanticCache({
 		prompt.context.pii === "1"
 			? { key: `user:${prompt.context.userId}`, shared: false, org: "acme" }
 			: { key: "course:ml101", shared: true, org: "acme" },
-	sourceVersion: ids => ids.map(id => `${id}v${docs.get(id)?.version ?? "?"}`).join(","),
 	ttlMs: null,
 });
 
 const generate = async (_prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload> => ({
 	kind: "answer",
 	answer: chunks.length ? `【依据 ${chunks[0].id}】${docs.get(chunks[0].id)?.text ?? ""}` : "（无资料）",
-	sourceIds: chunks.map(c => c.id),
 });
 
 /** 工具分支：贵的是 LLM 判断该调哪个工具、传什么参数，所以缓存的是**计划**。 */
@@ -107,9 +105,15 @@ function ask(matchText: string, retrievalText: string, ctx: Record<string, strin
 	return cache.resolve({ matchText, retrievalText, context: ctx }, generate);
 }
 
+/** 答案文本自己带着依据（生成端拼的 `【依据 …】`）—— 条目本身只记它属于哪个 space。 */
+function basisOf(r: Awaited<ReturnType<typeof ask>>): string {
+	if (r.payload.kind !== "answer") return "(plan)";
+	return /【依据 ([^】]+)】/u.exec(r.payload.answer)?.[1] ?? "-";
+}
+
 function line<T extends Awaited<ReturnType<typeof ask>>>(tag: string, r: T): T {
 	const gates = r.trace.map(t => `${t.gate}:${t.verdict}`).join(" ");
-	console.log(`${tag.padEnd(26)} ${r.outcome.padEnd(10)} 首要依据 ${String(r.sourceIds[0]).padEnd(11)} | ${gates}`);
+	console.log(`${tag.padEnd(26)} ${r.outcome.padEnd(10)} space ${r.scope.padEnd(20)} 依据 ${basisOf(r).padEnd(11)} | ${gates}`);
 	return r;
 }
 
@@ -134,12 +138,23 @@ line("播种 过拟合", await ask("什么是过拟合？", "什么是过拟合�
 const exact = line("② 精确命中", await ask("什么是过拟合？", "什么是过拟合？"));
 must(exact.outcome === "exact", `逐字相同的第二次提问该是 exact，实际 ${exact.outcome}`);
 
-console.log("\n--- ⑤ 资料改版 ---");
+/**
+ * 资料改版：**没有闸门管这一类了。**
+ *
+ * 先前 ⑤ 拿条目写入时的资料版本指纹和当前指纹比，不符就在读时踢掉。那道闸要求每个条目
+ * 记下自己引了哪些文档，而这个维度已经移除 —— 条目只记它属于哪个 space。所以改了资料
+ * 就清那个 space，断言写成「不清就照旧命中」，把这个代价钉成不变式。
+ */
+console.log("\n--- 资料改版：读时无闸，靠按 space 清 ---");
 line("播种 期中范围", await ask("期中考试考几章？", "期中考试考几章？"));
-docs.set("syl", { text: "期中范围扩大到第一至第九章，改为开卷。", version: 2 });
-const bumped = line("改版后再问", await ask("期中考试考几章？", "期中考试考几章？"));
-must(bumped.exitedAt === 5, `语料改版后该被 ⑤ 拦下，实际 exitedAt=${String(bumped.exitedAt)}`);
-must(bumped.outcome === "generated", "被 ⑤ 拦下之后该走完整生成");
+docs.set("syl", { text: "期中范围扩大到第一至第九章，改为开卷。" });
+const stale = line("改版后再问（未清）", await ask("期中考试考几章？", "期中考试考几章？"));
+must(stale.outcome === "exact", `改版后没有读时闸门，逐字相同的提问照旧命中旧答案，实际 ${stale.outcome}`);
+must(!basisOf(stale).includes("九章") && stale.payload.kind === "answer" && !stale.payload.answer.includes("九章"), "命中的正是改版前那条旧答案");
+await cache.clear({ org: "acme", key: "course:ml101" });
+const afterClear = line("清掉 space 后再问", await ask("期中考试考几章？", "期中考试考几章？"));
+must(afterClear.outcome === "generated", `清掉 space 之后该走完整生成，实际 ${afterClear.outcome}`);
+must(afterClear.payload.kind === "answer" && afterClear.payload.answer.includes("九章"), "重新生成的答案该引改版后的正文");
 
 /**
  * 实体塌陷：**⑥ 移除之后这一条会照常发生，这里把它钉成不变式。**
@@ -156,7 +171,7 @@ console.log("\n--- 实体塌陷（匿名化后两条字面相同，⑥ 已移除
 await store.clear();
 line("播种 Alice", await ask("<PERSON_1> 的作业二扣了多少？", "alice 的作业二扣了多少？"));
 const bob = line("探测 Bob", await ask("<PERSON_1> 的作业二扣了多少？", "bob 的作业二扣了多少？"));
-must(bob.sourceIds[0] === "rec:alice", "共享 scope + 匿名化的键必然塌陷 —— 没塌说明别处变了，回来重读这段");
+must(basisOf(bob) === "rec:alice", "共享 scope + 匿名化的键必然塌陷 —— 没塌说明别处变了，回来重读这段");
 
 /* ① 门控就是上面那一条的解法：把实体放回隔离边界，键就不再有损 */
 console.log("\n--- ① 门控：检出 PII 就个人隔离（实体塌陷的正解）---");
@@ -164,7 +179,8 @@ await store.clear();
 line("Alice(pii)", await ask("<PERSON_1> 的作业二扣了多少？", "alice 的作业二扣了多少？", { pii: "1", userId: "u1" }));
 const bobIsolated = line("Bob(pii)", await ask("<PERSON_1> 的作业二扣了多少？", "bob 的作业二扣了多少？", { pii: "1", userId: "u2" }));
 must(bobIsolated.outcome === "generated", "① 门控开着时两个学生不该共用缓存");
-must(bobIsolated.sourceIds[0] === "rec:bob", `Bob 的答案该依据 rec:bob，实际 ${String(bobIsolated.sourceIds[0])}`);
+must(bobIsolated.scope === "acme|user:u2", `Bob 该落在自己的隔离 space，实际 ${bobIsolated.scope}`);
+must(basisOf(bobIsolated) === "rec:bob", `Bob 的答案该依据 rec:bob，实际 ${basisOf(bobIsolated)}`);
 
 console.log("\n--- 工具分支：缓存计划而非结果，实体做参数 ---");
 await store.clear();
@@ -175,7 +191,6 @@ const planCache = createSemanticCache({
 	retriever,
 	// 共享 scope，且声明已脱敏 —— 对 plan 来说这正是想要的
 	scope: () => ({ key: "course:ml101", shared: true, org: "acme" }),
-	sourceVersion: () => "-",
 	ttlMs: null,
 });
 for (const who of ["alice", "bob"]) {
@@ -226,11 +241,11 @@ must(cold.outcome === "miss", "空缓存必然 miss");
 const chunks = await retriever.retrieve("什么是过拟合？", {});
 const written = await cache.write(
 	{ matchText: "什么是过拟合？", retrievalText: "什么是过拟合？", context: {} },
-	{ kind: "answer", answer: docs.get("n5")!.text, sourceIds: ["n5"] },
+	{ kind: "answer", answer: docs.get("n5")!.text },
 	{ ticket: await cold.prepareWrite(), meta: { model: "fake-llm", requestId: "r-1" }, ttlMs: 10 * 60 * 1000 },
 );
 console.log(
-	`write           id=${written.id} scope=${written.scope} 依据=${written.sourceIds.join(",")} ` +
+	`write           id=${written.id} scope=${written.scope} ` +
 		`meta=${JSON.stringify(written.meta)} 过期=${written.expiresAt === null ? "永不" : "10 分钟后"} 片段=${chunks.length}`,
 );
 
@@ -246,16 +261,16 @@ const warm = await cache.lookup({ matchText: "过拟合是什么意思？", retr
 console.log(`lookup(热)      ${warm.outcome.padEnd(8)} entryId=${warm.entryId}`);
 must(warm.outcome === "reuse", `同义提问该命中，实际 ${warm.outcome}`);
 
-/* 5. 失效：老师改了 n5，这一批立刻失效，不必等 ⑤ 在读时发现 */
-const dropped = await cache.invalidateSource("n5");
-console.log(`invalidateSource(n5)  删掉 ${dropped} 条　剩余 ${(await store.all()).length} 条`);
-must(dropped === 1 && (await store.all()).length === 0, "按资料 id 批量失效该把那一条删掉");
+/* 5. 失效：老师改了这门课的资料 —— 清整个 space，这是唯一的一条失效路径 */
+const dropped = await cache.clear({ org: "acme", key: "course:ml101" });
+console.log(`clear(course:ml101)  删掉 ${dropped} 条　剩余 ${(await store.all()).length} 条`);
+must(dropped === 1 && (await store.all()).length === 0, "按 space 清空该把那一条删掉");
 
 /* 6. 批量写入：两次编码灌完 N 条，不是 2N 次 */
 const seeded = await cache.writeMany(
 	["什么是欠拟合？", "什么是交叉验证？", "L1 和 L2 有什么区别？"].map(q => ({
 		prompt: { matchText: q, retrievalText: q, context: {} },
-		payload: { kind: "answer" as const, answer: `关于「${q}」的预置答案`, sourceIds: ["n5"] },
+		payload: { kind: "answer" as const, answer: `关于「${q}」的预置答案` },
 		options: { meta: { source: "回填" } },
 	})),
 );
@@ -279,7 +294,7 @@ for (const [tag, bad] of [
 	["scope 不一致", { matchText: "什么是过拟合？", retrievalText: "什么是过拟合？", context: { pii: "1", userId: "alice" } }],
 ] as const) {
 	try {
-		await cache.write(bad, { kind: "answer", answer: "x", sourceIds: ["n5"] }, { ticket: ticketFor过拟合 });
+		await cache.write(bad, { kind: "answer", answer: "x" }, { ticket: ticketFor过拟合 });
 		must(false, `票据配错 prompt（${tag}）没有被拒绝`);
 	} catch (err) {
 		console.log(`${tag.padEnd(14)} 拒绝: ${String((err as Error).message).slice(0, 46)}…`);

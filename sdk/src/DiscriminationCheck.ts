@@ -1,23 +1,25 @@
-import { cosine } from "./VectorMath.ts";
 import type { PairEncoder, Reranker } from "./types/Encoders.ts";
+import { cosine } from "./VectorMath.ts";
 
 /**
- * 判别力自检。**上线前每个模型角色都要过这一关。**
+ * Discrimination self-check. **Every model role must pass this before going live.**
  *
- * 任务错配不会报错：模型正常加载、返回合法的 0~1 分数、程序跑完，只是那个
- * 分数没有判别力。实测里两次都是这样 —— 段落重排器在中文上四组难度递减的
- * 输入全部落在 0.9975–0.9988（跨度 0.0013），句对模型做检索时正确文档排到
- * 三名开外。两次都毫无征兆。
+ * Misapplying a model raises no error: it loads, returns legitimate 0–1 scores, and the program
+ * runs to completion — the scores simply have no discriminating power. Both measured cases looked
+ * like that: a passage reranker on Chinese put four sets of decreasing difficulty all between
+ * 0.9975 and 0.9988 (a spread of 0.0013), and a sentence-pair model used for retrieval ranked the
+ * correct document outside the top three. Neither gave any warning.
  *
- * 做法：喂一组你已经知道答案的输入（必然该高分的、必然该低分的），看两组
- * 能不能分开。分不开就是任务错配，此时这一层的任何阈值标定都是在标定一个常数。
+ * The method: feed in inputs whose answers you already know (some that must score high, some that
+ * must score low) and see whether the two groups separate. If they do not, the model is
+ * misapplied, and any threshold calibration on this layer is calibrating a constant.
  */
 
 export interface ProbePair {
 	readonly label: string;
 	readonly a: string;
 	readonly b: string;
-	/** true = 这一对**应当**得高分 */
+	/** true = this pair **should** score high. */
 	readonly shouldMatch: boolean;
 }
 
@@ -26,13 +28,17 @@ export interface DiscriminationReport {
 	readonly rows: ReadonlyArray<{ label: string; score: number; shouldMatch: boolean }>;
 	readonly minPositive: number;
 	readonly maxNegative: number;
-	/** 正例最低分 − 负例最高分。大于 0 才说明两组可分 */
+	/** Lowest positive score minus highest negative score. Only above 0 are the two groups separable. */
 	readonly margin: number;
 	readonly spread: number;
 	readonly usable: boolean;
 }
 
-function summarize(role: string, rows: Array<{ label: string; score: number; shouldMatch: boolean }>, minMargin: number): DiscriminationReport {
+function summarize(
+	role: string,
+	rows: Array<{ label: string; score: number; shouldMatch: boolean }>,
+	minMargin: number,
+): DiscriminationReport {
 	const pos = rows.filter(r => r.shouldMatch).map(r => r.score);
 	const neg = rows.filter(r => !r.shouldMatch).map(r => r.score);
 	const minPositive = pos.length ? Math.min(...pos) : Number.NaN;
@@ -77,86 +83,102 @@ export async function checkReranker(
 	return summarize("rerank", rows, minMargin);
 }
 
-
 /**
- * 从一批探针的分数里，选出一个闸值。
+ * Choose a threshold from one batch of probe scores.
  *
- * **这是「阈值必须在你自己的数据上标」在没有标注数据时唯一可行的那条路。**
- * 行业通行做法是从生产日志抽 100–500 条人工标注 —— 那假设的是单一语料、单一部署，
- * 且那份语料稳定到值得请人标一遍。语料由终端用户上传、且一批一个样的时候，
- * 这两条都不成立：没有可标的历史日志，也没有「一次标完管很久」的那个前提。
- * 可用的只有一件事：**语料本身就在手上**，`generateProbes()` 从它自动造出正负例，
- * 这个函数把那批分数变成一个数。
+ * **This is the only workable route to "thresholds must be calibrated on your own data" when there
+ * is no labelled data.** The industry-standard method samples 100–500 production log entries for
+ * human labelling — which assumes a single corpus, a single deployment, and a corpus stable enough
+ * to be worth paying someone to label once. Neither assumption holds when the corpus is uploaded by
+ * end users and differs from batch to batch: there are no historical logs to label, and no
+ * "label once, good for a long time" premise. Exactly one thing is available: **the corpus itself
+ * is already in hand.** `generateProbes()` builds positives and negatives from it automatically,
+ * and this function turns those scores into a number.
  *
- * **标定的单位因此是「一批探针」，不是「一次部署」。** 这批探针对应哪一批语料、
- * 多久重跑一次、要不要按批分别建缓存实例 —— 全是调用方的业务决定，库不认识那个粒度，
- * 它只认这批分数和你给的 `corpus` 标签（标签会原样写进 `calibratedOn`）。
+ * **The unit of calibration is therefore one batch of probes, not one deployment.** Which corpus a
+ * probe batch corresponds to, how often to re-run it, whether to build a separate cache instance
+ * per batch — those are all the caller's business decisions. The library does not know that
+ * granularity; it knows only these scores and the `corpus` label you supply (which is written into
+ * `calibratedOn` verbatim).
  *
- * **判据照搬 `FINDINGS.md` 的口径**：在正命中率 ≥ `targetPrecision` 的前提下，
- * 取命中率最高的那个 θ。不是取 margin 中点 —— 那只在两组完全分得开时才有定义，
- * 而真实语料上「L1 正则化 / L2 正则化」这类难负例本来就会和正例重叠。
+ * **The criterion follows `FINDINGS.md`**: among thresholds whose precision is ≥ `targetPrecision`,
+ * take the one with the highest recall. Not the midpoint of the margin — that is only defined when
+ * the two groups separate completely, whereas on a real corpus hard negatives like "L1
+ * regularization / L2 regularization" overlap with the positives by nature.
  *
- *   正命中率 = 判为命中的里面有多少真该命中（假命中的反面，贵的那一侧）
- *   命中率   = 真该命中的里面有多少判出来了（漏掉的只是白花一次生成，便宜）
+ *   precision = of those judged a hit, how many should have been (the inverse of a false hit, the
+ *               expensive side)
+ *   recall    = of those that should have hit, how many were found (a miss only wastes one
+ *               generation, which is cheap)
  *
- * **给不出 θ 时返回 `threshold: null`，并且 `calibratedOn` 是空串。** 后者是有意的：
- * 空串填进 `Calibrated` 会在构造期抛，所以一次失败的标定不可能被顺手带上线 ——
- * 拿不到能用的东西，比拿到一个看着像数的数安全。这时该做的是退回 ② 精确匹配
- * （零假命中风险），或者开影子模式攒够真实流量再说。
+ * **When no threshold can be given, `threshold` is null and `calibratedOn` is the empty string.**
+ * The latter is deliberate: an empty string passed to `Calibrated` throws at construction, so a
+ * failed calibration cannot be carried into production by accident — getting nothing usable is
+ * safer than getting a number that merely looks like one. The right response is to fall back to
+ * gate ② exact matching (zero false-hit risk), or to run shadow mode until there is enough real
+ * traffic.
  */
 export interface ThresholdSuggestion {
-	/** 建议的闸值。给不出时是 null，理由在 `reason` 里 */
+	/** The suggested threshold. Null when none can be given; see `reason`. */
 	readonly threshold: number | null;
-	/** 这个 θ 在**这批探针**上的正命中率。给不出 θ 时是 0 */
+	/** This θ's precision **on this probe batch**. Zero when no θ could be given. */
 	readonly precision: number;
-	/** 这个 θ 在**这批探针**上的命中率。给不出 θ 时是 0 */
+	/** This θ's recall **on this probe batch**. Zero when no θ could be given. */
 	readonly recall: number;
 	readonly positives: number;
 	readonly negatives: number;
 	/**
-	 * 把 θ 顶住的那条负例 —— 分数最高的那一对，也就是这批语料里最难的一对。
+	 * The negative that holds θ up — the highest-scoring pair, and so the hardest pair in this
+	 * corpus.
 	 *
-	 * 报出来是因为它可读：`同章不同概念 · L1 正则化 ／ L2 正则化` 一眼就能看出
-	 * 这门课难在哪，而「θ 只能取到 0.93」看不出。达不到目标正命中率时，它就是原因。
+	 * It is reported because it is readable: `same unit, different concept · L1 regularization / L2
+	 * regularization` shows at a glance where this course is hard, whereas "θ could only reach 0.93"
+	 * does not. When the target precision cannot be met, this is the reason.
 	 */
 	readonly hardestNegative: { readonly label: string; readonly score: number } | null;
-	/** 给不出 θ 的原因；给得出时是 null */
+	/** Why no θ could be given; null when one was. */
 	readonly reason: string | null;
-	/** 直接填进 `Calibrated.calibratedOn`。给不出 θ 时是空串（填进去会抛） */
+	/** Goes straight into `Calibrated.calibratedOn`. Empty string when no θ could be given (which throws if used). */
 	readonly calibratedOn: string;
 }
 
 export interface ThresholdSuggestionOptions {
 	/**
-	 * 这批探针来自哪，原样写进 `calibratedOn`。语料的标识由业务定 ——
-	 * 租户 + 知识库版本、课程 + 学期、一次导入的批次号，库不解释它的内容。
+	 * Where this probe batch came from, written into `calibratedOn` verbatim. How a corpus is
+	 * identified is a business decision — tenant plus knowledge-base version, course plus term, the
+	 * batch number of one import. The library does not interpret it.
 	 *
-	 * 必填且不能是空串，和 `Calibrated.calibratedOn` 同一条规矩：一个不知道
-	 * 在什么语料上标出来的阈值，半年后没人敢动它，也没人说得清它还成不成立。
+	 * Required and non-empty, the same rule as `Calibrated.calibratedOn`: a threshold whose corpus
+	 * nobody knows is one nobody dares touch six months later, and nobody can say whether it still
+	 * holds.
 	 */
 	readonly corpus: string;
 	/**
-	 * 目标正命中率，默认 0.95 —— 行业惯例（precision ≥ 95% 再放量）。
+	 * Target precision, default 0.95 — the industry convention of not scaling up below 95%.
 	 *
-	 * 这里给默认值不违反「阈值没有默认值」那条：默认的是**取舍**（假命中比漏命中贵
-	 * 多少），不是阈值本身。θ 仍然完全由这批语料的分数决定，而且取舍值会写进
-	 * `calibratedOn`，事后看得见。
+	 * Giving this a default does not violate "thresholds have no defaults": what is defaulted is the
+	 * **trade-off** (how much more a false hit costs than a miss), not the threshold. θ is still
+	 * determined entirely by this corpus's scores, and the trade-off value is written into
+	 * `calibratedOn` where it stays visible.
 	 */
 	readonly targetPrecision?: number;
 }
 
-/** 见 `ThresholdSuggestion`。 */
-export function suggestThreshold(report: DiscriminationReport, options: ThresholdSuggestionOptions): ThresholdSuggestion {
+/** See `ThresholdSuggestion`. */
+export function suggestThreshold(
+	report: DiscriminationReport,
+	options: ThresholdSuggestionOptions,
+): ThresholdSuggestion {
 	const corpus = options.corpus;
 	if (typeof corpus !== "string" || corpus.trim() === "") {
 		throw new Error(
-			"suggestThreshold 需要 corpus：这批探针来自哪门课、哪个学期、哪一版资料。" +
-				"它会写进 calibratedOn —— 一个不知道在什么语料上标出来的阈值，等于没标。",
+			"suggestThreshold requires a corpus: which course, which term, which revision of the material this probe batch came from. " +
+				"It is written into calibratedOn — a threshold whose corpus is unknown is no calibration at all.",
 		);
 	}
 	const target = options.targetPrecision ?? 0.95;
 	if (!Number.isFinite(target) || target <= 0 || target > 1) {
-		throw new Error(`targetPrecision 必须落在 (0, 1]，收到 ${String(options.targetPrecision)}。`);
+		throw new Error(`targetPrecision must fall in (0, 1], received ${String(options.targetPrecision)}.`);
 	}
 
 	const positives = report.rows.filter(r => r.shouldMatch);
@@ -169,30 +191,44 @@ export function suggestThreshold(report: DiscriminationReport, options: Threshol
 	const nothing = { threshold: null, precision: 0, recall: 0, calibratedOn: "", ...head };
 
 	/**
-	 * 两侧缺一不可，而且缺的那侧后果不同：
-	 * 没有负例 → 量不出假命中，θ 会被取到不能再松；没有正例 → 量不出合法复用被误拒。
-	 * 后者正是「没接 phrasing 就一条正例都造不出来」的那种情况，产品里最常见。
+	 * Both sides are required, and missing each has a different consequence: with no negatives,
+	 * false hits cannot be measured and θ gets pushed as loose as it will go; with no positives,
+	 * legitimate reuse being wrongly refused cannot be measured. The latter is exactly the "no
+	 * phrasing hook, so not one positive could be built" case, which is the common one in a product.
 	 */
 	if (positives.length === 0) {
-		return { ...nothing, reason: "一条正例都没有：这批探针只能界定假命中，量不出「该命中的漏了多少」，任何 θ 都是在猜命中率。给 generateProbes 接上 phrasing，或者用老师提供的问法。" };
+		return {
+			...nothing,
+			reason: 'Not a single positive: this probe batch can only bound false hits, not measure "how many that should have hit were missed", so any θ is guessing at recall. Give generateProbes a phrasing hook, or supply the teacher\'s own phrasings.',
+		};
 	}
 	if (negatives.length === 0) {
-		return { ...nothing, reason: "一条负例都没有：量不出假命中，而假命中正是这个阈值要挡的东西。" };
+		return {
+			...nothing,
+			reason: "Not a single negative: false hits cannot be measured, and false hits are exactly what this threshold exists to stop.",
+		};
 	}
 
 	/**
-	 * 候选 θ 只取**观测到的分数**。在两个观测值之间取值不会改变这批探针上的任何判定，
-	 * 却会让报出来的正命中率显得比证据更精确 —— 唯一的例外是下面那段完全可分的情形。
+	 * Candidate θ values are drawn only from **observed scores**. A value between two observations
+	 * changes no verdict on this probe batch while making the reported precision look more precise
+	 * than the evidence supports — the one exception being the fully-separable case below.
 	 */
 	let best: { threshold: number; precision: number; recall: number } | null = null;
 	for (const theta of [...new Set(report.rows.map(r => r.score))].sort((a, b) => a - b)) {
 		const tp = positives.filter(r => r.score >= theta).length;
 		const fp = negatives.filter(r => r.score >= theta).length;
-		if (tp === 0) continue; // 一条正例都留不住的 θ 不是候选，哪怕它正命中率是满分
+		if (tp === 0) {
+			// A θ that keeps no positive at all is not a candidate, even at perfect precision.
+			continue;
+		}
 		const precision = tp / (tp + fp);
-		if (precision < target) continue;
+		if (precision < target) {
+			continue;
+		}
 		const recall = tp / positives.length;
-		// 命中率优先；同命中率取更高的 θ —— 同样多的复用，假命中更少或持平
+		// Recall first; at equal recall take the higher θ — the same amount of reuse with fewer or
+		// equally many false hits.
 		if (best === null || recall > best.recall || (recall === best.recall && theta > best.threshold)) {
 			best = { threshold: theta, precision, recall };
 		}
@@ -202,19 +238,22 @@ export function suggestThreshold(report: DiscriminationReport, options: Threshol
 		return {
 			...nothing,
 			reason:
-				`这批探针上达不到 ${(target * 100).toFixed(0)}% 的正命中率` +
-				(hardest === null ? "。" : `：最难的一对负例「${hardest.label}」得了 ${hardest.score.toFixed(4)}，压过了太多正例。`) +
-				"要么换一个在这门课上分得开的打分器，要么这门课退回 ② 精确匹配（零假命中风险），" +
-				"或者先开影子模式攒真实流量 —— 不要拿一个别处搬来的数上线。",
+				`Cannot reach ${(target * 100).toFixed(0)}% precision on this probe batch` +
+				(hardest === null
+					? "."
+					: `: the hardest negative pair "${hardest.label}" scored ${hardest.score.toFixed(4)}, above too many positives.`) +
+				" Either switch to a scorer that separates this course, or fall back to gate ② exact matching for it (zero false-hit risk)," +
+				" or run shadow mode first and gather real traffic — do not ship a number borrowed from somewhere else.",
 		};
 	}
 
 	/**
-	 * 完全分得开时，把 θ 挪到空隙中点。
+	 * When the groups separate completely, move θ to the midpoint of the gap.
 	 *
-	 * 这批探针上判定完全不变（空隙里一个分数都没有），但两侧各留一半余量：探针只有
-	 * 几十条，而真实流量迟早会把空隙填上一些 —— 贴着 `minPositive` 放，第一条比它
-	 * 略低的合法改写就掉出去了。
+	 * No verdict on this probe batch changes (no score lies in the gap), but each side gets half the
+	 * gap as headroom: there are only a few dozen probes, and real traffic will eventually fill some
+	 * of that gap — sitting flush against `minPositive`, the first legitimate paraphrase scoring
+	 * slightly below it falls out.
 	 */
 	const separable = report.margin > 0 && best.threshold === report.minPositive;
 	const threshold = separable ? (report.maxNegative + report.minPositive) / 2 : best.threshold;
@@ -226,21 +265,23 @@ export function suggestThreshold(report: DiscriminationReport, options: Threshol
 		recall: best.recall,
 		reason: null,
 		calibratedOn:
-			`${corpus} · ${report.rows.length} 条自动探针（正 ${positives.length} / 负 ${negatives.length}）· ` +
-			`${report.role} 打分器 · θ=${threshold.toFixed(4)}（目标正命中率 ${(target * 100).toFixed(0)}%，` +
-			`实测正命中率 ${(best.precision * 100).toFixed(1)}% / 命中率 ${(best.recall * 100).toFixed(1)}%）`,
+			`${corpus} · ${report.rows.length} auto probes (${positives.length} positive / ${negatives.length} negative) · ` +
+			`${report.role} scorer · θ=${threshold.toFixed(4)} (target precision ${(target * 100).toFixed(0)}%, ` +
+			`measured precision ${(best.precision * 100).toFixed(1)}% / recall ${(best.recall * 100).toFixed(1)}%)`,
 	};
 }
 
-/** CI 里用：分不开就抛，别让任务错配的模型上线。 */
+/** For CI: throw when the groups do not separate, so a misapplied model never ships. */
 export function assertDiscriminates(report: DiscriminationReport): void {
-	if (report.usable) return;
+	if (report.usable) {
+		return;
+	}
 	const detail = report.rows
-		.map(r => `  ${r.shouldMatch ? "应高" : "应低"} ${r.score.toFixed(4)}  ${r.label}`)
+		.map(r => `  ${r.shouldMatch ? "expect high" : "expect low "} ${r.score.toFixed(4)}  ${r.label}`)
 		.join("\n");
 	throw new Error(
-		`模型角色「${report.role}」判别力不足：正例最低 ${report.minPositive.toFixed(4)}，` +
-			`负例最高 ${report.maxNegative.toFixed(4)}，间隔 ${report.margin.toFixed(4)}。\n` +
-			`多半是任务错配（例如拿段落重排器比问题↔问题，或拿句对模型做检索）。\n${detail}`,
+		`Model role "${report.role}" lacks discriminating power: lowest positive ${report.minPositive.toFixed(4)}, ` +
+			`highest negative ${report.maxNegative.toFixed(4)}, margin ${report.margin.toFixed(4)}.\n` +
+			`This is most likely a misapplied model (a passage reranker used for question-to-question, say, or a sentence-pair model used for retrieval).\n${detail}`,
 	);
 }

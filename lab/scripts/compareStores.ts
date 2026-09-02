@@ -19,7 +19,6 @@ import type { LabConfig } from "../types/LabConfig.ts";
 
 const CONFIGS: ReadonlyArray<readonly [string, Partial<LabConfig>]> = [
 	["全闸打开", {}],
-	["关掉 ⑤", { gate5: false }],
 	["关掉 ④", { gate4: false }],
 	["关掉 preAnon", { preAnonRetrieval: false }],
 	["scope=unit", { scopeMode: "unit" }],
@@ -33,7 +32,7 @@ function fingerprint(report: LabBenchReport): string {
 		total: report.total,
 		falseHit: report.falseHit,
 		missed: report.missed,
-		rows: report.rows.map(r => [r.key, r.ok, r.got, r.primarySource, r.exitedAt]),
+		rows: report.rows.map(r => [r.key, r.ok, r.got, r.space, r.exitedAt]),
 	});
 }
 
@@ -69,10 +68,10 @@ for (const [label, cfg] of CONFIGS) {
 		for (let i = 0; i < mem.rows.length; i++) {
 			const a = mem.rows[i];
 			const b = real.rows[i];
-			if (!b || a.ok !== b.ok || a.got !== b.got || a.primarySource !== b.primarySource || a.exitedAt !== b.exitedAt) {
+			if (!b || a.ok !== b.ok || a.got !== b.got || a.space !== b.space || a.exitedAt !== b.exitedAt) {
 				console.log(
-					`    ${a.key}: 内存 ok=${a.ok} got=${a.got} src=${a.primarySource} exit=${a.exitedAt}` +
-						` | pg ok=${b?.ok} got=${b?.got} src=${b?.primarySource} exit=${b?.exitedAt}`,
+					`    ${a.key}: 内存 ok=${a.ok} got=${a.got} space=${a.space} exit=${a.exitedAt}` +
+						` | pg ok=${b?.ok} got=${b?.got} space=${b?.space} exit=${b?.exitedAt}`,
 				);
 			}
 		}

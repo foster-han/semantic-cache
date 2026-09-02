@@ -11,8 +11,9 @@
  *   正命中率   判成「该复用」的里面标签确实是 1 的比例   ← GPTCache 公布 >97%
  *   正确拒绝   标签 0 的对子里判成「不复用」的比例      ← 论文里那个 85%
  *
- * **这只覆盖 ④。** ⑤⑥ 要「资料」和「资料版本」，QQP 里没有，那两道闸的标定
- * 仍然留在课程语料上（`scripts/calibrate.ts`）。
+ * **这只覆盖 ④ 的问↔问形态。** QQP 是一对问题加一个标签，没有「资料」这一侧，
+ * `CE_TARGET=answer` 在它上面标不了 —— 那个形态仍然留在课程语料上
+ * （`scripts/calibrate.ts`）。
  *
  *   node --experimental-strip-types scripts/probeRerankQqp.ts [条数]
  */

@@ -1,56 +1,67 @@
 /**
- * 两个模型角色。**它们比的不是同一类东西，不能共用一个模型。**
+ * The two model roles. **They compare different kinds of things and must not share one model.**
  *
- * 这个区分不是洁癖，是实测出来的：拿段落重排器（ms-marco）去比问题↔问题，
- * 中文上四组难度递减的输入全部落在 0.9975–0.9988，跨度 0.0013；反过来拿句对
- * 相似度模型（paraphrase-*）去做问题↔段落的检索，「什么是过拟合？」检出来的
- * 第一名是「批归一化」（0.366）。
+ * The distinction is not fastidiousness; it was measured. Point a passage reranker (ms-marco) at
+ * question-to-question comparison and, on Chinese input, four sets of decreasing difficulty all
+ * land between 0.9975 and 0.9988 — a spread of 0.0013. Go the other way and use a sentence-pair
+ * similarity model (paraphrase-*) for question-to-passage retrieval, and the top hit for "what is
+ * overfitting?" comes back as "batch normalization" (0.366).
  *
- * 两次错误**都不报错**：模型正常加载、返回合法的 0~1 分数、程序跑完。
- * 所以类型上把角色分开，并且要求每个角色上线前过 `checkDiscrimination`。
+ * **Neither mistake raises an error**: the model loads, returns legitimate 0–1 scores, and the
+ * program runs to completion. So the roles are separated at the type level, and every role is
+ * required to pass `checkDiscrimination` before it goes live.
  *
- * **先前这里有第三个角色 `RetrievalEncoder`（问题↔段落）**，供 ⑥ 回答有效性校验
- * 使用。⑥ 已移除，检索交回调用方自己的 RAG，所以这个角色不再属于本库 ——
- * 那次检索任务错配的实测仍留在上面，因为它说明的是「角色不能共用」，不是 ⑥。
+ * **There used to be a third role here, `RetrievalEncoder` (question-to-passage)**, used by gate
+ * ⑥ answer validation. Gate ⑥ has been removed and retrieval handed back to the caller's own RAG,
+ * so the role no longer belongs to this library. The retrieval-misapplication measurement above is
+ * kept because it demonstrates that roles cannot be shared, which is not a claim about ⑥.
  */
 
-/** 问题 ↔ 问题（对称）。用于缓存条目的召回。 */
+/** Question ↔ question (symmetric). Used to recall cache entries. */
 export interface PairEncoder {
-	/** 一批问句 → 归一化后的向量。同一实现内维度必须一致。 */
+	/** A batch of questions → normalized vectors. Dimensions must be consistent within one implementation. */
 	embedQuestions(texts: ReadonlyArray<string>): Promise<Array<Array<number>>>;
 }
 
 /**
- * ④ 把**什么**递给重排器当 candidate。它决定了你需要哪一类模型，也决定了分数尺度。
+ * **What** gate ④ hands the reranker as the candidate. It decides which kind of model you need,
+ * and it decides the score scale.
  *
- * - `"question"` 新问题 ↔ 缓存里的旧问题 → 需要**句对/重复问题**训练的模型
- * - `"answer"`   新问题 ↔ 缓存里的旧答案 → 正好是 query→passage，段落重排器适用
+ * - `"question"` — new question ↔ the cached old question → needs a model trained on
+ *   sentence pairs / duplicate questions
+ * - `"answer"` — new question ↔ the cached old answer → exactly query→passage, so a passage
+ *   reranker applies
  *
- * **这不是二选一的口味问题，是实测差别。** 同 18 对中文语料对子、同一个
- * `bge-reranker-base`（query→passage 训练），只换形态：
+ * **This is not a matter of taste with two acceptable answers; the difference was measured.** Same
+ * 18 Chinese pairs, same `bge-reranker-base` (trained for query→passage), changing only the form:
  *
- * | 形态 | 留一交叉验证 | 训练误差 | 假负（砍掉合法复用） |
+ * | Form | Leave-one-out | Training error | False negatives (legitimate reuse cut) |
  * |---|---|---|---|
- * | `"question"` | 50.0%（等于抛硬币） | 6/18 | 1 |
- * | `"answer"`   | **27.8%** | 4/18 | **0** |
+ * | `"question"` | 50.0% (a coin flip) | 6/18 | 1 |
+ * | `"answer"` | **27.8%** | 4/18 | **0** |
  *
- * 假负归零是关键：那条「④ 开着零精度收益、还砍掉 2 次合法复用」的负收益结论，
- * 成因就是假负。措辞完全不重叠的同义改写（`集成方法是什么？`／`为什么把多个模型
- * 合起来会更好？`）在 `"question"` 下得 0.0001，在 `"answer"` 下得 0.5573。
+ * Driving false negatives to zero is the important part: the finding that "④ enabled buys no
+ * precision and cuts two legitimate reuses" was caused by false negatives. A paraphrase with no
+ * vocabulary overlap at all ("what are ensemble methods?" / "why does combining several models
+ * work better?") scores 0.0001 under `"question"` and 0.5573 under `"answer"`.
  *
- * **两列都给，是因为它们说的不是一件事。**训练误差那一列的阈值是在同一份数据上选的，
- * 偏乐观；留一那一列才是泛化估计。而**形态之间的比较比任一个阈值的绝对值稳健得多** ——
- * 它是同批对子、同模型、只换 candidate 的配对比较，不需要定出阈值的位置。
- * 那个位置这份数据反而定不出来（n=18 上平台宽 0.62，bootstrap 95% 区间 0.287~0.999）。
- * 所以：形态该选 `"answer"`，但**你自己的 floor 必须在你自己的数据上标**。
+ * **Both columns are given because they say different things.** The training-error column picks
+ * its threshold on the same data it is scored on, so it is optimistic; the leave-one-out column is
+ * the generalization estimate. And **the comparison between forms is far more robust than either
+ * threshold's absolute value** — it is a paired comparison over the same pairs and the same model,
+ * changing only the candidate, and it needs no threshold to be pinned down. This data cannot pin
+ * one down anyway: at n=18 the plateau is 0.62 wide and the bootstrap 95% interval runs
+ * 0.287–0.999. So: choose `"answer"` as the form, but **calibrate your own floor on your own
+ * data.**
  *
- * 反过来也成立：把 NLI 模型从 `"question"` 换到 `"answer"` 会直接塌掉
- * （假负 5/9，中位 margin 转负）—— 短问句蕴含长答案文本，方向本就不成立。
- * **换形态和换模型一样是任务错配的来源，所以两者都要连 θq 一起重标。**
+ * The converse holds too. Move an NLI model from `"question"` to `"answer"` and it collapses
+ * outright (5/9 false negatives, median margin goes negative) — a short question entailing a long
+ * answer is the wrong direction to begin with. **Changing the form is as much a source of
+ * misapplication as changing the model, so either one requires recalibrating θq alongside it.**
  */
 export type RerankTarget = "question" | "answer";
 
-/** 精排。分数约定为 0~1，越大越相关。递进来的 candidate 由 `RerankTarget` 决定。 */
+/** Reranking. Scores are 0–1 by convention, higher is more relevant. `RerankTarget` decides what the candidate is. */
 export interface Reranker {
 	score(query: string, candidate: string): Promise<number>;
 }

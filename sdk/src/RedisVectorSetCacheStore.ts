@@ -1,86 +1,101 @@
-import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
 import { lfuCount } from "./EvictionOrder.ts";
-import { assertFiniteVector } from "./VectorMath.ts";
+import type { CacheEntry, Candidate, InspectableCacheStore } from "./types/CacheStore.ts";
 import type { EvictionConfig } from "./types/Eviction.ts";
 import type { RedisExecutor } from "./types/RedisExecutor.ts";
+import { assertFiniteVector } from "./VectorMath.ts";
 
 /**
- * Redis 实现，走 Redis 8 内置的 **Vector Set**（`VADD` / `VSIM`），不是 RediSearch。
- * 判定逻辑一行都不用改 —— `SemanticCache` 只认 `CacheStore` 接口。
+ * Redis implementation, on Redis 8's built-in **Vector Set** (`VADD` / `VSIM`) rather than
+ * RediSearch. Not one line of decision logic changes — `SemanticCache` knows only the
+ * `CacheStore` interface.
  *
- * 选 vectorset 而不是 `FT.*` 的原因很实际：它在 Redis 8 的核心里，`MODULE LIST`
- * 直接就有，不用额外装 Redis Stack。代价见下面第 2 条。
+ * The reason for vectorset over `FT.*` is practical: it lives in Redis 8's core and shows up in
+ * `MODULE LIST` directly, with no separate Redis Stack install. Its cost is point 2 below.
  *
- * 四处不能省的约束：
+ * Four constraints that cannot be skipped:
  *
- * 1. **必须 `NOQUANT`**。`VADD` 默认按 Q8 量化，int8 的分辨率比 pgvector 的 float4
- *    粗两个数量级，会把召回顺序摇出可见的差别。加上 `NOQUANT` 之后 `VINFO` 报
- *    `quant-type f32`，往返偏差实测约 4e-9，和 pgvector 同级。
- * 2. **只有 `searchNearest` 是库给的，另外八个方法要自己建二级索引。** 向量集是
- *    「一个 key 装一组 (元素, 向量, 属性)」，不是文档库：没有按哈希查、没有按
- *    资料 id 反查、没有 scope 计数。所以这里额外维护 5 个结构（见 keys），
- *    并且**写路径全部走 Lua**——多结构写一半崩掉留下的孤儿索引，是这条路上
- *    唯一会静默给出错答案的失效方式，MULTI 在连接池下还挡不住它。
- * 2.5 **全量操作分批。** Redis 是单线程的，一个 Lua 脚本跑多久，整个实例就阻塞多久。
- *    `all()` / `purgeExpired()` / `clear()` 扫的是全部 scope（不像召回有 scope 兜着），
- *    所以它们按 `batchSize` 切片，一批一个脚本。**原子性保留在真正需要它的粒度上**：
- *    单条条目的「本体 + 5 个索引」始终在同一个脚本里删完，不会留下孤儿索引；
- *    跨批则不是原子的 —— 中途失败留下的是「删了一部分」，那是维护操作可以接受的。
- * 3. **过期不能用 Redis 原生 TTL。** 接口要求过期条目「读路径看不见，但 `all()`
- *    要看得见」，而 `PEXPIREAT` 是真删，`all()` 就再也看不见了；何况 `now` 是注入
- *    的，假时钟根本驱动不了原生 TTL。所以 `expires_at` 落成参与 `FILTER` 的普通
- *    数值属性，清理走显式的 `purgeExpired()`。
- * 4. **`VSIM` 的分数不是余弦，是 `(1 + 余弦) / 2`**（实测：正交向量给 0.5，
- *    夹角余弦 −0.67466 给 0.16268）。取 `2 * score - 1` 才等于 `VectorMath.cosine`，
- *    内存实现与真库的召回排序因此一致。
+ * 1. **`NOQUANT` is mandatory.** `VADD` quantizes to Q8 by default, and int8's resolution is two
+ *    orders of magnitude coarser than pgvector's float4, enough to shake recall order visibly.
+ *    With `NOQUANT` added, `VINFO` reports `quant-type f32` and the measured round-trip deviation
+ *    is about 4e-9, on par with pgvector.
+ * 2. **Only `searchNearest` comes from the library; the other eight methods need secondary
+ *    indexes built here.** A vector set is one key holding a set of (element, vector, attributes)
+ *    — not a document store: there is no lookup by hash, no reverse lookup by source id, no
+ *    per-scope count. So five extra structures are maintained here (see keys), and **the whole
+ *    write path goes through Lua** — an orphaned index left behind by a multi-structure write
+ *    that died halfway is the one failure mode on this path that silently returns a wrong answer,
+ *    and MULTI does not prevent it under a connection pool.
+ * 2.5 **Whole-store operations are batched.** Redis is single-threaded: however long a Lua script
+ *    runs, the whole instance is blocked. `all()`, `purgeExpired()` and `clear()` scan every scope
+ *    — unlike recall, which a scope bounds — so they slice by `batchSize`, one script per batch.
+ *    **Atomicity is kept at the granularity that actually needs it**: a single entry's body plus
+ *    its five indexes are always deleted within one script, so no orphaned index is left; across
+ *    batches it is not atomic, and a failure partway leaves a partial deletion, which is
+ *    acceptable for a maintenance operation.
+ * 3. **Expiry cannot use Redis's native TTL.** The interface requires an expired entry to be
+ *    invisible to the read path yet visible to `all()`, and `PEXPIREAT` really deletes, so `all()`
+ *    would never see it again; besides, `now` is injected, and a fake clock cannot drive a native
+ *    TTL at all. So `expires_at` is stored as an ordinary numeric attribute that participates in
+ *    `FILTER`, and reaping goes through an explicit `purgeExpired()`.
+ * 4. **`VSIM`'s score is not the cosine, it is `(1 + cosine) / 2`** (measured: orthogonal vectors
+ *    give 0.5, and a cosine of -0.67466 gives 0.16268). `2 * score - 1` is what equals
+ *    `VectorMath.cosine`, so the memory implementation and a real database rank recall the same
+ *    way.
  *
- * **两处真实精度差异，别当成 bug 去修**：向量按 float32 存（同 pgvector）；
- * 相似度经 Lua 的 `tostring` 回来，是 14 位有效数字。两者都远小于任何标定出来的
- * 阈值间距，但**恰好压在阈值上的样本可能倒向另一边**——阈值在哪个后端标的，
- * 就在哪个后端验。lab/scripts/storeConformance.ts 把这条写成了判据。
+ * **Two real precision differences, not bugs to fix**: vectors are stored as float32 (as in
+ * pgvector), and a similarity comes back through Lua's `tostring` with 14 significant digits.
+ * Both are far below any calibrated threshold's spacing, but **a sample sitting exactly on a
+ * threshold can fall to the other side** — so calibrate and verify a threshold on the same
+ * backend. lab/scripts/storeConformance.ts encodes it as a criterion.
  *
- * **单实例假设**：Lua 脚本里按 id 现拼二级索引的 key，没有全部声明进 KEYS，
- * 在 Redis Cluster 上会被拒。要上 Cluster 得给整个命名空间套 hash tag。
+ * **Single-instance assumption**: the Lua scripts assemble secondary-index keys from an id on the
+ * fly without declaring all of them in KEYS, which Redis Cluster rejects. Running on Cluster
+ * would take a hash tag around the whole namespace.
  */
 export interface RedisVectorSetCacheStoreOptions {
 	readonly redis: RedisExecutor;
 	/**
-	 * 两个向量的维度。**没有默认值**：写错了不会报错，只会让召回悄悄退化。
+	 * The two vectors' dimension. **No default**: getting it wrong raises no error and only degrades
+	 * recall quietly.
 	 *
-	 * `match` 会被校验（向量集的维度在第一次 `VADD` 时定死，换编码器必须换 key）；
-	 * `answer` 这里只做合法性检查——答案向量不进向量集，它躺在 entry hash 里，
-	 * 只被「已经被重排选中的那一条」用到，是点查不是检索。
+	 * `match` is validated (a vector set's dimension is fixed by its first `VADD`, so changing the
+	 * encoder means changing the key); `answer` is only checked for validity here — an answer vector
+	 * never enters the vector set, it sits in the entry hash and is read only for the entry rerank
+	 * already selected, a point lookup rather than a search.
 	 */
 	readonly dimensions: { readonly match: number };
-	/** key 前缀，默认 `semcache`。换编码器就换一个，等同于 pgvector 那边换表名 */
+	/** Key prefix, `semcache` by default. Change it when the encoder changes, the equivalent of changing the table name on the pgvector side */
 	readonly namespace?: string;
-	/** 容量淘汰。不给就不维护排序集合，零额外开销 */
+	/** Capacity eviction. Omitted means the sorted set is not maintained, at zero extra cost */
 	readonly eviction?: EvictionConfig;
 	/**
-	 * 用 HNSW 近似检索。**默认关闭**，也就是 scope 内精确 KNN（`VSIM ... TRUTH`）。
+	 * Search approximately with HNSW. **Off by default**, meaning exact KNN within a scope (`VSIM ... TRUTH`).
 	 *
-	 * 理由和 pgvector 那边一样：一个 scope 通常几百到几千条，精确扫够快，
-	 * 而且召回集就是真召回集。开了近似之后带 `FILTER` 的检索可能返回不足 `limit` 条。
+	 * The reasoning matches the pgvector side: a scope usually holds a few hundred to a few thousand
+	 * entries, an exact scan is fast enough, and the recall set is then the real recall set. With
+	 * approximation on, a search carrying a `FILTER` may return fewer than `limit` rows.
 	 */
 	readonly ann?: boolean;
 	/**
-	 * 全量操作（`all` / `purgeExpired` / `clear`）每批处理多少条。默认 500。
+	 * How many entries per batch for whole-store operations (`all`, `purgeExpired`, `clear`). 500 by default.
 	 *
-	 * 调大省往返，调小缩短单个 Lua 脚本占住 Redis 的时长 —— 这两者之间没有普适的
-	 * 最优值，取决于你能容忍多长的阻塞，所以留成选项。
+	 * Larger saves round trips, smaller shortens how long one Lua script holds Redis — there is no
+	 * universally optimal value between the two, since it depends on how long a block you can
+	 * tolerate, so it is left as an option.
 	 */
 	readonly batchSize?: number;
 	readonly now?: () => number;
 }
 
 /**
- * 「永不过期」在 `VSIM` 的 `FILTER` 里没法表达——属性缺失会让整个表达式为假，
- * 元素直接被跳过。所以属性里落一个哨兵值。**真值永远以 entry hash 为准**，
- * 属性只参与过滤，两者不会有歧义。
+ * "Never expires" cannot be expressed in `VSIM`'s `FILTER`: a missing attribute makes the whole
+ * expression false and the element is skipped outright. So a sentinel value is stored in the
+ * attributes. **The entry hash is always the source of truth**; attributes only take part in
+ * filtering, so the two cannot be ambiguous.
  */
 const NEVER = Number.MAX_SAFE_INTEGER;
 
-/** 顺序即 `HMGET` 的返回顺序，改一个就得连 Lua 里那份一起改 */
+/** The order is `HMGET`'s return order, and changing one means changing the copy in the Lua alongside it */
 const FIELDS = [
 	"id",
 	"scope",
@@ -90,24 +105,22 @@ const FIELDS = [
 	"kind",
 	"answer",
 	"plan",
-	"source_ids",
-	"source_version",
 	"created_at",
 	"expires_at",
 	"meta",
-	// lru/lfu 的记账列。追加在末尾，前面的顺序一个都不动
+	// Accounting columns for lru/lfu. Appended at the end, leaving the preceding order untouched
 	"last_used_at",
 	"use_count",
 ] as const;
 
-/** Lua 里拼 `HMGET` 用的字面量列表 */
+/** The literal list the Lua uses to assemble `HMGET` */
 const LUA_FIELDS = FIELDS.map(f => `'${f}'`).join(", ");
 
-/** 命名空间会被拼进 key 和 Lua 脚本，先验一遍 */
+/** The namespace is interpolated into keys and into Lua scripts, so validate it first */
 function assertNamespace(namespace: string): void {
 	if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/u.test(namespace)) {
 		throw new Error(
-			`命名空间 ${JSON.stringify(namespace)} 不合法。只允许字母、数字、下划线、点和连字符，且不能以连字符或点开头。`,
+			`Namespace ${JSON.stringify(namespace)} is not valid. Only letters, digits, underscores, dots and hyphens are allowed, and it cannot start with a hyphen or a dot.`,
 		);
 	}
 }
@@ -117,45 +130,59 @@ function asArray(reply: unknown): Array<unknown> {
 }
 
 /**
- * 回复里的 bulk string 必须已经是字符串。**Buffer 模式的驱动会在这里炸，这是故意的** ——
- * `String(buffer)` 会拿到逗号分隔的字节，向量和 JSON 全变成垃圾，而且一路不报错。
+ * A bulk string in a reply must already be a string. **A driver in Buffer mode blows up here, and
+ * that is deliberate** — `String(buffer)` yields comma-separated bytes, turning vectors and JSON
+ * into garbage without raising an error anywhere along the way.
  */
 function asText(value: unknown): string {
-	if (value === null || value === undefined || value === false) return "";
-	if (typeof value === "string") return value;
-	if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") return String(value);
+	if (value === null || value === undefined || value === false) {
+		return "";
+	}
+	if (typeof value === "string") {
+		return value;
+	}
+	if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
+		return String(value);
+	}
 	throw new TypeError(
-		`Redis 回复里出现了非字符串（${Object.prototype.toString.call(value)}）。` +
-			`这个 store 要求驱动按字符串解码回复——node-redis 默认如此，ioredis 用 call 而不是 callBuffer。`,
+		`A Redis reply contained a non-string (${Object.prototype.toString.call(value)}). ` +
+			"This store requires the driver to decode replies as strings — node-redis does so by default, " +
+			"and ioredis needs call rather than callBuffer.",
 	);
 }
 
 function parseNumberArray(value: string): Array<number> {
-	if (value === "") return [];
+	if (value === "") {
+		return [];
+	}
 	const parsed: unknown = JSON.parse(value);
 	return Array.isArray(parsed) ? parsed.map(Number) : [];
 }
 
-function parseStringArray(value: string): Array<string> {
-	if (value === "") return [];
-	const parsed: unknown = JSON.parse(value);
-	return Array.isArray(parsed) ? parsed.map(String) : [];
-}
-
 function parseRecord(value: string): Record<string, string> {
-	if (value === "") return {};
+	if (value === "") {
+		return {};
+	}
 	const parsed: unknown = JSON.parse(value);
-	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return {};
+	}
 	const out: Record<string, string> = {};
-	for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) out[k] = String(v);
+	for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+		out[k] = String(v);
+	}
 	return out;
 }
 
-/** `HMGET` 回来的 14 个值 → 条目。任何一个字段缺失都当作条目不存在。 */
+/** The 14 values `HMGET` returns, to an entry. Any missing field is treated as the entry not existing. */
 function toEntry(values: ReadonlyArray<unknown>): CacheEntry | null {
-	if (values.length < FIELDS.length) return null;
+	if (values.length < FIELDS.length) {
+		return null;
+	}
 	const at = (name: (typeof FIELDS)[number]): string => asText(values[FIELDS.indexOf(name)]);
-	if (values[0] === null || values[0] === undefined || values[0] === false) return null;
+	if (values[0] === null || values[0] === undefined || values[0] === false) {
+		return null;
+	}
 	const kind = at("kind");
 	const expiresAt = at("expires_at");
 	const meta = at("meta");
@@ -168,26 +195,24 @@ function toEntry(values: ReadonlyArray<unknown>): CacheEntry | null {
 		kind: kind === "plan" ? "plan" : "answer",
 		answer: at("answer"),
 		plan: parseRecord(at("plan")),
-		sourceIds: parseStringArray(at("source_ids")),
-		sourceVersion: at("source_version"),
 		createdAt: Number(at("created_at")),
-		// 空串是「没有」，不是 0 —— createdAt 用不着这个区分，expiresAt 用得着
+		// An empty string means absent rather than 0 — createdAt does not need that distinction, expiresAt does
 		expiresAt: expiresAt === "" ? null : Number(expiresAt),
 		meta: meta === "" ? undefined : parseRecord(meta),
-		// 空串 = 从没记过账（fifo/rr 下永远如此），不是 0
+		// An empty string means never accounted for (always the case under fifo/rr), not 0
 		lastUsedAt: at("last_used_at") === "" ? undefined : Number(at("last_used_at")),
 		useCount: at("use_count") === "" ? undefined : Number(at("use_count")),
 	};
 }
 
 /**
- * 写入。**先查重再写**：接口要求 id 重复必须抛错，
- * 而 `VADD` 对已存在的元素是覆盖，`HSET` 也是，两个都不会自己报。
+ * Write. **Check for a duplicate before writing**: the interface requires a duplicate id to throw,
+ * and `VADD` overwrites an existing element, as does `HSET`, neither of them complaining.
  */
 const SCRIPT_PUT = `
 if redis.call('EXISTS', KEYS[2]) == 1 then return 'DUP' end
-local v = {KEYS[1], 'VALUES', tostring(#ARGV - 5)}
-for i = 6, #ARGV do v[#v + 1] = ARGV[i] end
+local v = {KEYS[1], 'VALUES', tostring(#ARGV - 4)}
+for i = 5, #ARGV do v[#v + 1] = ARGV[i] end
 v[#v + 1] = ARGV[1]
 v[#v + 1] = 'NOQUANT'
 redis.call('VADD', unpack(v))
@@ -199,29 +224,32 @@ redis.call('HSET', unpack(h))
 redis.call('ZADD', KEYS[3], ARGV[3], ARGV[1])
 redis.call('ZADD', KEYS[4], ARGV[3], ARGV[1])
 redis.call('SADD', KEYS[5], ARGV[1])
-for _, k in ipairs(cjson.decode(ARGV[5])) do redis.call('SADD', k, ARGV[1]) end
 return 'OK'
 `;
 
 /**
- * 删一批 id。`evict` / `evictBySource` / `clearScope` / `clear` 四个入口都走它 ——
- * 差别只在「这批 id 从哪来」，枚举留在 TS 侧（那样才能分批），删除留在这里。
+ * Delete a batch of ids. All three entry points — `evict`, `clearScope`, `clear` — go through it;
+ * they differ only in where the batch of ids comes from, so enumeration stays on the TS side
+ * (which is what makes batching possible) and deletion stays here.
  *
- * **一条条目的本体加 5 个索引，始终在同一个脚本里删完**：多结构写一半崩掉留下的
- * 孤儿索引，是这条路上唯一会静默给出错答案的失效方式。
+ * **An entry's body plus its five indexes are always deleted within one script**: an orphaned
+ * index left behind by a multi-structure write that died halfway is the one failure mode on this
+ * path that silently returns a wrong answer.
  */
 /**
- * LFU 的分数要**同时装下次数和时间**。
+ * An LFU score has to **hold both a count and a time**.
  *
- * zset 只有一个 double，而次数相同时必须退到 LRU 破平 —— 否则同分的条目只能按成员
- * 字典序淘汰，那时「刚写进去的新条目」会因为 id 恰好靠前而被立刻删掉，
- * 和内存/pgvector 的结果不一致（一致性测试就是这么抓到的）。
+ * A zset has only one double, and equal counts must fall back to LRU to break the tie — otherwise
+ * entries on the same score can only be evicted by member lexicographic order, and a freshly
+ * written entry gets deleted immediately because its id happens to sort early, disagreeing with
+ * memory and pgvector (which is exactly how the conformance test caught it).
  *
- * 打包：`min(次数, LFU_COUNT_CAP) * 2^41 + 毫秒时间戳`。
- *   - 41 位放得下毫秒时间戳到 2039 年（2^41 ≈ 2.199e12，当前约 1.77e12）
- *   - 次数封顶 1023 占 10 位，合计 51 位，在 double 的 53 位有效位之内
+ * The packing: `min(count, LFU_COUNT_CAP) * 2^41 + millisecond timestamp`.
+ *   - 41 bits hold a millisecond timestamp through 2039 (2^41 is about 2.199e12, and the present
+ *     is about 1.77e12)
+ *   - a count capped at 1023 takes 10 bits, 51 in total, within a double's 53 significant bits
  *
- * 封顶本身的理由、以及为什么三个后端必须封在同一个值上，都在 `EvictionOrder.ts`。
+ * Why the cap exists, and why all three backends must cap at the same value, is in `EvictionOrder.ts`.
  */
 const LFU_TIME_BITS = 2 ** 41;
 
@@ -234,7 +262,7 @@ local n = 0
 for i = 2, #ARGV do
   local id = ARGV[i]
   local ek = ARGV[1] .. ':e:' .. id
-  local m = redis.call('HMGET', ek, 'scope', 'match_hash', 'source_ids')
+  local m = redis.call('HMGET', ek, 'scope', 'match_hash')
   if m[1] then
     redis.call('VREM', KEYS[1], id)
     redis.call('DEL', ek)
@@ -242,14 +270,13 @@ for i = 2, #ARGV do
     redis.call('ZREM', ARGV[1] .. ':h:' .. m[1] .. ':' .. m[2], id)
     redis.call('SREM', ARGV[1] .. ':scope:' .. m[1], id)
     redis.call('ZREM', ARGV[1] .. ':rank:' .. m[1], id)
-    for _, s in ipairs(cjson.decode(m[3])) do redis.call('SREM', ARGV[1] .. ':src:' .. s, id) end
     n = n + 1
   end
 end
 return n
 `;
 
-/** 过期清理：只删这一批里真的到点的。id 从 TS 侧分批送进来。 */
+/** Expiry reaping: deletes only the entries in this batch that are genuinely due. The ids arrive batched from the TS side. */
 const SCRIPT_PURGE = `
 local n = 0
 for i = 3, #ARGV do
@@ -257,7 +284,7 @@ for i = 3, #ARGV do
   local ek = ARGV[1] .. ':e:' .. id
   local exp = redis.call('HGET', ek, 'expires_at')
   if exp and exp ~= '' and tonumber(exp) <= tonumber(ARGV[2]) then
-    local m = redis.call('HMGET', ek, 'scope', 'match_hash', 'source_ids')
+    local m = redis.call('HMGET', ek, 'scope', 'match_hash')
     if m[1] then
       redis.call('VREM', KEYS[1], id)
       redis.call('DEL', ek)
@@ -265,7 +292,6 @@ for i = 3, #ARGV do
       redis.call('ZREM', ARGV[1] .. ':h:' .. m[1] .. ':' .. m[2], id)
       redis.call('SREM', ARGV[1] .. ':scope:' .. m[1], id)
       redis.call('ZREM', ARGV[1] .. ':rank:' .. m[1], id)
-      for _, s in ipairs(cjson.decode(m[3])) do redis.call('SREM', ARGV[1] .. ':src:' .. s, id) end
       n = n + 1
     end
   end
@@ -274,9 +300,9 @@ return n
 `;
 
 /**
- * ② 精确匹配。zset 按 createdAt 排序，`ZREVRANGE` 出来就是
- * pgvector 那条 `ORDER BY created_at DESC, id DESC` —— 分数相同时
- * zset 按成员字典序，逆序正好是 id DESC。取第一条**未过期**的。
+ * ② exact match. The zset is ordered by createdAt, so `ZREVRANGE` reproduces pgvector's
+ * `ORDER BY created_at DESC, id DESC` — on equal scores a zset orders members
+ * lexicographically, and reversed that is exactly id DESC. Takes the first **unexpired** one.
  */
 const SCRIPT_BY_HASH = `
 local ids = redis.call('ZREVRANGE', KEYS[1], 0, -1)
@@ -291,8 +317,9 @@ return nil
 `;
 
 /**
- * `all()` 要的是原始状态，**含已过期未清理的**，顺序同 pgvector 的 `ORDER BY created_at, id`。
- * 一次只取 `[ARGV[2], ARGV[3]]` 这一段 —— 全量在 TS 侧拼。
+ * `all()` wants the raw state, **including entries expired but not yet reaped**, in the same order
+ * as pgvector's `ORDER BY created_at, id`. It takes only the `[ARGV[2], ARGV[3]]` slice at a time
+ * — the whole set is assembled on the TS side.
  */
 const SCRIPT_ALL = `
 local ids = redis.call('ZRANGE', KEYS[1], tonumber(ARGV[2]), tonumber(ARGV[3]))
@@ -304,12 +331,13 @@ return out
 `;
 
 /**
- * ③ 召回。**scope 与过期条件在 `FILTER` 里，不是捞回来在应用层筛** ——
- * 接口要求「过期条目即使还没被清理也绝不能返回」，应用层筛在 `COUNT` 下做不到：
- * 限制先生效，过期条目会挤掉本该返回的候选。
+ * ③ recall. **Scope and expiry are in the `FILTER`, not fetched back and filtered in the
+ * application** — the interface requires that an expired entry is never returned even before it
+ * has been reaped, and application-side filtering cannot deliver that under a `COUNT`: the limit
+ * applies first, and expired entries crowd out the candidates that should have come back.
  *
- * 分数一律 `tostring` 之后再回：Lua 的 number 转 RESP 会被截成整数，
- * 直接回等于把所有相似度变成 0，而且不会报错。
+ * Scores always come back through `tostring`: converting a Lua number to RESP truncates it to an
+ * integer, so returning it directly turns every similarity into 0, and raises no error.
  */
 const SCRIPT_SEARCH = `
 local q = {KEYS[1], 'VALUES', tostring(#ARGV - 4)}
@@ -338,18 +366,18 @@ export function createRedisVectorSetCacheStore(
 	const eviction = options.eviction;
 
 	/**
-	 * 排序集合的分数 = **保留优先级**，分数越高越先保住，删的是分数最低的。
+	 * The sorted set's score is the **retention priority**: a higher score is kept longer, and what is deleted is the lowest.
 	 *
-	 * `fifo` 用写入时间（分数写一次就不动）、`lru` 用最近使用时间（touch 时覆盖）、
-	 * `lfu` 用使用次数（touch 时自增）。`rr` 不需要顺序，走 SET 的随机取样，
-	 * 所以它不维护这个集合。
+	 * `fifo` uses the write time (written once and never touched), `lru` the last-used time
+	 * (overwritten on touch), `lfu` the use count (incremented on touch). `rr` needs no order and
+	 * samples the SET randomly, so it does not maintain this set.
 	 */
 	function keepScore(entry: CacheEntry): number {
 		switch (eviction?.policy) {
 			case "lru":
 				return entry.lastUsedAt ?? entry.createdAt;
 			case "lfu":
-				// 没记过账 = 刚写进来，按「用过一次」算。理由见 MemoryCacheStore.keepOrder
+				// Never accounted for means just written, and counts as used once. See MemoryCacheStore.keepOrder for why
 				return lfuScore(entry.useCount ?? 1, entry.lastUsedAt ?? entry.createdAt);
 			default:
 				return entry.createdAt;
@@ -357,9 +385,9 @@ export function createRedisVectorSetCacheStore(
 	}
 
 	/**
-	 * 一个 scope 现在有多少条。`rr` 不维护排序集合，所以数的是 scope 集合。
-	 * **数的是存储里的成员，含已过期未清理的** —— `trim` 靠 `purgeExpiredIn` 把这
-	 * 两者的差抹掉。
+	 * How many entries a scope holds right now. `rr` maintains no sorted set, so this counts the scope
+	 * set instead. **What is counted is the members in the store, expired-but-unreaped included** —
+	 * `trim` relies on `purgeExpiredIn` to erase the difference between the two.
 	 */
 	async function sizeOf(scope: string): Promise<number> {
 		const rr = eviction?.policy === "rr";
@@ -367,44 +395,59 @@ export function createRedisVectorSetCacheStore(
 	}
 
 	/**
-	 * 收掉一个 scope 里已过期的成员，返回条数。
+	 * Reap the expired members in one scope and return how many.
 	 *
-	 * 只在容量吃紧时调 —— 代价是 O(scope)，而那条路本来就要排序取样。
-	 * 走的是全量 `purgeExpired()` 用的同一个脚本，所以「本体 + 5 个索引」照样
-	 * 在一个脚本里删完，不会留下孤儿索引。
+	 * Called only under capacity pressure — it costs O(scope), and that path was going to sort and
+	 * sample anyway. It runs the same script the whole-store `purgeExpired()` uses, so a body plus
+	 * its five indexes are still deleted within one script and no orphaned index is left.
 	 */
 	async function purgeExpiredIn(scope: string): Promise<number> {
 		const deadline = String(now());
 		let removed = 0;
 		for (const group of batches(await listSetIds(keys.scope(scope)))) {
-			removed += Number((await evalScript(SCRIPT_PURGE, [keys.vector, keys.all], [namespace, deadline, ...group])) ?? 0);
+			removed += Number(
+				(await evalScript(SCRIPT_PURGE, [keys.vector, keys.all], [namespace, deadline, ...group])) ?? 0,
+			);
 		}
 		return removed;
 	}
 
 	/**
-	 * 把一个 scope 压回容量，返回删掉的条数。rr 走随机取样，其余走排序集合。
+	 * Squeeze one scope back to capacity and return how many were deleted. `rr` samples randomly, the rest use the sorted set.
 	 *
-	 * **容量数的是活条目。** 超出上限时先收掉这个 scope 里已过期、只是还没被
-	 * `purgeExpired()` 收走的成员，再看是否仍然超。先前不分活死，于是一条过期成员
-	 * 占着一个名额把活条目顶掉；而排序集合的分数根本不看 `expires_at`，那条过期成员
-	 * 只要 `last_used_at` 够新就能接着顶掉好几条。内存与 pgvector 后端先前是同一个
-	 * 毛病，三处一起改 —— 这条要么三个后端都做，要么都不做。
+	 * **Capacity counts live entries.** Over the limit, the members in this scope that have expired
+	 * and merely have not been reaped by `purgeExpired()` yet are collected first, and only then is
+	 * the limit rechecked. Live and dead were once not distinguished, so an expired member held a
+	 * slot and displaced a live entry; and since the sorted set's score never looks at `expires_at`,
+	 * that expired member could go on displacing several more as long as its `last_used_at` was
+	 * recent enough. The memory and pgvector backends had the same defect and all three were fixed
+	 * together — this is either done in all three backends or in none.
 	 */
 	async function trim(scope: string): Promise<number> {
-		if (!eviction) return 0;
-		if ((await sizeOf(scope)) <= eviction.capacity) return 0;
+		if (!eviction) {
+			return 0;
+		}
+		if ((await sizeOf(scope)) <= eviction.capacity) {
+			return 0;
+		}
 		const purged = await purgeExpiredIn(scope);
 		const over = (await sizeOf(scope)) - eviction.capacity;
-		if (over <= 0) return purged;
+		if (over <= 0) {
+			return purged;
+		}
 		let ids: Array<string>;
 		if (eviction.policy === "rr") {
-			// SRANDMEMBER 带负数会给重复元素，所以取正数再去重
+			// SRANDMEMBER with a negative count returns duplicates, so take a positive count and deduplicate
 			const picked = (await redis.sendCommand(["SRANDMEMBER", keys.scope(scope), String(over)])) as Array<string>;
 			ids = [...new Set(picked.map(String))];
 		} else {
-			// 分数最低的那批就是该走的
-			const doomed = (await redis.sendCommand(["ZRANGE", keys.rank(scope), "0", String(over - 1)])) as Array<string>;
+			// The batch with the lowest scores is the one to go
+			const doomed = (await redis.sendCommand([
+				"ZRANGE",
+				keys.rank(scope),
+				"0",
+				String(over - 1),
+			])) as Array<string>;
 			ids = doomed.map(String);
 		}
 		return ids.length === 0 ? purged : purged + (await deleteIds(ids));
@@ -414,60 +457,71 @@ export function createRedisVectorSetCacheStore(
 	const batchSize = options.batchSize ?? 500;
 
 	if (!Number.isInteger(batchSize) || batchSize <= 0) {
-		throw new Error(`batchSize 必须是正整数，收到 ${String(options.batchSize)}`);
+		throw new Error(`batchSize must be a positive integer, received ${String(options.batchSize)}`);
 	}
 
 	if (!Number.isInteger(dimensions.match) || dimensions.match <= 0) {
-		throw new Error(`match 向量维度必须是正整数，收到 ${String(dimensions.match)}`);
+		throw new Error(`The match vector dimension must be a positive integer, received ${String(dimensions.match)}`);
 	}
 
 	/**
-	 * 六个结构。**只有第一个是 Redis 给的，其余五个是这里自己维护的二级索引** ——
-	 * 关系库免费给的东西，在这里全部变成写路径上的一致性责任。
+	 * Six structures. **Only the first comes from Redis; the other five are secondary indexes
+	 * maintained here** — what a relational database gives for free becomes, here, a consistency
+	 * obligation on the write path.
 	 */
 	const keys = {
-		/** 向量集：元素是条目 id，属性是 `{scope, expires_at}`，供 `VSIM` 的 FILTER 用 */
+		/** Vector set: elements are entry ids and attributes are `{scope, expires_at}`, for `VSIM`'s FILTER */
 		vector: `${namespace}:v`,
-		/** 条目本体。向量集只装向量，答案、来源、meta 这些都在这里 */
+		/** The entry body. The vector set holds only vectors; the answer and meta live here */
 		entry: (id: string) => `${namespace}:e:${id}`,
-		/** 全量 id，score = createdAt。`all()` 的顺序就是它 */
+		/** Every id, scored by createdAt. `all()`'s order is this set's */
 		all: `${namespace}:all`,
-		/** ② 精确匹配的入口，score = createdAt，用来复现 `ORDER BY created_at DESC` */
+		/** ② exact match's entry point, scored by createdAt, reproducing `ORDER BY created_at DESC` */
 		byHash: (scope: string, hash: string) => `${namespace}:h:${scope}:${hash}`,
-		/** `clearScope` 要按 scope 枚举，向量集给不了 */
+		/** `clearScope` has to enumerate by scope, which the vector set cannot do */
 		scope: (scope: string) => `${namespace}:scope:${scope}`,
-		/** 淘汰排序集合。分数含义随策略变；只在配了 eviction 时才维护 */
+		/** The eviction sorted set. What its score means varies by policy, and it is maintained only when eviction is configured */
 		rank: (scope: string) => `${namespace}:rank:${scope}`,
-		/** ⑤ 语料改版时按资料 id 反查，等价于 pgvector 那边的 GIN 索引 */
-		source: (sourceId: string) => `${namespace}:src:${sourceId}`,
 	};
 
-	async function evalScript(script: string, keyList: ReadonlyArray<string>, argv: ReadonlyArray<string>): Promise<unknown> {
+	async function evalScript(
+		script: string,
+		keyList: ReadonlyArray<string>,
+		argv: ReadonlyArray<string>,
+	): Promise<unknown> {
 		return redis.sendCommand(["EVAL", script, String(keyList.length), ...keyList, ...argv]);
 	}
 
 	function batches(ids: ReadonlyArray<string>): Array<Array<string>> {
 		const out: Array<Array<string>> = [];
-		for (let i = 0; i < ids.length; i += batchSize) out.push(ids.slice(i, i + batchSize));
+		for (let i = 0; i < ids.length; i += batchSize) {
+			out.push(ids.slice(i, i + batchSize));
+		}
 		return out;
 	}
 
-	/** 全量 id，分批读出来。边读边删会让 zset 的下标漂移，所以读写分成两趟。 */
+	/** Every id, read out in batches. Deleting while reading shifts the zset's indexes, so reads and writes are split into two passes. */
 	async function listAllIds(): Promise<Array<string>> {
 		const out: Array<string> = [];
 		for (let start = 0; ; start += batchSize) {
-			const page = asArray(await redis.sendCommand(["ZRANGE", keys.all, String(start), String(start + batchSize - 1)]));
-			for (const id of page) out.push(asText(id));
-			if (page.length < batchSize) return out;
+			const page = asArray(
+				await redis.sendCommand(["ZRANGE", keys.all, String(start), String(start + batchSize - 1)]),
+			);
+			for (const id of page) {
+				out.push(asText(id));
+			}
+			if (page.length < batchSize) {
+				return out;
+			}
 		}
 	}
 
-	/** 一个 scope / 一篇资料下的 id。单个集合的规模有 scope 兜着，一次读完即可。 */
+	/** The ids under one scope or one source. A single set's size is bounded by the scope, so one read suffices. */
 	async function listSetIds(setKey: string): Promise<Array<string>> {
 		return asArray(await redis.sendCommand(["SMEMBERS", setKey])).map(asText);
 	}
 
-	/** 删除的四个入口只差「这批 id 从哪来」；删除本身分批，每批一个原子脚本 */
+	/** The four deletion entry points differ only in where the batch of ids comes from; deletion itself is batched, one atomic script per batch */
 	async function deleteIds(ids: ReadonlyArray<string>): Promise<number> {
 		let removed = 0;
 		for (const group of batches(ids)) {
@@ -478,13 +532,15 @@ export function createRedisVectorSetCacheStore(
 	}
 
 	/**
-	 * 向量分量交出去之前一律转成字符串。
+	 * Vector components are always converted to strings before being handed over.
 	 *
-	 * **非有限分量抛，不落 0。**先前落 0 是想着「别让一条脏向量弄坏整次写入」，
-	 * 但同一个输入在 pgvector 上是硬错、在内存里原样存下 —— 三个后端三种症状，
-	 * 而一个坏掉的编码器最先撞上的就是这里。理由与统一之处见 `assertFiniteVector`。
-	 * 注意 hash 里那份 `JSON.stringify(matchVector)` 会把 NaN 写成 `null`，
-	 * 读回来是 0：静默的路不止这一条，所以要在入口一次拦掉。
+	 * **A non-finite component throws rather than being stored as 0.** Storing 0 was once an attempt
+	 * at not letting one dirty vector ruin a whole write, but the same input is a hard error on
+	 * pgvector and stored verbatim in memory — three backends, three symptoms, and this is the first
+	 * place a broken encoder hits. The reasoning, and where it was unified, are in
+	 * `assertFiniteVector`. Note that the `JSON.stringify(matchVector)` copy in the hash writes NaN
+	 * as `null` and reads back as 0: there is more than one silent path here, which is why it is
+	 * stopped once at the entrance.
 	 */
 	function vectorArgs(name: string, vector: ReadonlyArray<number>): Array<string> {
 		assertFiniteVector(name, vector);
@@ -493,10 +549,11 @@ export function createRedisVectorSetCacheStore(
 
 	return {
 		/**
-		 * 幂等，可以直接放在启动路径上。
+		 * Idempotent, so it can sit directly on the startup path.
 		 *
-		 * 这里没有「建表」可做 —— 向量集在第一次 `VADD` 时才诞生，维度也在那时定死。
-		 * 所以它做的是两件校验：模块在不在，以及已有的向量集维度对不对得上。
+		 * There is no table to create here — a vector set comes into existence at its first `VADD`, and
+		 * its dimension is fixed then. So what this does is two checks: whether the module is present,
+		 * and whether an existing vector set's dimension matches.
 		 */
 		async ensureSchema(): Promise<void> {
 			try {
@@ -505,8 +562,8 @@ export function createRedisVectorSetCacheStore(
 				const message = String(err);
 				if (/unknown command/iu.test(message)) {
 					throw new Error(
-						`这个 Redis 没有 vectorset（VADD/VSIM）。需要 Redis 8 或更高——它是内核自带的，` +
-							`用 MODULE LIST 看有没有 vectorset。原始错误：${message}`,
+						"This Redis has no vectorset (VADD/VSIM). Redis 8 or newer is required — it ships in the " +
+							`core, and MODULE LIST shows whether vectorset is there. Original error: ${message}`,
 					);
 				}
 				throw err;
@@ -514,13 +571,15 @@ export function createRedisVectorSetCacheStore(
 
 			const info = asArray(await redis.sendCommand(["VINFO", keys.vector]));
 			for (let i = 0; i + 1 < info.length; i += 2) {
-				if (asText(info[i]) !== "vector-dim") continue;
+				if (asText(info[i]) !== "vector-dim") {
+					continue;
+				}
 				const actual = Number(asText(info[i + 1]));
 				if (Number.isFinite(actual) && actual !== dimensions.match) {
 					throw new Error(
-						`${keys.vector} 是 ${actual} 维，但当前编码器给出 ${dimensions.match} 维。` +
-							`换编码器就得换 key——删掉旧的或用 namespace 选项换一个，` +
-							`混着用等于把两个向量空间的条目堆在一起。`,
+						`${keys.vector} has ${actual} dimensions, but the current encoder produces ${dimensions.match}. ` +
+							"Changing the encoder means changing the key — delete the old one or pick another with " +
+							"the namespace option; mixing them piles entries from two vector spaces together.",
 					);
 				}
 			}
@@ -534,27 +593,37 @@ export function createRedisVectorSetCacheStore(
 		async getById(id) {
 			const values = asArray(await redis.sendCommand(["HMGET", keys.entry(id), ...FIELDS]));
 			const entry = toEntry(values);
-			if (entry === null) return null;
-			// 读路径看不见过期条目。要看原始状态用 all()
+			if (entry === null) {
+				return null;
+			}
+			// The read path cannot see expired entries. Use all() for the raw state
 			return entry.expiresAt === null || entry.expiresAt > now() ? entry : null;
 		},
 
 		async searchNearest(scope, vector, limit) {
-			// scope 可能带引号或反斜杠，交给 JSON.stringify 转义，别自己拼
+			// A scope may contain quotes or backslashes, so leave the escaping to JSON.stringify rather than assembling it by hand
 			const filter = `.scope == ${JSON.stringify(scope)} and .expires_at > ${now()}`;
 			const hits = asArray(
 				await evalScript(
 					SCRIPT_SEARCH,
 					[keys.vector],
-					[namespace, String(limit), filter, options.ann ? "" : "TRUTH", ...vectorArgs("查询向量", vector)],
+					[
+						namespace,
+						String(limit),
+						filter,
+						options.ann ? "" : "TRUTH",
+						...vectorArgs("query vector", vector),
+					],
 				),
 			);
 			const out: Array<Candidate> = [];
 			for (const hit of hits) {
 				const row = asArray(hit);
 				const entry = toEntry(row);
-				if (entry === null) continue;
-				// VSIM 给的是 (1 + 余弦) / 2，取回余弦才等于 VectorMath.cosine
+				if (entry === null) {
+					continue;
+				}
+				// VSIM gives (1 + cosine) / 2, and recovering the cosine is what equals VectorMath.cosine
 				const score = Number(asText(row[FIELDS.length]));
 				const similarity = Number.isFinite(score) ? 2 * score - 1 : 0;
 				out.push({ entry, similarity });
@@ -564,30 +633,43 @@ export function createRedisVectorSetCacheStore(
 
 		async put(entry) {
 			const fields: Array<string> = [
-				"id", entry.id,
-				"scope", entry.scope,
-				"match_text", entry.matchText,
-				"match_hash", entry.matchHash,
-				"match_vector", JSON.stringify(entry.matchVector),
-				"kind", entry.kind,
-				"answer", entry.answer,
-				"plan", JSON.stringify(entry.plan),
-				"source_ids", JSON.stringify(entry.sourceIds),
-				"source_version", entry.sourceVersion,
-				"created_at", String(entry.createdAt),
-				// 空串是「永不过期」。落 0 会让它变成「早就过期」
-				"expires_at", entry.expiresAt === null ? "" : String(entry.expiresAt),
-				"meta", entry.meta === undefined ? "" : JSON.stringify(entry.meta),
-				// lru/lfu 的记账列。空串 = 没记过，读回来是 undefined
-				"last_used_at", entry.lastUsedAt === undefined ? "" : String(entry.lastUsedAt),
-				"use_count", entry.useCount === undefined ? "" : String(entry.useCount),
+				"id",
+				entry.id,
+				"scope",
+				entry.scope,
+				"match_text",
+				entry.matchText,
+				"match_hash",
+				entry.matchHash,
+				"match_vector",
+				JSON.stringify(entry.matchVector),
+				"kind",
+				entry.kind,
+				"answer",
+				entry.answer,
+				"plan",
+				JSON.stringify(entry.plan),
+				"created_at",
+				String(entry.createdAt),
+				// An empty string means never expires. Storing 0 would turn it into long since expired
+				"expires_at",
+				entry.expiresAt === null ? "" : String(entry.expiresAt),
+				"meta",
+				entry.meta === undefined ? "" : JSON.stringify(entry.meta),
+				// Accounting columns for lru/lfu. An empty string means never accounted for, and reads back as undefined
+				"last_used_at",
+				entry.lastUsedAt === undefined ? "" : String(entry.lastUsedAt),
+				"use_count",
+				entry.useCount === undefined ? "" : String(entry.useCount),
 			];
 			/**
-			 * **属性里的「永不过期」是 `NEVER`，hash 里是空串 —— 两套表示故意不同。**
+			 * **"Never expires" is `NEVER` in the attributes and an empty string in the hash — the two
 			 *
-			 * `VSIM` 的 FILTER 只看属性，表达式是 `.expires_at > <now>`：落空串的话
-			 * 字符串和数字比不出结果，所有不过期的条目会对 ③ 完全不可见。而 hash 那边
-			 * 落 `0` 会被读成「早就过期」，所以只能是空串。改任何一侧前先看另一侧。
+			 * representations differ deliberately.** `VSIM`'s FILTER reads only attributes, and the expression
+			 * is `.expires_at > <now>`: with an empty string there, a string and a number do not compare and
+			 * every non-expiring entry becomes completely invisible to ③. On the hash side a `0` would read
+			 * as long since expired, so it can only be the empty string. Look at one side before changing
+			 * the other.
 			 */
 			const attributes = JSON.stringify({ scope: entry.scope, expires_at: entry.expiresAt ?? NEVER });
 			const done = await evalScript(
@@ -604,15 +686,16 @@ export function createRedisVectorSetCacheStore(
 					attributes,
 					String(entry.createdAt),
 					JSON.stringify(fields),
-					JSON.stringify(entry.sourceIds.map(keys.source)),
 					...vectorArgs("matchVector ", entry.matchVector),
 				],
 			);
 			if (asText(done) === "DUP") {
-				throw new Error(`缓存条目 id 重复：${entry.id}。id 由库生成，重复只可能是生成器碰撞。`);
+				throw new Error(
+					`Duplicate cache entry id: ${entry.id}. Ids are generated by the library, so a duplicate can only be a generator collision.`,
+				);
 			}
 			if (eviction) {
-				// rr 不需要排序集合 —— 它用 scope 的 SET 做随机取样
+				// rr needs no sorted set — it samples the scope's SET randomly
 				if (eviction.policy !== "rr") {
 					await redis.sendCommand(["ZADD", keys.rank(entry.scope), String(keepScore(entry)), entry.id]);
 				}
@@ -624,25 +707,26 @@ export function createRedisVectorSetCacheStore(
 			await deleteIds([id]);
 		},
 
-		async evictBySource(sourceId) {
-			return deleteIds(await listSetIds(keys.source(sourceId)));
-		},
-
 		async touch(id) {
-			// fifo/rr 不需要记账 —— 这里连一次往返都不发
-			if (eviction?.policy !== "lru" && eviction?.policy !== "lfu") return;
+			// fifo/rr need no accounting — this does not even make a round trip
+			if (eviction?.policy !== "lru" && eviction?.policy !== "lfu") {
+				return;
+			}
 			const ek = keys.entry(id);
 			const got = (await redis.sendCommand(["HMGET", ek, "scope", "use_count"])) as Array<string | null>;
 			const scope = got[0];
-			if (scope === null || scope === undefined) return; // 可能刚被并发驱逐，静默返回
+			if (scope === null || scope === undefined) {
+				return; // It may have just been evicted concurrently, so this returns silently
+			}
 			/**
-			 * 基数 1：保留优先级把「没记过账」算作一次使用，从 0 起加会让首次复用不提升优先级。
+			 * Base 1: the retention priority counts never-accounted-for as one use, and starting from 0 would leave a first reuse without a priority bump.
 			 *
-			 * **「没记过账」在 entry hash 里是空串，不是 null** —— `put` 落的是
-			 * `use_count = ""`（见上面的写入）。所以 `?? 1` 挡不住它：`Number("")` 是 0，
-			 * 于是 Redis 这边每条条目的次数都比内存与 pgvector 少 1（那两个后端分别是
-			 * `?? 1` 与 `COALESCE(use_count, 1)`）。`lfu` 下这个差会改变 lfuScore 的打包值、
-			 * 进而在同分时改变淘汰顺序 —— 一致性脚本的「e0 记账」那两行就是这么照出来的。
+			 * **Never accounted for is the empty string in the entry hash, not null** — `put` writes
+			 * `use_count = ""` (see the write above). So `?? 1` does not catch it: `Number("")` is 0, and
+			 * every entry on the Redis side then counts one lower than on memory and pgvector (which use
+			 * `?? 1` and `COALESCE(use_count, 1)` respectively). Under `lfu` that difference changes
+			 * lfuScore's packed value and so the eviction order on equal scores — which is exactly what the
+			 * conformance script's two "e0 accounting" lines exposed.
 			 */
 			const recorded = got[1];
 			const previous = recorded === null || recorded === undefined || recorded === "" ? 1 : Number(recorded);
@@ -677,12 +761,12 @@ export function createRedisVectorSetCacheStore(
 
 		async clear() {
 			await deleteIds(await listAllIds());
-			// 逐条删完这两个 key 本该已经自动消失，兜底一次，免得留下空壳挡住维度校验
+			// Deleting entry by entry should already have made these two keys disappear; this is a fallback, so no empty shell is left to block the dimension check
 			await redis.sendCommand(["DEL", keys.vector, keys.all]);
 		},
 
 		async all() {
-			// 和内存实现一样，**不过滤过期条目** —— 这是给 UI 和断言看的原始状态
+			// Like the memory implementation, this **does not filter expired entries** — it is the raw state, for UIs and assertions
 			const out: Array<CacheEntry> = [];
 			for (let start = 0; ; start += batchSize) {
 				const rows = asArray(
@@ -690,9 +774,13 @@ export function createRedisVectorSetCacheStore(
 				);
 				for (const row of rows) {
 					const entry = toEntry(asArray(row));
-					if (entry !== null) out.push(entry);
+					if (entry !== null) {
+						out.push(entry);
+					}
 				}
-				if (rows.length < batchSize) return out;
+				if (rows.length < batchSize) {
+					return out;
+				}
 			}
 		},
 	};

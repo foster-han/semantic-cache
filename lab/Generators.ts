@@ -112,8 +112,8 @@ const FRAME = FRAMES[LANGUAGE];
 const SYSTEM = FRAME.system;
 
 /**
- * 片段拼成资料块。**顺序即重要性**,和 `sourceIds` 一致 ——
- * 判据是 `sourceIds[0]`,所以首个片段必须是排第一的那个。
+ * 片段拼成资料块。**顺序即重要性** —— 首个片段必须是检索排第一的那个,
+ * 生成端会主要依据它作答。
  */
 function materials(chunks: ReadonlyArray<Chunk>): string {
 	return chunks.map((c, i) => `${FRAME.material(i + 1, titleOf(c))}\n${c.text}`).join("\n\n");
@@ -121,7 +121,7 @@ function materials(chunks: ReadonlyArray<Chunk>): string {
 
 /**
  * 三个真生成端送出去的用户消息**必须逐字一样** —— 它们是同一个被测对象的三次实现,
- * 差一个字就不是在同一份 prompt 上比支撑度了。所以拼装只此一处。
+ * 差一个字就不是在同一份 prompt 上标 θq 了。所以拼装只此一处。
  */
 function userPrompt(prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): string {
 	return `${materials(chunks)}\n\n${FRAME.question(prompt.retrievalText)}`;
@@ -137,7 +137,7 @@ function stubGenerator(): LabGenerator {
 		approxMsPerCall: 0,
 		// stub 是确定性的，variant 无意义 —— 如实忽略，别装作采样了
 		async generate(_prompt, chunks) {
-			return { kind: "answer", answer: compose(chunks as unknown as ReadonlyArray<ComposeChunk>), sourceIds: chunks.map(c => c.id) };
+			return { kind: "answer", answer: compose(chunks as unknown as ReadonlyArray<ComposeChunk>) };
 		},
 	};
 }
@@ -151,8 +151,8 @@ function stubGenerator(): LabGenerator {
  * Claude Code。代价是每次要起一个进程,实测约 8.5 秒,所以完整 bench 跑不动
  * (13 场景 × 30 条干扰 ≈ 416 次 ≈ 1 小时)。重新标定和手动/场景验证够用。
  *
- * **失败必须抛错,不能悄悄退回 stub** —— 那样标出来的 θa 会是两种分布混出来的,
- * 比标不准更糟。
+ * **失败必须抛错,不能悄悄退回 stub** —— 那样标出来的 θq 会是两种分布混出来的,
+ * 比标不准更糟（`CE_TARGET=answer` 下 ④ 的 candidate 就是答案本身）。
  */
 function claudeCliGenerator(): LabGenerator {
 	const model = process.env.GEN_MODEL;
@@ -167,7 +167,7 @@ function claudeCliGenerator(): LabGenerator {
 			return text;
 		} catch (err) {
 			throw new Error(
-				`claude -p 生成失败(GEN=claude-cli)。这里不退回 stub —— 两种分布混在一起标出来的 θa 比标不准更糟。原始错误:${String(err)}`,
+				`claude -p 生成失败(GEN=claude-cli)。这里不退回 stub —— 两种分布混在一起标出来的 θq 比标不准更糟。原始错误:${String(err)}`,
 			);
 		}
 	}
@@ -177,9 +177,10 @@ function claudeCliGenerator(): LabGenerator {
 		note: `claude -p${model ? `(${model})` : ""} —— 真生成,约 8.5 秒一次,完整 bench 跑不动`,
 		approxMsPerCall: 8_500,
 		async generate(prompt, chunks) {
+			// 检索为空时答案没有任何资料依据。**SDK 以前会因此拒绝写入,现在不会** ——
+			// 那道守卫建在「条目记着自己引了哪些文档」之上,和那个维度一起移除了。
 			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks));
-			// 没有资料时 sourceIds 为空 —— SDK 会因此不把它写进缓存,这是对的
-			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
+			return { kind: "answer", answer };
 		},
 	};
 }
@@ -243,7 +244,7 @@ function apiGenerator(): LabGenerator {
 					: "";
 			throw new Error(
 				`Messages API 生成失败（GEN=api, model=${model}）。这里不退回 stub —— ` +
-					`两种分布混在一起标出来的 θa 比标不准更糟。${hint}原始错误：${message}`,
+					`两种分布混在一起标出来的 θq 比标不准更糟。${hint}原始错误：${message}`,
 			);
 		}
 
@@ -270,7 +271,7 @@ function apiGenerator(): LabGenerator {
 		approxMsPerCall: 2_000,
 		async generate(prompt, chunks, variant) {
 			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks), variant);
-			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
+			return { kind: "answer", answer };
 		},
 	};
 }
@@ -316,7 +317,7 @@ function deepseekGenerator(): LabGenerator {
 							{ role: "user", content: user },
 						],
 						// 生成要稳定：同一份资料 + 同一个问题，两次跑出来的答案分布不该差太多，
-						// 否则标定的支撑度是在测采样噪声
+						// 否则标定的 θq 是在测采样噪声
 						temperature: 0.2,
 						// 同输入取不同采样靠 seed，不靠抬温度 —— 后者会改变被测的分布
 						...(variant === undefined ? {} : { seed: variant }),
@@ -347,7 +348,7 @@ function deepseekGenerator(): LabGenerator {
 		}
 		throw new Error(
 			`DeepSeek 生成失败（GEN=deepseek, model=${model}）。这里不退回 stub —— ` +
-				`两种分布混在一起标出来的 θa 比标不准更糟。最后一次错误：${lastError}`,
+				`两种分布混在一起标出来的 θq 比标不准更糟。最后一次错误：${lastError}`,
 		);
 	}
 
@@ -357,7 +358,7 @@ function deepseekGenerator(): LabGenerator {
 		approxMsPerCall: 2_000,
 		async generate(prompt, chunks, variant) {
 			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks), variant);
-			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
+			return { kind: "answer", answer };
 		},
 	};
 }
@@ -427,7 +428,7 @@ function memoize(inner: LabGenerator): LabGenerator {
 		 * 先前两样都漏了，于是「同一输入的第 k 次采样」全部撞进同一个 key：
 		 * `calibrate.ts` 的 `CALIB_SAMPLES`（真生成端默认 3）在默认 `GEN_MEMO` 下
 		 * 塌成一次调用，而且塌成的是 `variant === undefined` 那一次 —— 连 seed 都不带。
-		 * 标出来的 θa 因此是单次采样的产物，而那个脚本的注释说得很清楚：
+		 * 标出来的 θq 因此是单次采样的产物，而那个脚本的注释说得很清楚：
 		 * 「单轮结果测的是采样噪声，不是分布」。
 		 *
 		 * 更难查的是它会**归错因**：`calibrate.ts` 的采样自检会发现 3 次逐位相同，

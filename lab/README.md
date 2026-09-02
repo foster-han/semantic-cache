@@ -22,7 +22,7 @@ npm run typecheck
 
 | 脚本 | 回答什么 | 数据 |
 |---|---|---|
-| `scripts/calibrate.ts` | ③⑥ 的阈值，以及 ④ 的建议 θq（跟着 `CE_TARGET` 走） | 课程语料 |
+| `scripts/calibrate.ts` | ④ 的建议 θq（跟着 `CE_TARGET` 走），加一次检索 top-1 的体检 | 课程语料 |
 | `scripts/fetchQqp.ts` | 取 QQP 到 `data/`（`QQP_BALANCE=0` 保留原始正例率） | — |
 | `scripts/probeRerankQqp.ts` | ③④ 在 1000 对真人问题对上的完整曲线 | `data/qqp.json` |
 | `scripts/fetchPairs.ts` | 取 `redis/langcache-sentencepairs-v1` 的任一 config（跨 split 撒页、带退避重试） | — |
@@ -77,7 +77,7 @@ MODE=stub SEMCACHE_DB=postgres://postgres:postgres@localhost:5432/semcache npm s
 |---|---|---|
 | `MODE` | `local` | `local` 真模型（ONNX，本地跑）/ `stub` 字符 Jaccard 的哈希投影 |
 | `PAIR_MODEL` | `Xenova/all-MiniLM-L6-v2` | ③ 缓存匹配（问题↔问题）。六个候选的横评见 [FINDINGS](../FINDINGS.md)：**没有普适最优**，现默认赢在 qqp（真人问题对，最像 ③ 的活）且最快，但在 Twitter 短句那份上输给旧的多语种默认 |
-| `RETR_MODEL` | `Xenova/e5-small-v2` | 检索 + ⑥ 的答案侧编码 |
+| `RETR_MODEL` | `Xenova/e5-small-v2` | 检索（验证台自己那侧 RAG，`embedPassage`） |
 | `CE_MODEL` | `Xenova/ms-marco-MiniLM-L-6-v2` | ④ 精排。**默认这个在中文上全盲**（18 对真实对子 margin −0.0003）。想跑 ④ 的真实精度：`CE_MODEL=Xenova/bge-reranker-base`，换完必须重标 θq。候选实测见 [FINDINGS](../FINDINGS.md) |
 | `CE_TARGET` | `question` | ④ 把**旧问题**还是**旧答案**递给重排器。`answer` 才是 query→passage，手上可得的重排器都是那么训练的 —— 同一个 `bge-reranker-base`，留一交叉验证 27.8%（问↔答，假负 0）对 50%（问↔问，假负 1）。**换形态就是换尺度，θq 不通用**，所以标定表按 (模型 × 形态) 索引 |
 
@@ -118,8 +118,9 @@ CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer npm start
 
 ### ④ 生成端
 
-默认 `stub`：把检索到的首个片段换序换壳。**它不是真生成**，⑥ 的支撑度因此天然偏高，
-θa 的绝对值在它上面标不准。
+默认 `stub`：把检索到的首个片段换序换壳。**它不是真生成**，答案逐字来自片段本身，
+所以 `CE_TARGET=answer` 下 ④ 的分数天然偏高 —— **θq 的绝对值在它上面标不准**
+（④ 拿 `entry.answer` 当 candidate，答案是谁写的直接决定那个分布）。
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
@@ -148,9 +149,9 @@ GEN=deepseek MODE=local npm start
 
 `claude-cli` 约 8.5 秒一次，够用来重新标定和手动/场景验证；**完整 bench 跑不动**
 （13 场景 × 30 条干扰 ≈ 416 次 ≈ 1 小时），所以页面上会把对照实验卡禁掉。
-生成失败直接抛错，**不退回 stub** —— 两种分布混着标出来的 θa 比标不准更糟。
+生成失败直接抛错，**不退回 stub** —— 两种分布混着标出来的 θq 比标不准更糟。
 
-### ⑤ 阈值：来自标定表，不是硬编码
+### 阈值：来自标定表，不是硬编码
 
 四个阈值由 [`Calibrations.ts`](Calibrations.ts) 按 **(语料 × 编码器 × 生成端)** 给出 ——
 它们随这三者而变，一份通用默认值就是把某个组合上标出来的数当成普适值。启动日志和页面
@@ -167,7 +168,6 @@ GEN=deepseek MODE=local npm start
 |---|---|
 | `RECALL_FLOOR` | ③ 召回下限（句对模型余弦尺度） |
 | `THETA_Q` | ④ 精排闸值（重排器自己的尺度）。`none` = 明确表示没有这道闸 |
-| `THETA_A_HI` / `THETA_A_LO` | ⑥ 支撑度两档（检索模型 passage 空间） |
 
 ```bash
 # 换一个句对相似度模型，标定后把 θq 显式带上
@@ -185,16 +185,16 @@ CE_MODEL=cross-encoder/quora-distilroberta-base THETA_Q=0.62 npm start
 
 ```bash
 npm run compare-stores      # 同一份场景集，两种存储后端的结论必须逐行一致
-npm run store-conformance   # 直接对着 InspectableCacheStore 的十个方法比可观察结果
-node --experimental-strip-types scripts/calibrate.ts   # 标定 θq / θa，认 GEN=
+npm run store-conformance   # 直接对着 InspectableCacheStore 的每个方法比可观察结果
+node --experimental-strip-types scripts/calibrate.ts   # 标定 θq，认 GEN= 与 CE_TARGET=
 ```
 
 前两个要两种后端都在（默认内存 + pgvector；`:redis` 后缀换成 Redis）。
-`compare-stores` 只走 `resolve` 那条路，`getById`、`evictBySource`、`clearScope`、
-`purgeExpired` 碰不到，所以才有第二个。
+`compare-stores` 只走 `resolve` 那条路，`getById`、`clearScope`、`purgeExpired` 碰不到，
+所以才有第二个。
 
-**标定要用 `calibrate.ts` 的探针，不要用 bench** —— 13 条场景集的支撑度分布太两极，
-分不出几组阈值的差别。
+**标定要用 `calibrate.ts` 的探针，不要用 bench** —— 场景集的判据只到 space 级，
+换任何阈值都是 26/26 全绿，分不出差别（见文末「场景集」那一节）。
 
 ## 页面从上到下就是使用顺序
 
@@ -220,10 +220,37 @@ node --experimental-strip-types scripts/calibrate.ts   # 标定 θq / θa，认 
 |---|---|---|
 | 同义改写 ×10 | 过拟合 / 学习率 / 交叉验证 / 偏差方差 / 归一化 / 剪枝 / 早停 / F1 / 损失函数 / 集成 | 应复用 |
 | 近义反义 ×7 | 过拟合-欠拟合 / 精确率-召回率 / L1-L2 / 准确率-精确率 / 早停-剪枝 / 决策树-集成 / 归一化-编码 | ③④ |
-| 同词不同指 ×2 | 归一化（特征缩放 vs 批归一化）、收敛（优化 vs EM） | ⑥ |
-| 实体塌陷 ×4 | Hinton-LeCun / Vapnik-Breiman / Hinton-Vapnik / LeCun-Breiman | ⑥ |
-| 语料改版 ×2 | 老师改大纲：期中范围、评分构成 | ⑤ |
+| 同词不同指 ×2 | 归一化（特征缩放 vs 批归一化）、收敛（优化 vs EM） | ~~⑥~~ → 已移交 |
+| 实体塌陷 ×4 | Hinton-LeCun / Vapnik-Breiman / Hinton-Vapnik / LeCun-Breiman | ~~⑥~~ → 已移交 |
+| 语料改版 ×2 | 老师改大纲：期中范围、评分构成 | ~~⑤~~ → **没有闸**，改版时连着清 space |
 | 对照组 ×1 | 两个远主题 | ③④ |
+
+### 语料改版那两条：现在测的是「清 space」
+
+⑤ 资料版本比对连同它依赖的 `sourceIds` 维度已从 SDK 移除，**读侧再没有任何一道闸看得见
+资料改版**。所以这两条场景的 `bumpCorpus` 现在不只改版，还会连着 `clear({ org, key })`
+把那个 space 清掉 —— 那才是新机制。少了这一步，它们测的是一道不存在的闸，而且会静静
+地通过（逐字相同的探测会在 ② 命中旧答案）。
+
+### 「已移交」的那 6 条
+
+上表里标着「已移交」的两族，先前由 ⑥ 回答校验拦下，而 **⑥ 已经移除**（理由见
+`sdk/DESIGN.md` 的「为什么不是加个向量库 + 一个阈值」与「诚实的边界」）。它们在默认
+配置下**会命中**，这是预期结果，不是回归 —— 所以：
+
+- **不计入假命中**。混进去的话，一次设计取舍会永远表现成一批查不出原因的失败。
+  报告里单独一栏 `movedOut`，页面上的圆点是虚线的 `–`。
+- **改由谁负责，写在场景自己身上**（`nowHandledBy`），回放时按那个配置**真的再跑
+  一遍**。只声明不跑的话，DESIGN 里「代价由隔离边界和缓存键的构成来付」就只是一句话。
+
+| 族 | 为什么会命中 | 移交给 |
+|---|---|---|
+| 实体塌陷 ×4 | 匿名化把两个人压成同一个 `<PERSON_1>`，缓存键逐字相同 → **② 精确匹配**直接命中（调阈值没用，② 不看分数） | `gate1: true` —— 检出实体就强制 user scope，两个学生落在两个隔离 scope |
+| 同词不同指 ×2 | 两句话本来就一模一样，能分开它们的只有「学生学到第几章」 | `scopeMode: "unit"` —— 把那个上下文放进 scope |
+
+点开单条场景时，页面会把两次结果并排给出：当前配置下命中了什么、移交后的配置下
+是不是真的重新生成、落到了哪个 space。移交后仍然命中的话那一栏会标红 —— 那说明
+这个取舍不成立，得回去改设计，而不是改这张表。
 
 另有 30 条干扰缓存，跑用例前先灌进去 —— 不灌的话召回永远只有 1 条候选，④ 没有候选可排。
 
@@ -233,7 +260,12 @@ node --experimental-strip-types scripts/calibrate.ts   # 标定 θq / θa，认 
 
 标定集另有 42 条（该复用 19 + 该拦下 23），覆盖 19 篇讲义，见 `scripts/calibrate.ts`。
 近义对只挑**住在不同文档里**的概念 —— L1/L2 都在 n8、precision/recall 都在 n11，
-`sourceIds[0]` 判据看不出错，那是已知盲区。
+当时那个 doc 级判据（`sourceIds[0]`）看不出错，那是已知盲区。
+
+**这个盲区现在覆盖整份场景集。** 判据已随 `sourceIds` 维度一起降到 space 级
+（「答案来自哪个 space」），而这 26 条全在一门课里、也就是同一个 space —— 假命中判定
+因此恒为 0（实测 26/26 全绿）。它现在抓得到 scope 路由错，抓不到检索精度错。要让它
+重新有区分度，得把语料扩成多个 space（多门课），或者把判据下沉到答案文本。
 
 **个人成绩不在语料里。**「李四的作业二得了多少分」是结构化查询 + 授权检查，
 应由意图路由送去工具，不该进 RAG 与缓存。实体塌陷的合法载体是**学科内容里的人名**。

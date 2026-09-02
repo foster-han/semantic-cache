@@ -1,43 +1,50 @@
 /**
- * 容量淘汰策略。
+ * Capacity eviction policy.
  *
- * **四种的代价差别很大，而且差在「读路径要不要写」上** —— 这不是口味问题：
+ * **The four differ substantially in cost, and the difference is whether the read path has to
+ * write.** This is not a matter of taste:
  *
- * | 策略 | 排序依据 | 命中时要记账吗 |
+ * | Policy | Ordered by | Bookkeeping on a hit? |
  * |---|---|---|
- * | `fifo` | 写入时间（本来就存着） | **不要** |
- * | `rr`   | 随机 | **不要** |
- * | `lru`  | 最近使用时间 | **要** —— 每次命中一次 UPDATE |
- * | `lfu`  | 使用次数 | **要** —— 每次命中一次自增 |
+ * | `fifo` | Write time (already stored) | **No** |
+ * | `rr` | Random | **No** |
+ * | `lru` | Last-used time | **Yes** — one UPDATE per hit |
+ * | `lfu` | Use count | **Yes** — one increment per hit |
  *
- * 语义缓存的命中路径本来是「一次向量检索 + 几次比较」，`lru`/`lfu` 会给它加一次写。
- * 命中越多写越多，而命中多正是这东西起作用的时候 —— 所以默认给 `fifo`：
- * 它拿已有的 `createdAt` 排序，零额外成本，且对「问题分布随时间漂移」这个
- * 语义缓存的主要失效模式已经够用。
+ * A semantic cache's hit path is otherwise "one vector search plus a few comparisons"; `lru` and
+ * `lfu` add a write to it. More hits, more writes — and plenty of hits is precisely when this
+ * thing is working. Hence `fifo` as the default: it orders on the `createdAt` already stored, at
+ * no extra cost, and it is sufficient for the dominant failure mode of a semantic cache, which is
+ * the question distribution drifting over time.
  *
- * 要 `lru`/`lfu` 就是明确接受那次写。`touch()` 在 `fifo`/`rr` 下是真正的空操作
- * （不发请求），所以调用方可以无条件调它，策略知识留在存储里。
+ * Choosing `lru`/`lfu` is explicitly accepting that write. `touch()` is a genuine no-op under
+ * `fifo`/`rr` (it issues no request), so callers can call it unconditionally and leave the policy
+ * knowledge in the store.
  */
 export type EvictionPolicy = "fifo" | "rr" | "lru" | "lfu";
 
 export interface EvictionConfig {
 	readonly policy: EvictionPolicy;
 	/**
-	 * **每个 scope** 最多留多少条，不是全库。
+	 * How many entries to keep **per scope**, not across the whole store.
 	 *
-	 * 语义缓存的召回是 scope 内的（③ 的 pre-filter），所以「太多」是 scope 内的概念：
-	 * 一门课攒了十万条会拖慢它自己的 KNN，跟别的课无关。按全库设上限会让热门 scope
-	 * 挤掉冷门 scope 的全部条目 —— 那是多租户里最难查的一类问题。
+	 * Recall is scope-local (gate ③'s pre-filter), so "too many" is a scope-local notion: one
+	 * course accumulating a hundred thousand entries slows down its own KNN and has nothing to do
+	 * with any other course. A store-wide cap would let a busy scope evict every entry belonging to
+	 * a quiet one — among the hardest classes of bug to track down in a multi-tenant system.
 	 */
 	/**
-	 * **软上限，不是硬约束。**写入与淘汰是两条语句、没有事务包裹，所以并发写入之间
-	 * 条目数可以短暂超过它（下一次 `put` 或 `evictOverCapacity` 会压回来）。
-	 * 要拿它当配额计费一类的硬约束，得在这一层之外自己保证。
+	 * **A soft limit, not a hard constraint.** Writing and evicting are two statements with no
+	 * enclosing transaction, so concurrent writers can briefly push the count above it (the next
+	 * `put` or `evictOverCapacity` brings it back down). Treating it as a hard constraint, for
+	 * quota billing say, requires a guarantee of your own above this layer.
 	 *
-	 * **数的是活条目。** 超出上限时先收掉这个 scope 里已过期、只是还没被
-	 * `purgeExpired()` 清理的行，再按策略淘汰 —— 否则一条读路径上早已看不见的过期行
-	 * 会占着一个名额把活条目顶掉，而 `lru`/`lfu` 的排序根本不看 `expires_at`，
-	 * 那条过期行只要最近「用过」就能接着顶掉好几条。三个后端都是这个语义。
+	 * **It counts live entries.** Over the limit, rows in this scope that have already expired but
+	 * have not yet been cleaned up by `purgeExpired()` are collected first, and only then does
+	 * policy eviction run — otherwise an expired row, long invisible on the read path, occupies a
+	 * slot and pushes out a live entry. `lru`/`lfu` ordering does not look at `expires_at` at all,
+	 * so such a row need only have been "used" recently to keep pushing out several more. All three
+	 * backends share this semantics.
 	 */
 	readonly capacity: number;
 }

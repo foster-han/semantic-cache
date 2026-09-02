@@ -1,88 +1,105 @@
-import type { Candidate, CacheEntry, InspectableCacheStore } from "./types/CacheStore.ts";
 import { LFU_COUNT_CAP } from "./EvictionOrder.ts";
-import { assertFiniteVector } from "./VectorMath.ts";
+import type { CacheEntry, Candidate, InspectableCacheStore } from "./types/CacheStore.ts";
 import type { EvictionConfig } from "./types/Eviction.ts";
 import type { SqlExecutor } from "./types/SqlExecutor.ts";
+import { assertFiniteVector } from "./VectorMath.ts";
 
 /**
- * pgvector 实现。判定逻辑一行都不用改 —— `SemanticCache` 只认 `CacheStore` 接口。
+ * The pgvector implementation. Not one line of decision logic changes — `SemanticCache` knows
+ * only the `CacheStore` interface.
  *
- * 三处不能省的约束，都写进了 SQL：
+ * Three constraints that cannot be skipped, all of them written into the SQL:
  *
- * 1. **scope 与过期条件必须在 WHERE 里**，不能捞回来在应用层过滤。接口文档要求
- *    「过期行即使还没被清理也绝不能返回」—— 应用层过滤在分页/LIMIT 下做不到这点：
- *    LIMIT 先生效，过期行会挤掉本该返回的候选。
- * 2. **只有一列向量**：`match_vector`，PairEncoder 空间（③ 召回用）。先前还有一列
- *    `answer_vector`（⑥ 的 passage 空间），⑥ 移除后连列一起去掉了。
- * 3. **相似度用 `1 - (v <=> q)`**。pgvector 的 `<=>` 是余弦距离，取补正好等于
- *    `VectorMath.cosine`，内存实现与真库的召回排序因此一致。
+ * 1. **Scope and expiry must be in the WHERE clause**, never fetched back and filtered in the
+ *    application. The interface requires that an expired row is never returned even before it
+ *    has been purged — and application-side filtering cannot deliver that under a LIMIT: the
+ *    LIMIT applies first, and expired rows crowd out the candidates that should have come back.
+ * 2. **One vector column only**: `match_vector`, in PairEncoder space, used by ③'s recall. There
+ *    was once an `answer_vector` column in ⑥'s passage space; when ⑥ was removed the column
+ *    went with it.
+ * 3. **Similarity is `1 - (v <=> q)`**. pgvector's `<=>` is cosine distance, and its complement
+ *    is exactly `VectorMath.cosine`, so the memory implementation and a real database rank
+ *    recall the same way.
  *
- * **一处真实的精度差异，别当成 bug 去修**：`vector` 列是 float4，而 JS 的 number
- * 是 float8。向量写进去就被舍到单精度（实测往返偏差约 6e-8），因此库内算出的
- * 相似度和纯内存跑不会逐位相同。
- * 量级远小于任何标定出来的阈值间距，但**恰好压在阈值上的样本可能倒向另一边** ——
- * 阈值标定该在哪个后端上做，就在哪个后端上验。pgvector 没有 float8 的向量类型，
- * 这不是能通过换写法绕开的东西。lab/scripts/storeConformance.ts 把这条写成了判据。
+ * **One real precision difference, not a bug to fix**: a `vector` column is float4 while a JS
+ * number is float8. A vector is rounded to single precision on write (a measured round-trip
+ * deviation of about 6e-8), so a similarity computed inside the library does not match a pure
+ * in-memory run bit for bit.
+ * The magnitude is far below any calibrated threshold's spacing, but **a sample sitting exactly
+ * on a threshold can fall to the other side** — so calibrate and verify a threshold on the same
+ * backend. pgvector has no float8 vector type; this is not something a different spelling gets
+ * around. lab/scripts/storeConformance.ts encodes it as a criterion.
  */
 export interface PgVectorCacheStoreOptions {
 	readonly sql: SqlExecutor;
 	/**
-	 * 两个向量列的维度。**没有默认值**：写错了不会报错，只会让召回悄悄退化，
-	 * 所以必须由调用方从自己的编码器上量出来传进来。
+	 * The two vector columns' dimension. **No default**: getting it wrong raises no error and only
+	 * degrades recall quietly, so the caller has to measure it off their own encoder and pass it in.
 	 */
 	readonly dimensions: { readonly match: number };
-	/** 表名，可带 schema 前缀（`public.semantic_cache`）。默认 `semantic_cache` */
+	/** Table name, optionally schema-qualified (`public.semantic_cache`). Defaults to `semantic_cache`. */
 	readonly table?: string;
 	/**
-	 * 建 HNSW 近似索引。**默认关闭**，也就是 scope 内精确 KNN。
+	 * Build an HNSW approximate index. **Off by default**, meaning exact KNN within a scope.
 	 *
-	 * 一个 scope 的缓存条目通常是几百到几千条，精确扫完全够快，而且召回集就是真
-	 * 召回集。开了 ANN 之后带 WHERE 的向量检索会先取近邻再过滤，可能返回不足
-	 * `limit` 条——pgvector 0.8 起可以用 `SET hnsw.iterative_scan = relaxed_order`
-	 * 缓解，但那是要连同 `hnsw.max_scan_tuples` 一起调的运维决定，不该由库替你做。
+	 * A scope usually holds a few hundred to a few thousand entries, which an exact scan handles
+	 * easily, and the recall set is then the real recall set. With ANN on, a vector search carrying
+	 * a WHERE clause takes neighbours first and filters after, and may return fewer than `limit`
+	 * rows — pgvector 0.8 onward can mitigate that with `SET hnsw.iterative_scan = relaxed_order`,
+	 * but that is an operational decision to be tuned alongside `hnsw.max_scan_tuples` and not one
+	 * the library should make for you.
 	 */
 	readonly ann?: boolean;
 	readonly now?: () => number;
-	/** 容量淘汰。不给就不淘汰 —— 只靠 TTL 与显式失效 */
+	/** Capacity eviction. Omitted means no eviction — TTL and explicit invalidation only. */
 	readonly eviction?: EvictionConfig;
 }
 
-/** 表名只可能来自代码或环境变量，但它是拼进 SQL 的——必须先验一遍。 */
+/** A table name can only come from code or an environment variable, but it is interpolated into SQL, so validate it first. */
 function assertIdentifier(table: string): void {
 	if (!/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/u.test(table)) {
 		throw new Error(
-			`表名 ${JSON.stringify(table)} 不合法。只允许小写字母、数字、下划线，可带一级 schema 前缀（如 public.semantic_cache）。`,
+			`Table name ${JSON.stringify(table)} is not valid. Only lowercase letters, digits and underscores are allowed, optionally with a single schema prefix such as public.semantic_cache.`,
 		);
 	}
 }
 
 /**
- * pgvector 的文本输入格式就是 `[1,2,3]`，不需要额外依赖来序列化。
+ * pgvector's text input format is exactly `[1,2,3]`, so no extra dependency is needed to serialize it.
  *
- * NaN / Infinity 先拦下来：拼进 SQL 的话由 pgvector 抛一个底层解析错，
- * 堆栈里看不出真正的原因是编码器返回了非有限数。检查本身在 `assertFiniteVector`，
- * 三个后端共用一份 —— 先前只有这里抛，另两个后端各自静默处理了同一个输入。
+ * NaN and Infinity are caught up front: interpolated into SQL they produce a low-level parse
+ * error from pgvector whose stack gives no hint that the real cause was an encoder returning a
+ * non-finite number. The check itself lives in `assertFiniteVector`, shared by all three
+ * backends — previously only this one threw and the other two each handled the same input
+ * silently.
  */
 function toVectorLiteral(name: string, vector: ReadonlyArray<number>): string {
 	assertFiniteVector(name, vector);
 	return `[${vector.join(",")}]`;
 }
 
-/** 读回来是同一种格式，正好是合法 JSON 数组。 */
+/** It reads back in the same format, which happens to be valid JSON for an array. */
 function fromVectorLiteral(value: unknown): Array<number> {
-	if (value === null || value === undefined) return [];
-	if (Array.isArray(value)) return value.map(Number);
-	if (typeof value !== "string") return [];
+	if (value === null || value === undefined) {
+		return [];
+	}
+	if (Array.isArray(value)) {
+		return value.map(Number);
+	}
+	if (typeof value !== "string") {
+		return [];
+	}
 	/**
-	 * **一条脏行不该让整个读路径炸掉。**
+	 * **One dirty row must not blow up the whole read path.**
 	 *
-	 * pgvector 自己写出来的永远是合法字面量，但这一列不只有它写过 —— 手工改数据、
-	 * 逻辑复制、老迁移脚本都碰得到。裸 `JSON.parse` 抛的是个 SyntaxError，堆栈里
-	 * 看不出是哪张表哪一行，而调用方拿到的是「整次请求失败」而不是「少了一条候选」。
+	 * What pgvector writes is always a valid literal, but this column has had other writers —
+	 * hand-edited data, logical replication and old migration scripts all reach it. A bare
+	 * `JSON.parse` throws a SyntaxError whose stack names neither table nor row, and the caller gets
+	 * a failed request rather than one missing candidate.
 	 *
-	 * 返回空向量的后果良性且可见：召回相似度是 SQL 算的（`1 - (match_vector <=> q)`），
-	 * 不看这个值；而一条读回来的向量是空的，`③` 的复核会照常按 scope 与文本判定，
-	 * 不会因为它静默返回错答案。
+	 * Returning an empty vector fails benignly and visibly: recall similarity is computed in SQL
+	 * (`1 - (match_vector <=> q)`) and does not read this value, and when a vector reads back empty
+	 * ③'s recheck still decides by scope and text, so it cannot silently return a wrong answer.
 	 */
 	try {
 		const parsed: unknown = JSON.parse(value);
@@ -97,7 +114,7 @@ function readString(row: Record<string, unknown>, key: string): string {
 	return typeof value === "string" ? value : value === null || value === undefined ? "" : String(value);
 }
 
-/** bigint 列在 node-pg 里回来是字符串——不转会让 `expiresAt > now` 变成字符串比较。 */
+/** A bigint column comes back as a string from node-pg, and without conversion `expiresAt > now` becomes a string comparison. */
 function readNumber(row: Record<string, unknown>, key: string): number {
 	return Number(row[key]);
 }
@@ -107,16 +124,15 @@ function readNullableNumber(row: Record<string, unknown>, key: string): number |
 	return value === null || value === undefined ? null : Number(value);
 }
 
-function readStringArray(row: Record<string, unknown>, key: string): Array<string> {
-	const value = row[key];
-	return Array.isArray(value) ? value.map(String) : [];
-}
-
 function readRecord(row: Record<string, unknown>, key: string): Record<string, string> {
 	const value = row[key];
-	if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return {};
+	}
 	const out: Record<string, string> = {};
-	for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = String(v);
+	for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+		out[k] = String(v);
+	}
 	return out;
 }
 
@@ -131,8 +147,6 @@ function toEntry(row: Record<string, unknown>): CacheEntry {
 		kind: kind === "plan" ? "plan" : "answer",
 		answer: readString(row, "answer"),
 		plan: readRecord(row, "plan"),
-		sourceIds: readStringArray(row, "source_ids"),
-		sourceVersion: readString(row, "source_version"),
 		createdAt: readNumber(row, "created_at"),
 		expiresAt: readNullableNumber(row, "expires_at"),
 		meta: row.meta === null || row.meta === undefined ? undefined : readRecord(row, "meta"),
@@ -142,15 +156,19 @@ function toEntry(row: Record<string, unknown>): CacheEntry {
 }
 
 /**
- * 写入的列，**顺序就是 `put` 里值数组的顺序**。
+ * The columns written, **in the same order as the value array in `put`**.
  *
- * 占位符与值的个数都从这里派生，一个都不手写 —— 手写过一次就脱节过一次：⑥ 移除时
- * 这里删掉了 `answer_vector`、值数组也删了一项，但 `VALUES` 里的 `$1…$16` 忘了跟着改，
- * 16 个表达式对 15 个列，Postgres 报「INSERT has more expressions than target columns」。
+ * Both the placeholders and the value count derive from here, and none of it is written by hand
+ * — writing it by hand desynchronized it once already: when ⑥ was removed, `answer_vector` was
+ * deleted here and one element was dropped from the value array, but `$1…$16` in the `VALUES`
+ * clause was not updated, leaving 16 expressions against 15 columns and Postgres reporting
+ * "INSERT has more expressions than target columns".
  *
- * 这类脱节**两道现成的网都兜不住**：`tsc` 看不见模板字符串里的 SQL，而内存后端的
- * 单测根本不发 SQL —— 它只在真库上现形，也就是只在应用跑起来之后现形。
- * 派生之后，改一处列名/加一列，占位符自动跟上，值数组少一项或多一项是类型错误。
+ * **Neither existing net catches this class of drift**: `tsc` cannot see SQL inside a template
+ * string, and the memory backend's unit tests emit no SQL at all — it surfaces only against a
+ * real database, which is to say only once the application is running. Derived, renaming or
+ * adding a column carries the placeholders along, and a value array with one element too few
+ * or too many is a type error.
  */
 const COLUMN_LIST = [
 	"id",
@@ -161,8 +179,6 @@ const COLUMN_LIST = [
 	"kind",
 	"answer",
 	"plan",
-	"source_ids",
-	"source_version",
 	"created_at",
 	"expires_at",
 	"meta",
@@ -171,24 +187,23 @@ const COLUMN_LIST = [
 ] as const;
 
 /**
- * 需要显式类型标注的列。参数是以文本发过去的，这几列 Postgres 推不出类型 ——
- * 键写错了是类型错误，不会静默少一个 `::vector`。
+ * Columns that need an explicit type annotation. The parameters are sent as text and Postgres
+ * cannot infer these — a mistyped key is a type error rather than a silently missing `::vector`.
  */
 const COLUMN_CASTS: Readonly<Partial<Record<(typeof COLUMN_LIST)[number], string>>> = {
 	match_vector: "::vector",
 	plan: "::jsonb",
-	source_ids: "::text[]",
 	meta: "::jsonb",
 };
 
 const COLUMNS = COLUMN_LIST.join(", ");
 const INSERT_PLACEHOLDERS = COLUMN_LIST.map((column, i) => `$${i + 1}${COLUMN_CASTS[column] ?? ""}`).join(", ");
 
-/** 值数组的形状：长度与 `COLUMN_LIST` 锁死，多一项少一项都编译不过 */
+/** The shape of the value array: its length is pinned to `COLUMN_LIST`, and one element too few or too many does not compile. */
 type SameShape<T extends ReadonlyArray<unknown>> = { [K in keyof T]: unknown };
 type InsertValues = SameShape<typeof COLUMN_LIST>;
 
-/** `vector(384)` → 384；不是向量列时返回 null。 */
+/** `vector(384)` to 384; null when the column is not a vector. */
 function parseVectorDimension(formattedType: string): number | null {
 	const m = /^vector\((\d+)\)$/u.exec(formattedType.trim());
 	return m ? Number(m[1]) : null;
@@ -204,21 +219,26 @@ export function createPgVectorCacheStore(
 	const eviction = options.eviction;
 
 	/**
-	 * 淘汰时的**保留优先级**：排在前面的先保住，`OFFSET capacity` 之后的删掉。
+	 * The **retention priority** during eviction: whatever sorts first is kept, and everything past
+	 * `OFFSET capacity` is deleted.
 	 *
-	 * 三种确定性策略都带 `id` 做次级键 —— 同毫秒写入、同使用次数时若不定序，
-	 * 「删哪一条」就成了实现细节，三种后端会给出不同答案。`rr` 例外，
-	 * 它的语义就是随机。
+	 * All three deterministic policies carry `id` as a secondary key — with writes in the same
+	 * millisecond, or equal use counts, an unordered result makes which row gets deleted an
+	 * implementation detail, and the three backends would answer differently. `rr` is the
+	 * exception, since randomness is its whole semantics.
 	 *
-	 * `lfu` 在次数相同时退到 LRU：纯 LFU 会让早期攒够次数的老条目永远赖着不走。	 *
-	 * **没记过账的条目按「用过一次」算，不是零次。**写入本身就是一次使用；算零次的话
-	 * 它在保留优先级里排到所有被 touch 过的条目之后，于是 scope 满员时**新写进去的
-	 * 条目会被自己触发的那次淘汰立刻删掉** —— `resolve` 返回的 entryId 指向一条已经
-	 * 不存在的记录，而那个问题在这个 scope 里永远立不住。算一次之后它与「只用过一次」
-	 * 的老条目打平，再由 LRU 破平（新的胜出）。
+	 * `lfu` falls back to LRU on equal counts: pure LFU lets an old entry that banked enough uses
+	 * early on stay forever.
 	 *
-	 * 这只解掉「新条目进不来」那一半；「用得多的老条目压着新条目」是 LFU 固有的，
-	 * 要衰减才治得了，这里没做。
+	 * **An entry with no accounting counts as used once, not zero times.** The write is itself a
+	 * use; counted as zero it sorts behind every touched entry in the retention priority, so when a
+	 * scope is full **a freshly written entry is deleted immediately by the eviction it triggered
+	 * itself** — the entryId `resolve` returns points at a record that no longer exists, and that
+	 * question can never establish itself in this scope. Counted as one it ties with entries used
+	 * exactly once, and LRU breaks the tie in the newer entry's favour.
+	 *
+	 * This solves only the half where a new entry cannot get in; an old, heavily used entry crowding
+	 * out new ones is inherent to LFU and takes decay to treat, which is not done here.
 	 */
 	const keepOrderSql =
 		eviction?.policy === "lru"
@@ -228,19 +248,19 @@ export function createPgVectorCacheStore(
 				: eviction?.policy === "rr"
 					? "random()"
 					: "created_at DESC, id DESC";
-	// 索引名不能带 schema 前缀，但要跟着表名走，免得两张表的索引重名
+	// An index name cannot carry a schema prefix but must follow the table name, so two tables' indexes do not collide
 	const bare = table.includes(".") ? table.slice(table.indexOf(".") + 1) : table;
 
 	if (!Number.isInteger(dimensions.match) || dimensions.match <= 0) {
-		throw new Error(`match 向量维度必须是正整数，收到 ${String(dimensions.match)}`);
+		throw new Error(`The match vector dimension must be a positive integer, received ${String(dimensions.match)}`);
 	}
 
 	/**
-	 * 建表已存在时，校验维度对不对得上。
+	 * When the table already exists, check that the dimension matches.
 	 *
-	 * 换了编码器（比如从 384 维的 e5-small 换成 768 维的 base）而表还是老的，
-	 * 插入会在运行时炸一个 pgvector 的底层报错，堆栈里看不出是模型换了。
-	 * 这里提前拦下并直说该怎么办。
+	 * With a new encoder — say e5-small at 384 dimensions replaced by base at 768 — against the old
+	 * table, inserts throw a low-level pgvector error at runtime whose stack gives no hint that the
+	 * model changed. This catches it early and says plainly what to do.
 	 */
 	async function assertDimensions(): Promise<void> {
 		const found = await sql.query(
@@ -255,43 +275,54 @@ export function createPgVectorCacheStore(
 			const expected = dimensions.match;
 			if (actual !== null && actual !== expected) {
 				throw new Error(
-					`${table}.${column} 是 vector(${actual})，但当前编码器给出 ${expected} 维。` +
-						`两个向量空间的条目不能堆在一张表里，所以这里不会自动改表。出路二选一：` +
-						`(a) 换一张表 —— table 选项或 SEMCACHE_TABLE 环境变量，比如 ${table}_${expected}；` +
-						`(b) 旧表不要了就 DROP TABLE ${table}。` +
-						`常见诱因是同一张表先被另一个编码器用过（stub 256 维 / e5-small 384 维）。`,
+					`${table}.${column} is vector(${actual}), but the current encoder produces ${expected} dimensions. ` +
+						"Entries from two vector spaces cannot share one table, so no table is altered automatically. " +
+						`There are two ways out: (a) use a different table — the table option or the SEMCACHE_TABLE ` +
+						`environment variable, for instance ${table}_${expected}; or (b) DROP TABLE ${table} if the ` +
+						"old one is no longer wanted. The usual cause is one table having been used by another " +
+						"encoder first (a 256-dimension stub, or e5-small at 384).",
 				);
 			}
 		}
 	}
 
 	/**
-	 * 压回容量上限。**`put` 与 `evictOverCapacity` 共用这一条** —— 先前两处逐字重复，
-	 * 改保留优先级时漏掉一处，就是「写入时按 A 淘汰、显式调用时按 B 淘汰」的静默不一致。
+	 * Squeeze back to the capacity limit. **`put` and `evictOverCapacity` share this one path** —
+	 * the two were once duplicated verbatim, and missing one of them while changing the retention
+	 * priority is exactly the silent inconsistency of evicting by A on write and by B on an
+	 * explicit call.
 	 *
-	 * `ORDER BY <保留优先级> OFFSET capacity` 选出的正是「超出上限的那些」。
+	 * `ORDER BY <retention priority> OFFSET capacity` selects precisely the rows over the limit.
 	 *
-	 * **容量数的是活行。** 前一半 `UNION` 先收掉这个 scope 里已过期、只是还没被
-	 * `purgeExpired` 收走的行；后一半只在活行里排保留优先级。先前不分活死，于是
-	 * 一条过期行占着一个名额把活条目顶掉，而 `ORDER BY` 根本不看 `expires_at` ——
-	 * 那条过期行只要 `last_used_at` 够新就能接着顶掉好几条。内存与 Redis 后端
-	 * 先前是同一个毛病，三处一起改。
+	 * **Capacity counts live rows.** The first half of the `UNION` collects the rows in this scope
+	 * that have expired and merely have not been reaped by `purgeExpired` yet; the second half ranks
+	 * retention priority among live rows only. Live and dead were once not distinguished, so an
+	 * expired row held a slot and displaced a live entry while `ORDER BY` never looked at
+	 * `expires_at` — and that expired row could go on displacing several more as long as its
+	 * `last_used_at` was recent enough. The memory and Redis backends had the same defect, and all
+	 * three were fixed together.
 	 *
-	 * **先数一次，没超就直接返回 0** —— 和 Redis 后端的 `sizeOf` 那一步同一个形状。
-	 * 先前这里无条件发 DELETE：容量以下也照样扫一遍 scope 收过期行，于是每次 `put`
-	 * 都在热路径上付一次删除，而内存与 Redis 在容量以下是零成本；`evictOverCapacity()`
-	 * 的返回值也因此分叉（pgvector 报过期行数，另两个报 0）。数的是**全部行**（含过期），
-	 * 跟另两个后端的压力判据一致 —— 过期行怎么处置由上面那半 `UNION` 决定，不由这里。
+	 * **Count first and return 0 when under the limit** — the same shape as the Redis backend's
+	 * `sizeOf` step. This used to issue the DELETE unconditionally: even under capacity it scanned
+	 * the scope to reap expired rows, so every `put` paid for a delete on the hot path while memory
+	 * and Redis cost nothing under capacity, and `evictOverCapacity()`'s return value diverged as
+	 * well (pgvector reported the expired-row count, the other two reported 0). What is counted is
+	 * **all rows**, expired included, matching the other two backends' pressure criterion — what
+	 * happens to expired rows is decided by the `UNION` half above, not here.
 	 *
-	 * 代价是 COUNT 与 DELETE 之间有一个窗口：这中间挤进来的写入要等下一次 `put` 才
-	 * 被压回容量。淘汰本来就是尽力而为的（`purgeExpired` 同理），而多留一条的后果
-	 * 只是内存占用，比每次写入都扫一遍便宜。
+	 * The cost is a window between the COUNT and the DELETE: a write slipping in between waits for
+	 * the next `put` to be squeezed back. Eviction is best-effort by design (as is `purgeExpired`),
+	 * and one extra retained row costs only memory — cheaper than scanning on every write.
 	 */
 	async function evictOverCapacityIn(scope: string): Promise<number> {
-		if (!eviction) return 0;
+		if (!eviction) {
+			return 0;
+		}
 		const size = await sql.query(`SELECT count(*) AS n FROM ${table} WHERE scope = $1`, [scope]);
 		const total = size.rows.length === 0 ? 0 : readNumber(size.rows[0], "n");
-		if (total <= eviction.capacity) return 0;
+		if (total <= eviction.capacity) {
+			return 0;
+		}
 		const done = await sql.query(
 			`DELETE FROM ${table} WHERE id IN (
 			   SELECT id FROM ${table}
@@ -309,7 +340,7 @@ export function createPgVectorCacheStore(
 	}
 
 	return {
-		/** 幂等。反复调没有副作用，可以直接放在启动路径上。 */
+		/** Idempotent. Repeated calls have no side effects, so it can sit directly on the startup path. */
 		async ensureSchema(): Promise<void> {
 			await sql.query("CREATE EXTENSION IF NOT EXISTS vector");
 			await sql.query(
@@ -322,29 +353,37 @@ export function createPgVectorCacheStore(
 					kind           text NOT NULL CHECK (kind IN ('answer', 'plan')),
 					answer         text NOT NULL DEFAULT '',
 					plan           jsonb NOT NULL DEFAULT '{}'::jsonb,
-					source_ids     text[] NOT NULL DEFAULT '{}',
-					source_version text NOT NULL DEFAULT '',
 					created_at     bigint NOT NULL,
 					expires_at     bigint,
 					meta           jsonb,
-					-- lru/lfu 的记账列。fifo/rr 下永远是 NULL，不写就不占空间
+					-- -- Accounting columns for lru/lfu. Always NULL under fifo/rr, and cost nothing while unwritten
 					last_used_at   bigint,
 					use_count      integer
 				)`,
 			);
-			// 老表升级：加列是幂等的，不会碰已有数据
+			// Upgrading an old table: adding a column is idempotent and does not touch existing data
 			await sql.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS last_used_at bigint`);
 			await sql.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS use_count integer`);
 			await assertDimensions();
 
-			// ② 精确匹配：scope + hash 直接定位，过期判断跟着走索引不用回表
+			// ② exact match: scope plus hash locates the row directly, and the expiry check rides the index without a heap fetch
 			await sql.query(
 				`CREATE INDEX IF NOT EXISTS ${bare}_scope_hash_idx ON ${table} (scope, match_hash) INCLUDE (expires_at)`,
 			);
-			// ③ 召回的 pre-filter：先按 scope 砍小，再算向量
+			// ③'s recall pre-filter: narrow by scope first, then compute vectors
 			await sql.query(`CREATE INDEX IF NOT EXISTS ${bare}_scope_expires_idx ON ${table} (scope, expires_at)`);
-			// ⑤ 语料改版时按资料 id 批量失效
-			await sql.query(`CREATE INDEX IF NOT EXISTS ${bare}_source_ids_idx ON ${table} USING gin (source_ids)`);
+			/**
+			 * An older table has `source_ids` / `source_version` columns and a GIN index over the
+			 * first — the per-document dimension, since removed. **The index is dropped here and the
+			 * columns are not.**
+			 *
+			 * The index holds no data of its own and is now pure write-amplification, so dropping it
+			 * is free. Dropping the columns would delete rows' content during `ensureSchema()`, which
+			 * runs at startup: a library must not silently migrate away someone's data. Both are `NOT
+			 * NULL DEFAULT`, so inserts that no longer mention them keep working; drop them by hand
+			 * once you are sure nothing reads them.
+			 */
+			await sql.query(`DROP INDEX IF EXISTS ${bare}_source_ids_idx`);
 			if (options.ann) {
 				await sql.query(
 					`CREATE INDEX IF NOT EXISTS ${bare}_match_vector_idx ON ${table} USING hnsw (match_vector vector_cosine_ops)`,
@@ -380,17 +419,17 @@ export function createPgVectorCacheStore(
 				 WHERE scope = $1 AND (expires_at IS NULL OR expires_at > $3)
 				 ORDER BY match_vector <=> $2::vector
 				 LIMIT $4`,
-				[scope, toVectorLiteral("查询向量", vector), now(), limit],
+				[scope, toVectorLiteral("query vector", vector), now(), limit],
 			);
 			return found.rows.map((row): Candidate => {
 				const similarity = readNumber(row, "similarity");
-				// 零向量在 pgvector 里余弦距离是 NaN。内存实现这时返回 0，保持一致。
+				// A zero vector's cosine distance is NaN in pgvector. The memory implementation returns 0 here, so this matches.
 				return { entry: toEntry(row), similarity: Number.isFinite(similarity) ? similarity : 0 };
 			});
 		},
 
 		async put(entry) {
-			// 顺序必须与 COLUMN_LIST 一致；个数由 InsertValues 锁住
+			// The order must match COLUMN_LIST; the count is pinned by InsertValues
 			const values: InsertValues = [
 				entry.id,
 				entry.scope,
@@ -400,8 +439,6 @@ export function createPgVectorCacheStore(
 				entry.kind,
 				entry.answer,
 				JSON.stringify(entry.plan),
-				[...entry.sourceIds],
-				entry.sourceVersion,
 				entry.createdAt,
 				entry.expiresAt,
 				entry.meta === undefined ? null : JSON.stringify(entry.meta),
@@ -409,23 +446,21 @@ export function createPgVectorCacheStore(
 				entry.useCount ?? null,
 			];
 			await sql.query(`INSERT INTO ${table} (${COLUMNS}) VALUES (${INSERT_PLACEHOLDERS})`, values);
-			if (eviction) await evictOverCapacityIn(entry.scope);
+			if (eviction) {
+				await evictOverCapacityIn(entry.scope);
+			}
 		},
 
 		async evict(id) {
 			await sql.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
 		},
 
-		async evictBySource(sourceId) {
-			// `&&` 是数组重叠，走 GIN 索引；`source_ids` 里出现过这篇资料就失效
-			const done = await sql.query(`DELETE FROM ${table} WHERE source_ids && ARRAY[$1]::text[]`, [sourceId]);
-			return done.rowCount ?? 0;
-		},
-
 		async touch(id) {
-			// fifo/rr 不需要记账 —— 这里连一次往返都不发
-			if (eviction?.policy !== "lru" && eviction?.policy !== "lfu") return;
-			// 条目可能刚被并发驱逐 —— 0 行受影响就是正常结果，不抛
+			// fifo/rr need no accounting — this does not even make a round trip
+			if (eviction?.policy !== "lru" && eviction?.policy !== "lfu") {
+				return;
+			}
+			// The entry may have just been evicted concurrently, so 0 rows affected is the normal result and does not throw
 			await sql.query(
 				`UPDATE ${table} SET last_used_at = $2, use_count = COALESCE(use_count, 1) + 1 WHERE id = $1`,
 				[id, now()],
@@ -437,7 +472,9 @@ export function createPgVectorCacheStore(
 		},
 
 		async purgeExpired() {
-			const done = await sql.query(`DELETE FROM ${table} WHERE expires_at IS NOT NULL AND expires_at <= $1`, [now()]);
+			const done = await sql.query(`DELETE FROM ${table} WHERE expires_at IS NOT NULL AND expires_at <= $1`, [
+				now(),
+			]);
 			return done.rowCount ?? 0;
 		},
 
@@ -451,7 +488,7 @@ export function createPgVectorCacheStore(
 		},
 
 		async all() {
-			// 和内存实现一样，**不过滤过期条目** —— 这是给 UI 和断言看的原始状态
+			// Like the memory implementation, this **does not filter expired entries** — it is the raw state, for UIs and assertions
 			const found = await sql.query(`SELECT ${COLUMNS} FROM ${table} ORDER BY created_at, id`);
 			return found.rows.map(toEntry);
 		},

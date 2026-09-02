@@ -120,20 +120,40 @@ async function snapshot() {
 			probe: s.probe,
 			expect: s.expect,
 			bumpCorpus: Boolean(s.bumpCorpus),
+			// ⑥ 移除后这条改由谁负责；null = 仍由现存的闸负责
+			nowHandledBy: s.nowHandledBy ?? null,
 		})),
-		// 正文也发。判据是「答案的首要依据是不是那篇资料」——
-		// 页面上只看到 n7 / n9 两个 id 却读不到它们写了什么，这个判据就没法用眼睛复核
+		// 正文也发 —— 页面上只看到 n7 / n9 两个 id 却读不到它们写了什么，
+		// 「这条答案该不该长这样」就没法用眼睛复核
 		docs: lab.docs.map(d => ({ id: d.id, unit: d.unit, title: d.title, version: d.version, text: d.text })),
+		// **条目上没有 sources / corpusVersion 了。** 那两栏来自「答案引了哪些文档」这个
+		// 维度，已经移除；条目唯一记下来的归属就是 scope，也就是清缓存的单位。
 		cache: (await lab.cache()).map(e => ({
 			id: e.id,
 			scope: e.scope,
 			kind: e.kind,
 			prompt: e.matchText,
-			sources: e.sourceIds,
-			corpusVersion: e.sourceVersion,
 		})),
 		counters: lab.counters,
 	};
+}
+
+/**
+ * 读 `data/vcache-replay-*.json`。**没有就是没有**，返回空数组而不是造一份空壳 ——
+ * 页面据此说「还没跑过，跑这条命令」，那比一屏零更有用。
+ */
+const REPLAY_BENCHMARKS = ["lmarena", "search", "classification", "combo"] as const;
+
+async function loadReplays(): Promise<Array<unknown>> {
+	const out: Array<unknown> = [];
+	for (const name of REPLAY_BENCHMARKS) {
+		try {
+			out.push(JSON.parse(await readFile(join(here, "data", `vcache-replay-${name}.json`), "utf8")));
+		} catch {
+			// 没跑过这一份，不是错
+		}
+	}
+	return out;
 }
 
 const server = createServer(async (req, res) => {
@@ -194,6 +214,18 @@ const server = createServer(async (req, res) => {
 		}
 		if (req.method === "POST" && url.pathname === "/api/bump") {
 			json(res, 200, { corpusVersion: lab.bumpCorpus(), state: await snapshot() });
+			return;
+		}
+		if (req.method === "GET" && url.pathname === "/api/replays") {
+			/**
+			 * 轨迹重放的结果，**读盘，不在这里算**。
+			 *
+			 * 和 `scores.json` 同一条规矩：脚本算完存盘，页面与分析脚本只读盘。
+			 * 一次重放要几万次编码加上百万次余弦，跑一趟一分多钟 —— 挂在 HTTP 请求上
+			 * 就是把一个批处理伪装成一个接口，而且换个阈值还得再等一分钟。
+			 * 想换阈值就重跑 `scripts/replayVCache.ts`，页面显示它最近一次的产物。
+			 */
+			json(res, 200, { replays: await loadReplays() });
 			return;
 		}
 		if (req.method === "POST" && url.pathname === "/api/rerank-probe") {

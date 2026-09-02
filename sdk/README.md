@@ -6,7 +6,7 @@
 零依赖，TypeScript。**库只实现判定逻辑**：存储、检索、打分、生成全部由你传进来 ——
 接进已有的 RAG 应用，就是把你现成的那几样包成库要的接口形状。
 
-> 想知道**为什么**这么设计 —— 五道闸各管什么、为什么阈值必须跟着打分器走、
+> 想知道**为什么**这么设计 —— 四道闸各管什么、为什么阈值必须跟着打分器走、
 > 每条约束背后是哪次踩坑 —— 看 [`DESIGN.md`](DESIGN.md)。
 
 ## 接入
@@ -30,7 +30,6 @@ const cache = createSemanticCache({
   scope: prompt => prompt.redacted
     ? { org: prompt.context.orgId, key: `user:${prompt.context.userId}`,   shared: false }
     : { org: prompt.context.orgId, key: `course:${prompt.context.courseId}`, shared: true },
-  sourceVersion: ids => fingerprintOf(ids), // 必须是**引用资料级**的
 });
 
 // 包住你原来的生成调用即可 —— 库决定要不要调它
@@ -39,11 +38,11 @@ const result = await cache.resolve(
   async (prompt, chunks) => ({
     kind: "answer",                          // 或 kind: "plan"（工具类问题）
     answer: await yourLlm(prompt, chunks),
-    sourceIds: chunks.map(c => c.id),
   }),
 );
 // result.outcome: "exact" | "reuse" | "generated" | "bypassed"
 // result.payload: { kind: "answer", ... } | { kind: "plan", plan }
+// result.scope:   这条答案来自哪个 space —— 条目唯一记下来的归属，也是清缓存的单位
 // result.trace:   逐闸判定，含分数、标定出处与「本会拦下」标记
 ```
 
@@ -53,7 +52,7 @@ const result = await cache.resolve(
 想先看命中结果再决定用哪个模型 —— 自己拼这条路：
 
 ```ts
-const found = await cache.lookup(prompt);        // ①～⑤，不生成、不写新条目
+const found = await cache.lookup(prompt);        // ①～④，不生成、不写、不删
 // found.outcome: "exact" | "reuse" | "miss"（另有 "shadow" / "bypass"）
 // found.exitedAt: 被哪道闸拦下；命中时是 null
 
@@ -70,14 +69,12 @@ if (found.outcome === "miss") {
 await cache.writeMany(items);        // 批量预热/回填：两次批量编码，不是 2N 次单条调用
 await cache.get(entryId);            // 按 id 取回条目（只返回未过期的）
 await cache.evict(entryId);          // 删一条；也可以传一个 id 数组
-await cache.clear({ org: "acme", key: "course:ml101" });  // 清一个 scope，返回删掉的条数
-await cache.invalidateSource("n5");  // 资料改版后按资料 id 批量失效
+await cache.clear({ org: "acme", key: "course:ml101" });  // 清一个 space，返回删掉的条数；资料改版就调它
 await cache.purgeExpired();          // 删掉已过期的行，挂定时任务调；不影响正确性，只管存储占用
 ```
 
-`writeMany` 不是 `write` 的语法糖：它把 N 条的召回向量合并成**一次**编码调用，
-版本指纹也按 `sourceIds` 去重（批量回填常常整批共用同一组资料）。灌 30 条干扰缓存
-或从历史日志回填时，差的是 1 次模型调用还是 30 次。
+`writeMany` 不是 `write` 的语法糖：它把 N 条的召回向量合并成**一次**编码调用。
+灌 30 条干扰缓存或从历史日志回填时，差的是 1 次模型调用还是 30 次。
 
 `clear` **必须给 scope**。无参数的全清在生产上几乎总是误操作，真要全清就对存储调
 `InspectableCacheStore.clear()` —— 让它显眼一点，别藏在缓存对象的方法里。
@@ -96,7 +93,7 @@ await cache.purgeExpired();          // 删掉已过期的行，挂定时任务�
 | `cache.set_threshold(0.2)` · `cache_factor` | **故意没有** —— 阈值绑在 `Calibrated<>` 上 |
 | `cache_enable_func` · `cache: {no-cache, no-store}` | `CachePolicy`（读写正交、理由必填、`noStore` ⇒ 票据抛） |
 | GPTCache 的 session 并发去重 | `singleFlight`（默认开，仅进程内） |
-| — | `invalidateSource(id)`、⑤ 资料版本、`suggestThreshold()` 逐语料标定（主流都没有） |
+| — | `suggestThreshold()` 逐语料标定、`RerankStage` 的形态显式化（主流都没有） |
 
 **并发合流默认开**：同一个问题的 N 个并发请求只走一次完整流程，后到的拿同一个结果
 （也共享同一份 trace 和第一个请求的 `writeOptions`）。合流键里带 `retrievalText` ——
@@ -111,24 +108,33 @@ LangChain 把 `llm_string`（模型名 + 参数）放进缓存键，所以换个
 这里不预设：要按模型隔离就在 `ScopeResolver` 里写 `course:${c}|model:${m}`，
 要跨模型共享就不写 —— 答案是对同一份语料的 RAG，内容本不该因客户端而异。
 
-`lookup` **不写新条目，但会驱逐被 ⑤ 判定失效的旧条目** —— 那是维护不是写入：
-一条版本已过期的缓存，读到它的那一刻就该消失，留着只会让下一个请求再判一次。
+`lookup` **不生成、不写、也不删任何东西**。它曾经会驱逐被 ⑤ 判出版本失效的条目；⑤ 已
+移除，读侧再没有能给条目定罪的判据，读路径于是完全不碰存储。
 
-**替换一律「先写新的，写成了才删旧的」。** 生成抛错、写入抛错、或者产物没有资料依据，
-三种情况旧条目都留着 —— 反过来（先删后写）的话，一次生成失败就净丢一条本来还能用的缓存。
+**替换一律「先写新的，写成了才删旧的」。** 生成抛错或写入抛错，旧条目都留着 ——
+反过来（先删后写）的话，一次生成失败就净丢一条本来还能用的缓存。
 代价是同 (scope, matchHash) 的两条会共存几毫秒，这是安全的：`getByHash` 取最新的那条。
+
+### 失效只有一条路：按 space 清
+
+条目记下来的归属只有它所属的 **space**（`ScopeResolver` 返回的那个隔离边界），
+不记「这条答案引了哪些文档」。所以「资料改版了」的答案是
+`clear({ org, key })` —— 把那一片清掉。
+
+**这比原来粗。** 原先条目带着 `sourceIds` 和一份资料版本指纹，于是有两手：⑤ 在**读时**
+比对版本、不符就踢掉，`invalidateSource(id)` 在**写时**按资料 id 批量失效。两者一起移除，
+换来的是条目少两个字段、读路径不再需要一次版本查询、pgvector 少一个 GIN 索引、Redis 少一
+组反查集合。代价是**改一篇资料要清整个 space**，以及在清之前旧答案会照常被复用 ——
+这个取舍成立的前提是「内容单元就是 space」。
 
 ### 一次生成失败不改变缓存状态
 
-**没有任何资料依据的 answer 不写入**（`sourceIds` 为空）。这种条目 ⑤ 和
-`invalidateSource` 都够不着，而 `getByHash` 取最新 —— 它会稳稳顶掉那条本来好好的旧缓存。
-此时 `resolve` 返回 `outcome: "generated"` 且 `entryId: null`，意思是生成了但没落缓存。
+配上「先写后删」，一次生成失败或一次写入失败不改变缓存状态：读路径不驱逐任何东西。
 
-配上「先写后删」，一次生成失败或一次检索故障才真的不改变缓存状态：读路径不驱逐
-任何东西（除了 ⑤ 判出的版本失效），写路径拒收没有依据的产物。
-
-`invalidateSource` 和 ⑤ 不是二选一：⑤ 是**读时**的懒失效，条目要等被读到才发现
-版本不符；老师改完大纲就调一次 `invalidateSource`，等于把那一批提前失效，⑤ 仍是兜底。
+**检索故障不再被挡住了。** 原先「没有任何资料依据的 answer 不写入」是一条写侧守卫 ——
+检索超时会生成一条内容空洞的答案，而 `getByHash` 取最新，它会稳稳顶掉那条本来好好的旧
+缓存。那道守卫建在 `sourceIds` 之上，和它一起移除了。现在这种答案会照常写进去，活到
+TTL 到期或 space 被清。要挡它，用 `CachePolicy.noStore` —— 检索故障调用方看得见，库看不见。
 
 ### 存储：内存与 pgvector
 
@@ -158,7 +164,7 @@ pgvector 没有 float8 的向量类型，这不是换写法能绕开的。
 ## 决定哪些请求不走缓存
 
 有一类问题是**从来就不该被写进缓存**的：「那第二个呢」（离开这次对话，问题本身就不
-完整）、「帮我提交作业」（是动作不是问答）。这类判定必须在五道闸**之前** —— 交给闸拦
+完整）、「帮我提交作业」（是动作不是问答）。这类判定必须在四道闸**之前** —— 交给闸拦
 的话，要走完召回和精排才发现不该用，而且拦不住写入，下次就是一次假命中。
 
 ```ts
@@ -200,7 +206,7 @@ createSemanticCache({ /* … */, policy });
 
 | 调用类型 | 输出确定吗 | 该走哪种缓存 |
 |---|---|---|
-| `completion` / `responses` / `anthropic_messages` | ❌ 有采样 | **语义缓存** —— 才需要这五道闸 |
+| `completion` / `responses` / `anthropic_messages` | ❌ 有采样 | **语义缓存** —— 才需要这四道闸 |
 | `embedding` | ✅ 同文本 → 同向量 | 精确缓存（内容哈希） |
 | `rerank` | ✅ 同 query+文档集 → 同分数 | 精确缓存 |
 | `transcription` | ✅ 同文件 → 同转写 | 精确缓存（文件哈希） |
@@ -217,9 +223,11 @@ createSemanticCache({ /* … */, policy });
 本来就只处理 chat 形态。如果你把多种调用都路由到这一层，打开 `requireCallType: true`：
 那时「忘了标」会静默走完语义匹配，和「标成 embedding」的后果完全不同。
 
-**`noStore` 生效时写入的三条路全堵死**：`prepareWrite()` 和 `prepareTicket()` 拒发票据，
-而 `write()` / `writeMany()` 不带票据时会自己再查一次策略 —— 不是「这次不写」，是写不进去。
-（`write` 的票据是可选的，只堵前两条等于留了一扇正门。）主流框架这一层都是"调用方自觉"。
+**`noStore` 生效时，这个库自己的三条写路径全堵死**：`prepareWrite()` 和 `prepareTicket()`
+拒发票据，而 `write()` / `writeMany()` 不带票据时会自己再查一次策略 —— 不是「这次不写」，
+是经由这个库写不进去。（`write` 的票据是可选的，只堵前两条等于留了一扇正门。）
+主流框架这一层都是"调用方自觉"。**但 `store` 是你注进来的，直接调 `store.put()` 仍然
+绕得过去** —— 这道守卫防的是「忘了判一下」，不是防绕过。
 
 信号从 `prompt.context` 读。默认实现**不内置任何关键词** —— 「现在/今天/最新」那类
 词表漏一条就是持续的错答案，中英文还各要一份。要加词表或分类器，自己写一个
@@ -392,7 +400,6 @@ metrics.snapshot();
 // { requests, attempted, hits, misses, hitRate, byOutcome, missedAtGate,
 //   bypassedByReason,
 //   shadow: { requests, wouldReuse, wouldReuseRate },
-//   evictions: { total, bySourceVersion },  ← 只数真删掉的
 //   latencyMs: { hit, miss, bypassed }, saved, bySegment }
 ```
 
@@ -402,10 +409,12 @@ metrics.snapshot();
 「一个什么都命中不了的缓存」—— 那正是下面 `bypassedByReason` 要防的误读。延迟同理分三档：
 未命中付的是召回 + 精排 + 检索 + 生成，绕开只付生成，混在一起会把未命中报便宜。
 
-**`evictions` 数的是「真删掉了几条」，不是「判负了几次」。** 两者刻意不同源：
-影子模式下 ⑤ 判负一律不删（评估不该改变被评估的东西），要是从 `verdict === "exit"`
-反推，看板会报出一批根本没发生的驱逐，把「这次运行没改变缓存状态」这条不变量从最
-可信的那一侧打穿。判负次数看 `missedAtGate[5]`，删除次数看 `evictions`。
+**这里没有 `evictions` 那一格了。** 读侧唯一会删条目的是 ⑤ 资料版本比对，它已随
+「答案引了哪些文档」这个维度一起移除，这个计数于是结构性恒为 0 —— 看板上一个永远是
+零的指标比没有这个指标更误导人。它当初存在的教训值得留着：驱逐次数必须由 `GateTrace`
+上一个专门的字段**声明**，不能从 `verdict === "exit"` 反推 —— 反推的话，一次上游故障
+就会让看板报出一批根本没发生的驱逐，把「这次运行没改变缓存状态」从最可信的那一侧打穿。
+哪天再有一道读时会删条目的闸，这个字段和这个计数要一起回来。
 
 **一个明确的缺口：现在没有「离翻车多远」那组数。** 先前 ⑥ 每次命中都会算一个支撑度，
 于是有 `headroomP10` / `midBandRate` 这类**比命中率更早报警**的信号（分布整体上漂时，
@@ -424,9 +433,10 @@ createSemanticCache({ /* … */, shadow: true });
 `metrics.snapshot().shadow.wouldReuseRate` 看「真开了能命中多少」。它不进
 `hits` / `hitRate`：那两个数记的是实际发生的事，而实际发生的是一次生成。
 
-读路径在影子模式下**严格只读**：不驱逐、不 touch、被降级的命中不写回。
-⑤ 判负是破坏性的，而影子模式的目的恰恰是检验它判得对不对 ——
-一边评估一边按评估结果删数据，等于用没验证过的判据毁掉证据。
+读路径在影子模式下**严格只读**：不 touch、被降级的命中不写回。`touch()` 喂的是
+`lru`/`lfu` 的排序，把影子读当成真使用，等于让评估决定哪些条目活下来 —— 被测的排序
+被测试自己改写了。（这一条原先针对的是 ⑤：判负会删条目，而影子模式的目的恰恰是检验
+它判得对不对。⑤ 移除后读路径不再删任何东西，剩下的就是记账这一半。）
 
 从 lab 的标注场景集到生产之间，这是中间那一步：**场景集证明机制成立，
 影子模式证明它在你的流量上成立。**
@@ -440,8 +450,8 @@ createSemanticCache({ /* … */, shadow: true });
 
 对齐 Redis LangCache 看板那一组（请求/命中/未命中、命中率、延迟、token 节省、
 分段命中率），再加它给不出的一组：**未命中时被哪道闸拦下**。单阈值缓存只有
-「命中/未命中」，这里能说出是问题侧不像（③④）还是资料改版了（⑤）——
-两种未命中的处置完全不同：前者调阈值或换打分器，后者说明缓存正在按预期失效。
+「命中/未命中」，这里能说出是没有足够像的候选（③）还是精排判定不是同一件事（④）——
+两种未命中的处置完全不同：前者调召回下限或换打分器，后者是 ④ 在按设计推翻 ③ 的名次。
 
 **刻意不算正命中率与正确拒绝率。** 那两个要标签（复用的那次答案到底对不对），
 线上没有这个信息。LangCache 的看板同样不给，他们用 LLM-as-a-judge 抽样补。

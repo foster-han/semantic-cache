@@ -1,11 +1,14 @@
 /**
- * 两道「构造上必然出错」的守卫：脱敏 × 共享 scope × answer，以及写入票据配错 prompt。
- * 两者都完全静默 —— 出错的表现是几天后有人拿到别人的答案，或者一条缓存永远读不回来。
+ * Two guards against combinations that are certain to be wrong: redacted × shared scope × answer,
+ * and a write ticket paired with the wrong prompt. Both fail completely silently — the symptom is
+ * somebody receiving another person's answer days later, or a cache entry that can never be read
+ * back.
  */
-import { strict as assert } from "node:assert";
-import { test } from "node:test";
+
 import type { CachedPayload } from "../src/types/Pipeline.ts";
 import { harness } from "./Fakes.ts";
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
 
 const REDACTED = {
 	matchText: "<PERSON_1> 的作业二扣了多少？",
@@ -13,99 +16,110 @@ const REDACTED = {
 	redacted: true,
 	context: { userId: "s1" },
 };
-const answer = async (): Promise<CachedPayload> => ({ kind: "answer", answer: "扣了 10 分", sourceIds: ["n1"] });
+const answer = async (): Promise<CachedPayload> => ({ kind: "answer", answer: "扣了 10 分" });
 const plan = async (): Promise<CachedPayload> => ({ kind: "plan", plan: { tool: "getGrade", assignment: "2" } });
 
-test("空白 matchText 拒收 —— 空串之间互为 ② 精确命中", async () => {
+test("a blank matchText is refused — empty strings are ② exact hits for one another", async () => {
 	/**
-	 * `""` 与 `"   "` 归一化之后是同一个空串。上游只要有一次「prompt 拼装出来是空的」
-	 * 写进去，之后每一次空 prompt 都会**精确命中**它 —— 最可信的那条路，不过闸、
-	 * 不算相似度、trace 上一切正常。所以抛，而不是当未命中（当未命中会照常写入，
-	 * 等于把这条假命中的源头留在库里）。
+	 * `""` and `"   "` normalize to the same empty string. One upstream occurrence of "the prompt
+	 * assembled to nothing" written to the cache, and every later empty prompt **hits it exactly** —
+	 * by the most trusted path there is, with no gates, no similarity, and a trace that looks
+	 * entirely normal. So this throws rather than treating it as a miss (treated as a miss it would
+	 * be written as usual, leaving the source of that false hit in the store).
 	 */
 	const { cache, store } = harness();
 	const blank = { matchText: "   ", retrievalText: "x", context: {} };
-	await assert.rejects(() => cache.lookup(blank), /matchText 是空的/u);
-	await assert.rejects(() => cache.resolve({ ...blank, matchText: "" }, answer), /matchText 是空的/u);
+	await assert.rejects(() => cache.lookup(blank), /matchText is empty/u);
+	await assert.rejects(() => cache.resolve({ ...blank, matchText: "" }, answer), /matchText is empty/u);
 	await assert.rejects(
-		() => cache.write({ ...blank, matchText: "\t\n" }, { kind: "answer", answer: "a", sourceIds: ["n1"] }),
-		/matchText 是空的/u,
+		() => cache.write({ ...blank, matchText: "\t\n" }, { kind: "answer", answer: "a" }),
+		/matchText is empty/u,
 	);
-	await assert.rejects(() => cache.prepareTicket(blank), /matchText 是空的/u);
-	assert.equal((await store.all()).length, 0, "一条都不该写进去");
+	await assert.rejects(() => cache.prepareTicket(blank), /matchText is empty/u);
+	assert.equal((await store.all()).length, 0, "not one entry should have been written");
 });
 
-test("脱敏 × 共享 scope × answer：直接抛错，并给出三条出路", async () => {
+test("redacted × shared scope × answer: throws outright, and names the three ways out", async () => {
 	const { cache } = harness({ scope: () => ({ key: "course:1", shared: true, org: "org:1" }) });
 	await assert.rejects(cache.resolve(REDACTED, answer), (err: Error) => {
-		assert.match(err.message, /脱敏请求命中\/写入了共享 scope/u);
-		assert.match(err.message, /shared: false/u, "得告诉调用方怎么隔离");
-		assert.match(err.message, /kind:"plan"/u, "也得告诉他工具类问题该走哪条");
+		assert.match(err.message, /A redacted request hit or wrote an answer entry in shared scope/u);
+		assert.match(err.message, /shared: false/u, "it has to tell the caller how to isolate");
+		assert.match(err.message, /kind:"plan"/u, "and which route a tool-shaped question should take");
 		return true;
 	});
 });
 
-test("脱敏 × 共享 scope × plan：这正是所求，不该拦", async () => {
+test("redacted × shared scope × plan: this is the point, and must not be blocked", async () => {
 	const { cache, store } = harness({ scope: () => ({ key: "course:1", shared: true, org: "org:1" }) });
 	const first = await cache.resolve(REDACTED, plan);
 	assert.equal(first.outcome, "generated");
-	// 另一个学生问同一句（脱敏后字面相同）—— 塌陷在这一支是收益
-	const second = await cache.resolve({ ...REDACTED, retrievalText: "李四的作业二扣了多少？", context: { userId: "s2" } }, plan);
+	// Another student asks the same sentence (identical after redaction) — on this branch the
+	// collapse is the benefit.
+	const second = await cache.resolve(
+		{ ...REDACTED, retrievalText: "李四的作业二扣了多少？", context: { userId: "s2" } },
+		plan,
+	);
 	assert.equal(second.outcome, "exact");
-	assert.equal((await store.all()).length, 1, "一条 plan 模板服务所有人");
+	assert.equal((await store.all()).length, 1, "one plan template serves everyone");
 });
 
-test("守卫在命中路径上也生效 —— 声明缺失的那次写进去了，读的时候也得拦", async () => {
+test("the guard applies on the hit path too — if an undeclared write got in, the read must still be blocked", async () => {
 	let redacted = false;
 	const { cache } = harness({ scope: () => ({ key: "course:1", shared: true, org: "org:1" }) });
-	// 先按「没声明脱敏」写进共享 scope
+	// First write into the shared scope without declaring redaction.
 	await cache.resolve({ ...REDACTED, redacted }, answer);
 	redacted = true;
-	await assert.rejects(cache.lookup({ ...REDACTED, redacted }), /共享 scope/u);
+	await assert.rejects(cache.lookup({ ...REDACTED, redacted }), /shared scope/u);
 });
 
-test("守卫跑在任何编码之前 —— 别先付掉一整批 embedding 再抛", async () => {
+test("the guard runs before any encoding — do not pay for a whole batch of embeddings first", async () => {
 	const { cache, counts } = harness({ scope: () => ({ key: "course:1", shared: true, org: "org:1" }) });
 	await assert.rejects(
 		cache.writeMany([
-			{ prompt: REDACTED, payload: { kind: "answer", answer: "a", sourceIds: ["n1"] } },
-			{ prompt: REDACTED, payload: { kind: "answer", answer: "b", sourceIds: ["n1"] } },
+			{ prompt: REDACTED, payload: { kind: "answer", answer: "a" } },
+			{ prompt: REDACTED, payload: { kind: "answer", answer: "b" } },
 		]),
-		/共享 scope/u,
+		/shared scope/u,
 	);
-	assert.equal(counts.questions, 0, "召回向量不该被编码");
+	assert.equal(counts.questions, 0, "no recall vector should have been encoded");
 });
 
-test("写入票据配错 prompt：文本不一致要抛", async () => {
+test("a write ticket paired with the wrong prompt: mismatched text must throw", async () => {
 	const { cache } = harness();
 	const found = await cache.lookup({ matchText: "问题 A", retrievalText: "问题 A", context: {} });
 	const ticket = await found.prepareWrite();
 	await assert.rejects(
-		cache.write({ matchText: "问题 B", retrievalText: "问题 B", context: {} }, { kind: "answer", answer: "x", sourceIds: ["n1"] }, { ticket }),
-		/不是同一个问题/u,
+		cache.write(
+			{ matchText: "问题 B", retrievalText: "问题 B", context: {} },
+			{ kind: "answer", answer: "x" },
+			{ ticket },
+		),
+		/is not for this prompt/u,
 	);
 });
 
-test("写入票据配错 prompt：scope 不一致要抛（这比读不回来更糟，是跨边界写入）", async () => {
-	const { cache } = harness({ scope: prompt => ({ key: `course:${prompt.context.courseId ?? "-"}`, shared: true, org: "org:1" }) });
+test("a write ticket paired with the wrong prompt: a mismatched scope must throw (worse than unreadable — it is a cross-boundary write)", async () => {
+	const { cache } = harness({
+		scope: prompt => ({ key: `course:${prompt.context.courseId ?? "-"}`, shared: true, org: "org:1" }),
+	});
 	const found = await cache.lookup({ matchText: "问题 A", retrievalText: "问题 A", context: { courseId: "1" } });
 	const ticket = await found.prepareWrite();
 	await assert.rejects(
 		cache.write(
 			{ matchText: "问题 A", retrievalText: "问题 A", context: { courseId: "2" } },
-			{ kind: "answer", answer: "x", sourceIds: ["n1"] },
+			{ kind: "answer", answer: "x" },
 			{ ticket },
 		),
-		/隔离边界不一致/u,
+		/isolation boundary does not match/u,
 	);
 });
 
-test("票据是记忆化的函数，不是字段 —— 调几次只编一次向量", async () => {
+test("the ticket is a memoized function rather than a field — calling it repeatedly embeds once", async () => {
 	const { cache, counts } = harness();
 	const found = await cache.lookup({ matchText: "问题 A", retrievalText: "问题 A", context: {} });
 	const before = counts.questions;
 	const a = await found.prepareWrite();
 	const b = await found.prepareWrite();
 	assert.deepEqual(a, b);
-	assert.equal(counts.questions, before, "③ 已经编过一次，票据不该再编");
+	assert.equal(counts.questions, before, "③ already embedded once, so the ticket must not embed again");
 });

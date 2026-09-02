@@ -1,35 +1,39 @@
 /**
- * 三个后端共用的淘汰序细节。
+ * Eviction-ordering details shared by the three backends.
  *
- * 保留优先级本身各后端各写一份（SQL 的 `ORDER BY`、zset 的分数、数组的比较器，
- * 形态差太远，强行抽象只会两边都别扭），但**参数必须是同一个** —— 不然
- * 「三个后端语义一致」这条硬要求会在某个边界上悄悄破掉，而那种破法只有
- * 一致性测试碰巧扫到那个区间时才看得见。
+ * Retention priority itself is written once per backend (SQL's `ORDER BY`, a zset score, an array
+ * comparator — the shapes are too far apart, and forcing an abstraction would make all of them
+ * awkward), but **the parameters must be the same**, or the hard requirement that the three
+ * backends agree breaks silently at some boundary — and that kind of break is only visible when a
+ * conformance test happens to sweep that exact range.
  */
 
 /**
- * `lfu` 的使用次数封顶。
+ * Cap on `lfu`'s use count.
  *
- * **封顶是有意的，不是精度妥协。** Redis 自己的 LFU 用 8 位对数计数器，理由一样：
- * 不封顶的计数器会让早期攒够次数的老条目永远赖着不走。Redis 后端还有一个附加理由 ——
- * 它要把「次数 + 时间」打包进 zset 的一个 double，10 位次数 + 41 位毫秒时间戳
- * 合计 51 位，正好在 double 的 53 位有效位之内。
+ * **The cap is deliberate, not a precision compromise.** Redis's own LFU uses an 8-bit logarithmic
+ * counter for the same reason: an uncapped counter lets an old entry that accumulated a high count
+ * early sit there forever. The Redis backend has an additional reason — it packs count and time
+ * into a single zset double, and 10 bits of count plus a 41-bit millisecond timestamp is 51 bits,
+ * just inside a double's 53 significant bits.
  *
- * **但封顶必须三个后端一起封。** 先前只有 Redis 封，内存与 pgvector 用的是裸
- * `use_count`：两条次数 1500 与 1100 的条目，内存/pgvector 选 1500 那条留下，
- * Redis 视为同分退回按时间破平 —— 一条真实存在的跨后端语义分歧，只是要跑到
- * 1023 次以上才暴露，所以一致性测试一直没撞上。
+ * **But the cap has to apply to all three backends at once.** Previously only Redis capped, while
+ * in-memory and pgvector used the raw `use_count`: given entries with counts 1500 and 1100,
+ * in-memory and pgvector keep the 1500 one, while Redis sees a tie and falls back to breaking it by
+ * time — a genuine cross-backend semantic divergence, which only shows up past 1023 uses, so the
+ * conformance tests never hit it.
  */
 export const LFU_COUNT_CAP = 1023;
 
 /**
- * `lfu` 排序用的使用次数。
+ * The use count `lfu` orders on.
  *
- * **没记过账的按「用过一次」算，不是零次。** 写入本身就是一次使用；算零次的话它在
- * 保留优先级里排到所有被 touch 过的条目之后，于是 scope 满员时**新写进去的条目会被
- * 自己触发的那次淘汰立刻删掉** —— `resolve` 返回的 entryId 指向一条已经不存在的记录，
- * 而那个问题在这个 scope 里永远立不住。算一次之后它与「只用过一次」的老条目打平，
- * 再由 LRU 破平（新的胜出）。
+ * **An entry with no bookkeeping counts as "used once", not zero.** The write itself is a use;
+ * counted as zero it sorts behind every entry that has been touched, so when a scope is full **a
+ * freshly written entry is deleted immediately by the eviction its own write triggered** — the
+ * `entryId` returned by `resolve` points at a record that no longer exists, and that question can
+ * never establish itself in this scope. Counted as one, it ties with old entries used exactly once,
+ * and LRU breaks the tie in the newer entry's favour.
  */
 export function lfuCount(useCount: number | undefined): number {
 	return Math.min(useCount ?? 1, LFU_COUNT_CAP);

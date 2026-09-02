@@ -1,25 +1,26 @@
 /**
- * 分隔符出现在数据里 —— 同一类 bug 的三个现场。
+ * A separator appearing in the data — three sites of one class of bug.
  *
- * `Scope.ts` 已经用转义防住了分桶那一处；这里锁住剩下两处，以及「加了新 Outcome
- * 之后否定判据会误分类」那一类。
+ * `Scope.ts` already defends the bucketing site with escaping; this pins down the remaining two,
+ * plus the class where a negated criterion misclassifies once a new Outcome is added.
  */
-import { strict as assert } from "node:assert";
-import { test } from "node:test";
+
 import { createStructuralPolicy } from "../src/CachePolicyRules.ts";
 import { createMetrics } from "../src/Metrics.ts";
 import type { CacheResult, Outcome } from "../src/types/Pipeline.ts";
-import { answering, harness } from "./Fakes.ts";
+import { harness } from "./Fakes.ts";
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
 
-/* ---------- N2：合流键 ---------- */
+/* ---------- N2: the merge key ---------- */
 
-test("N2 context 里带 & 或 = 的两个不同请求不能合流", async () => {
+test("N2 two different requests whose context contains & or = must not merge", async () => {
 	const counts = { n: 0 };
-	const generate = async () => {
+	const generate = () => {
 		counts.n += 1;
-		return { kind: "answer" as const, answer: `第 ${counts.n} 次生成`, sourceIds: ["n1"] };
+		return Promise.resolve({ kind: "answer" as const, answer: `第 ${counts.n} 次生成` });
 	};
-	// 旧实现把 context 拼成 `k=v&k=v`，这两个会得到同一个键
+	// The old implementation joined context as `k=v&k=v`, which gives these two the same key.
 	const a = { matchText: "同一句话", retrievalText: "同一句话", context: { a: "b&c=d" } };
 	const b = { matchText: "同一句话", retrievalText: "同一句话", context: { a: "b", c: "d" } };
 
@@ -34,12 +35,12 @@ test("N2 context 里带 & 或 = 的两个不同请求不能合流", async () => 
 	assert.equal(counts.n, 2);
 });
 
-test("N2 真正相同的请求仍然合流 —— 修分隔符不能把 singleFlight 修没了", async () => {
+test("N2 genuinely identical requests still merge — fixing the separator must not break singleFlight", async () => {
 	let calls = 0;
 	const generate = async () => {
 		calls += 1;
 		await new Promise(r => setTimeout(r, 5));
-		return { kind: "answer" as const, answer: "同一个答案", sourceIds: ["n1"] };
+		return { kind: "answer" as const, answer: "同一个答案" };
 	};
 	const prompt = { matchText: "同一句话", retrievalText: "同一句话", context: { a: "b", c: "d" } };
 	const { cache } = harness();
@@ -47,33 +48,37 @@ test("N2 真正相同的请求仍然合流 —— 修分隔符不能把 singleFl
 	assert.equal(calls, 1);
 });
 
-test("N2 解析出来的 scope 必须在合流键里 —— 不纯的 resolver 会让两个租户合流", async () => {
+test("N2 the resolved scope must be in the merge key — an impure resolver merges two tenants", async () => {
 	/**
-	 * `ScopeResolver` 的契约是「prompt 的纯函数」，但那是契约不是校验 —— 而这个库
-	 * 对 ③ 的存储层 pre-filter 用的是同一条规矩（拿回来再复核一次 scope）。
-	 * 一个从请求外的环境读租户的 resolver（AsyncLocalStorage、请求头）会让两个租户的
-	 * 同一句话合流，后到的租户拿到前一个租户缓存里的答案。写路径有票据比 scope 挡着，
-	 * 读命中这条路先前没有任何东西挡。
+	 * `ScopeResolver`'s contract is that it is a pure function of the prompt, but that is a contract
+	 * and not a check — and this library applies the same rule to ③'s store-layer pre-filter,
+	 * rechecking the scope once the rows come back. A resolver that reads the tenant from ambient
+	 * state outside the request (AsyncLocalStorage, a header) merges the same sentence from two
+	 * tenants, and the later tenant receives the answer from the earlier one's cache. On the write
+	 * path a ticket's scope comparison stops this; on a read hit, nothing used to.
 	 */
 	let tenant = "A";
 	let calls = 0;
 	const generate = async () => {
 		calls += 1;
-		// 序号要在 await 之前取好：两次生成都在等这 5ms，等完再读 calls 会都读到 2
+		// Take the sequence number before the await: both generations are waiting out these 5ms, and
+		// reading calls afterwards would give 2 to each.
 		const nth = calls;
 		await new Promise(r => setTimeout(r, 5));
-		return { kind: "answer" as const, answer: `第 ${nth} 次生成`, sourceIds: ["n1"] };
+		return { kind: "answer" as const, answer: `第 ${nth} 次生成` };
 	};
 	const { cache } = harness({ scope: () => ({ key: "course:1", shared: true, org: `org:${tenant}` }) });
 	const prompt = { matchText: "同一句话", retrievalText: "同一句话", context: {} };
 
-	// 并发：A 的请求先进来（此刻环境里的租户是 A），切到 B 之后第二个请求进来
+	// Concurrency: A's request arrives first, while the ambient tenant is A, then the second
+	// arrives after the switch to B.
 	const first = cache.resolve(prompt, generate);
 	tenant = "B";
 	const second = cache.resolve(prompt, generate);
 	const [a, b] = await Promise.all([first, second]);
 
-	// scope 不在键里时这两个请求会合流：只生成一次，后到者拿到前一个租户那次的结果
+	// With the scope absent from the key these two merge: one generation, and the later request
+	// receives the earlier tenant's result.
 	assert.equal(calls, 2, "两个租户的请求不能共用一次生成");
 	assert.notEqual(
 		a.payload.kind === "answer" && a.payload.answer,
@@ -82,19 +87,20 @@ test("N2 解析出来的 scope 必须在合流键里 —— 不纯的 resolver �
 	);
 });
 
-/* ---------- N3：Outcome 扩展后的分类 ---------- */
+/* ---------- N3: classification once Outcome is extended ---------- */
 
-test("N3 bypassed 不是假命中 —— 它压根没查缓存", async () => {
-	// 直接构造 CacheResult 走 Metrics 的正向判据，和 Evaluation 用的是同一套定义
+test("N3 bypassed is not a false hit — the cache was never consulted", () => {
+	// Build a CacheResult directly to exercise Metrics' positive criterion, the same definition
+	// Evaluation uses.
 	const m = createMetrics();
 	const r = (outcome: Outcome): CacheResult => ({
-		payload: { kind: "answer", answer: "a", sourceIds: ["n1"] },
+		payload: { kind: "answer", answer: "a" },
 		outcome,
 		bypassReason: outcome === "bypassed" ? "依赖对话上下文" : null,
 		wouldReuse: null,
 		exitedAt: null,
 		entryId: null,
-		sourceIds: ["n1"],
+		scope: "org:1|course:1",
 		trace: [],
 	});
 	m.record({ result: r("bypassed") });
@@ -105,51 +111,53 @@ test("N3 bypassed 不是假命中 —— 它压根没查缓存", async () => {
 	assert.equal(s.byOutcome.generated, 1);
 });
 
-/* ---------- N4：两个 Map 有上限 ---------- */
+/* ---------- N4: both Maps are bounded ---------- */
 
-test("N4 绕开理由的基数有上限 —— 理由里内嵌了 context 来的调用类型", async () => {
+test("N4 bypass-reason cardinality is bounded — a reason embeds the call type taken from context", async () => {
 	const policy = createStructuralPolicy();
 	const { cache } = harness({ policy });
-	// 每次一个不同的调用类型 → 每次一条不同的理由
+	// A different call type each time, and so a different reason each time.
 	for (let i = 0; i < 40; i++) {
 		await cache.lookup({ matchText: "q", retrievalText: "q", context: { callType: `bogus_${i}` } });
 	}
-	// 直接验 Metrics 侧的上限
+	// Check the bound on the Metrics side directly.
 	const m = createMetrics({ maxDistinctKeys: 8 });
 	for (let i = 0; i < 40; i++) {
 		m.record({
 			result: {
-				payload: { kind: "answer", answer: "a", sourceIds: [] },
+				payload: { kind: "answer", answer: "a" },
 				outcome: "bypassed",
 				bypassReason: `理由 ${i}`,
 				wouldReuse: null,
 				exitedAt: null,
 				entryId: null,
-				sourceIds: [],
+				scope: "org:1|course:1",
 				trace: [],
 			},
 		});
 	}
 	const s = m.snapshot();
-	// 8 个真实键 + 一个「其它」桶
+	// 8 real keys plus one catch-all bucket.
 	assert.ok(Object.keys(s.bypassedByReason).length <= 9, "键数必须封顶，否则长跑进程会一直涨");
 	assert.equal(s.byOutcome.bypassed, 40, "但计数一条都不能丢");
-	assert.ok("（其它）" in s.bypassedByReason, "溢出的归入「其它」");
+	assert.ok("(other)" in s.bypassedByReason, 'overflow goes into "other"');
 });
 
-test("N4 分段键同样封顶，且已有的段照常累加", () => {
+test("N4 segment keys are capped too, and existing segments keep accumulating", () => {
 	const m = createMetrics({ maxDistinctKeys: 3 });
 	const r: CacheResult = {
-		payload: { kind: "answer", answer: "a", sourceIds: [] },
+		payload: { kind: "answer", answer: "a" },
 		outcome: "exact",
 		bypassReason: null,
 		wouldReuse: null,
 		exitedAt: null,
 		entryId: "e",
-		sourceIds: [],
+		scope: "org:1|course:1",
 		trace: [],
 	};
-	for (const seg of ["a", "b", "c", "d", "e"]) m.record({ result: r, segment: seg });
+	for (const seg of ["a", "b", "c", "d", "e"]) {
+		m.record({ result: r, segment: seg });
+	}
 	m.record({ result: r, segment: "a" });
 	const s = m.snapshot();
 	assert.ok(s.bySegment.length <= 4, "3 个真实段 + 一个「其它」桶");

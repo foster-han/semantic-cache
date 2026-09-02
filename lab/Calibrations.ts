@@ -19,7 +19,7 @@ export type EncoderMode = "stub" | "local";
 export interface CalibrationRow {
 	readonly corpus: CorpusLanguage;
 	readonly encoders: EncoderMode;
-	/** 生成端的 kind。真生成端各标一行 —— 答案是它写的，支撑度的分布就跟着它走 */
+	/** 生成端的 kind。真生成端各标一行 —— 答案是它写的，问↔答形态下 ④ 的分数分布就跟着它走 */
 	readonly generator: GeneratorKind;
 	/** ③ 召回下限（句对模型的余弦尺度） */
 	readonly recallFloor: number;
@@ -210,7 +210,7 @@ function readOverride(name: string, nullable: boolean): number | null | undefine
  *
  * 借用规则只有两条，按顺序：**先借同语料同编码器的另一个真生成端**（依据是那条
  * 「真生成 vs 拼接是主因、哪家模型是次因」的假设 —— 它还没立住，所以借了要说），
- * 再退到 stub 生成那一行（分布会整体偏高，θa 因此偏紧）。
+ * 再退到 stub 生成那一行（分布会整体偏高，θq 因此偏紧）。
  */
 export function resolveCalibration(target: CalibrationTarget): ActiveCalibration {
 	const exact = CALIBRATIONS.find(
@@ -226,7 +226,7 @@ export function resolveCalibration(target: CalibrationTarget): ActiveCalibration
 		? ""
 		: `⚠ 借用「${borrowedRow.corpus} × ${borrowedRow.encoders} × ${borrowedRow.generator}」那一行 —— ` +
 			`${label(target)} 没标定过。真生成端之间借用的依据是那条尚未立住的假设（阈值按「真生成/拼接」分而非按厂商分）；` +
-			`借 stub 生成的行则会偏紧，因为拼接答案的支撑度天然偏高。要立住就跑 scripts/calibrate.ts 补一行`;
+			`借 stub 生成的行则会偏紧，因为拼接出来的答案在问↔答形态下分数天然偏高。要立住就跑 scripts/calibrate.ts 补一行`;
 
 	/**
 	 * ④ 单独查它自己那张表，**查不到就是没有这道闸** —— 不借用别的模型或别的形态的 θq。

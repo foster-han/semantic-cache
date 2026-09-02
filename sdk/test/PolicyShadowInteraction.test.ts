@@ -1,90 +1,84 @@
 /**
- * 开关**两两组合**的回归。
+ * Regressions in **pairs** of switches.
  *
- * 这批 bug 全长一个样：policy、shadow、中带、票据每个单独都有测试，组合起来没有。
- * 每加一个正交开关组合数就翻倍，而只有对角线被测过 —— 下面这些是补上的非对角线。
+ * This batch of bugs all looked the same: policy, shadow, the mid band and tickets each had tests
+ * of their own, and no combination did. Every orthogonal switch added doubles the combinations
+ * while only the diagonal was covered — what follows fills in the off-diagonal.
  */
+
+import { createStructuralPolicy } from "../src/CachePolicyRules.ts";
+import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
+import { answering, harness } from "./Fakes.ts";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
-import { createStructuralPolicy } from "../src/CachePolicyRules.ts";
-import { answering, forCosine, harness } from "./Fakes.ts";
 
 const ASK = { matchText: "什么是过拟合？", retrievalText: "什么是过拟合？", context: {} };
 const noStore = createStructuralPolicy({ noStoreWhen: { openEnded: "开放生成" } });
 const OPEN = { ...ASK, context: { openEnded: "1" } };
 
-/* ---------- F1：不带票据的写入也要过策略 ---------- */
+/* ---------- F1: a write without a ticket still goes through the policy ---------- */
 
-test("F1 write() 不带票据时也要过策略 —— 否则守卫只是建议", async () => {
+test("F1 write() without a ticket still goes through the policy — otherwise the guard is only a suggestion", async () => {
 	const { cache, store } = harness({ policy: noStore });
 	await assert.rejects(
-		() => cache.write(OPEN, { kind: "answer", answer: "偷偷写进去", sourceIds: ["n1"] }),
-		/判定为不进缓存（开放生成）/u,
-		"直接 write 是一扇正门，必须也关上",
+		() => cache.write(OPEN, { kind: "answer", answer: "偷偷写进去" }),
+		/judged this prompt uncacheable \(开放生成\)/u,
+		"a direct write is a front door and must be closed too",
 	);
 	assert.equal((await store.all()).length, 0);
 
-	// 放行的 prompt 照常写得进去
-	await cache.write(ASK, { kind: "answer", answer: "正常的", sourceIds: ["n1"] });
+	// An allowed prompt still stores as usual.
+	await cache.write(ASK, { kind: "answer", answer: "正常的" });
 	assert.equal((await store.all()).length, 1);
 });
 
-test("F1 writeMany 里被策略挡住的那条会让整批在落库前抛 —— 不留半批", async () => {
+test("F1 one entry refused by the policy makes writeMany throw before storing anything — no half batch", async () => {
 	const { cache, store } = harness({ policy: noStore });
 	await assert.rejects(
 		() =>
 			cache.writeMany([
-				{ prompt: ASK, payload: { kind: "answer", answer: "好的", sourceIds: ["n1"] } },
-				{ prompt: OPEN, payload: { kind: "answer", answer: "该被挡", sourceIds: ["n1"] } },
+				{ prompt: ASK, payload: { kind: "answer", answer: "好的" } },
+				{ prompt: OPEN, payload: { kind: "answer", answer: "该被挡" } },
 			]),
-		/判定为不进缓存/u,
+		/judged this prompt uncacheable/u,
 	);
 	assert.equal((await store.all()).length, 0, "守卫在 put 之前，不该留下污染");
 });
 
-/* ---------- F2：影子模式的只读承诺，写路径也得守住 ---------- */
+/* ---------- F2: shadow mode's read-only promise has to hold on the write path too ---------- */
 
-test("F2 影子模式 + ⑤ 判负：resolve 走完也不能把条目顶掉", async () => {
-	const store = createMemoryCacheStore();
-	let version = "v1";
-	await harness({ store, sourceVersion: () => version }).cache.resolve(ASK, answering("按 v1 写的"));
-	const [before] = await store.all();
-
-	version = "v2";
-	const shadowed = harness({ store, shadow: true, sourceVersion: () => version });
-	// 关键：走 resolve 而不是 lookup —— 先前的测试只调 lookup，漏掉了写路径这一半
-	const result = await shadowed.cache.resolve(ASK, answering("影子里新生成的"));
-
-	assert.equal(result.outcome, "generated");
-	assert.equal(result.wouldReuse, false, "⑤ 判负，本来也不会复用");
-	const after = await store.all();
-	assert.equal(after.length, 1, "写入的去重会把同 hash 的旧条目当 duplicate 驱逐 —— 必须挡住");
-	assert.equal(after[0].id, before.id);
-	assert.equal(after[0].answer, "按 v1 写的");
-});
-
-test("F2 影子模式 + ⑥ 判负：同上", async () => {
+/**
+ * The suppression used to have two triggers: a downgraded hit, and a **negative verdict from ⑤/⑥**
+ * on an existing entry. Both of those gates are gone, so a downgraded hit is the only trigger left
+ * — but the invariant it protects is unchanged, and it is the write path that breaks it: the
+ * deduplication inside `writeMany` evicts the row sharing that `(scope, matchHash)` as a duplicate.
+ */
+test("F2 shadow mode plus a would-be hit: even a completed resolve must not displace the entry", async () => {
 	const store = createMemoryCacheStore();
 	await harness({ store }).cache.resolve(ASK, answering("原答案"));
 	const [before] = await store.all();
 
 	const shadowed = harness({ store, shadow: true });
-	await shadowed.cache.resolve(ASK, answering("影子里新生成的"));
+	// The point: this goes through resolve rather than lookup. The earlier tests called only
+	// lookup and missed this half of the write path.
+	const result = await shadowed.cache.resolve(ASK, answering("影子里新生成的"));
 
+	assert.equal(result.outcome, "generated");
+	assert.equal(result.wouldReuse, true, "本来会命中 —— 影子模式的分子要算上它");
 	const after = await store.all();
-	assert.equal(after.length, 1);
+	assert.equal(after.length, 1, "写入的去重会把同 hash 的旧条目当 duplicate 驱逐 —— 必须挡住");
 	assert.equal(after[0].id, before.id);
+	assert.equal(after[0].answer, "原答案");
 });
 
-test("F2 影子模式下真未命中照常写 —— 只抑制会撞上去重的那几种", async () => {
+test("F2 in shadow mode a genuine miss writes as usual — only the cases that would collide with deduplication are suppressed", async () => {
 	const store = createMemoryCacheStore();
 	const { cache } = harness({ store, shadow: true });
 	await cache.resolve(ASK, answering("第一次"));
 	assert.equal((await store.all()).length, 1, "③ 无候选的真未命中不该被抑制");
 });
 
-test("F2 影子模式 + policy bypass：一道闸都没跑，写入也一并跳过", async () => {
+test("F2 shadow mode plus a policy bypass: no gate ran, and the write is skipped along with it", async () => {
 	const store = createMemoryCacheStore();
 	const policy = createStructuralPolicy({ noCacheWhen: { regenerate: "重新回答" } });
 	const { cache } = harness({ store, shadow: true, policy });
@@ -93,18 +87,18 @@ test("F2 影子模式 + policy bypass：一道闸都没跑，写入也一并跳�
 	assert.equal((await store.all()).length, 0, "没跑闸就不知道会不会顶掉现有条目，保守不写");
 });
 
-/* ---------- F3：noStore + 中带 + refine ---------- */
+/* ---------- F3: noStore plus the mid band plus refine ---------- */
 
-test("F5 shadow + noStore + 本会命中：wouldReuse 必须是 true", async () => {
+test("F5 shadow plus noStore plus a would-be hit: wouldReuse must be true", async () => {
 	const store = createMemoryCacheStore();
 	await harness({ store }).cache.resolve(ASK, answering("原答案"));
 
 	const { cache } = harness({ store, shadow: true, policy: noStore });
 	const result = await cache.resolve(OPEN, answering("影子里新生成的"));
-	// noStore 只管写不管读 —— 它本来是会复用的，报 false 会低估影子模式的分子
+	// noStore governs writing, not reading — this request would have reused, and reporting false
+	// would understate shadow mode's numerator.
 	assert.equal(result.wouldReuse, true);
 	assert.equal((await store.all()).length, 1);
 });
 
-/* ---------- F6：exitedAt 在各分支上一致 ---------- */
-
+/* ---------- F6: exitedAt is consistent across the branches ---------- */

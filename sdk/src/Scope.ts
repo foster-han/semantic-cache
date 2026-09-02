@@ -1,45 +1,48 @@
 /**
- * 隔离边界的组合与校验。
+ * Composition and validation of the isolation boundary.
  *
- * **为什么组织 id 必须由库来拼,而不是让调用方自己拼一个字符串。**
+ * **Why the organization id must be joined by the library rather than by the caller.**
  *
- * ③ 是 scope **内**的向量召回 —— 把问题文本从 key 里拿掉之后,剩下用来分桶的
- * 就只有这个字符串了。它拼错的后果不是「少一次命中」,是**跨租户返回别人的答案**,
- * 而且完全静默:向量照样算得出来,相似度照样很高,trace 上一切正常。
+ * Gate ③ is vector recall **within** a scope — once the question text is out of the key, this
+ * string is all that buckets entries. Getting it wrong does not cost a hit, it **returns another
+ * tenant's answer**, completely silently: the vectors still compute, the similarity is still high,
+ * and the trace looks entirely normal.
  *
- * 自己拼字符串有两类错法,都不会报错:
+ * Hand-built strings fail in two ways, neither of which raises an error:
  *
- * - **漏了租户**。`course:ml101` 看着挺具体,但两个组织都可以有一门 `ml101`。
- * - **分隔符撞了**。`${org}:${key}` 这种拼法下,`("a", "b:c")` 和 `("a:b", "c")`
- *   拼出来是同一个字符串 —— 一个组织 id 里带冒号就能读到另一个组织的桶。
+ * - **The tenant is missing.** `course:ml101` looks specific enough, but two organizations can both
+ *   have an `ml101`.
+ * - **The separator collides.** Under a `${org}:${key}` join, `("a", "b:c")` and `("a:b", "c")`
+ *   produce the same string — one organization id containing a colon is enough to read another
+ *   organization's bucket.
  *
- * 所以 `ScopeDecision.org` 是必填的,而且由 `composeScope` 转义后拼接。
+ * So `ScopeDecision.org` is required, and `composeScope` joins it with escaping.
  */
 
-/** 组合后的 scope 里,这个字符分隔两段;段内出现时转义 */
+/** Separates the two segments inside a composed scope; escaped when it occurs within a segment. */
 const SEPARATOR = "|";
 
-function escape(part: string): string {
+function escapePart(part: string): string {
 	return part.replaceAll("\\", "\\\\").replaceAll(SEPARATOR, `\\${SEPARATOR}`);
 }
 
 function assertPart(name: string, value: string): void {
 	if (typeof value !== "string" || value.trim() === "") {
 		throw new Error(
-			`ScopeDecision.${name} 是空的。${name === "org" ? "组织 id" : "scope key"}缺失时,③ 的向量召回会在一个错误的桶里进行 —— ` +
-				"结果是跨租户返回别人的答案,而且不会报错。单租户部署也要给一个固定值(比如 \"default\"),让它是个显式的决定。",
+			`ScopeDecision.${name} is empty. Without the ${name === "org" ? "organization id" : "scope key"}, gate ③'s vector recall runs in the wrong bucket — ` +
+				'the result is returning another tenant\'s answer, and nothing raises an error. Single-tenant deployments must still supply a fixed value (for example "default"), so that it is an explicit decision.',
 		);
 	}
 }
 
 /**
- * 把组织 id 与业务 scope 拼成存储层看到的那一个字符串。
+ * Joins the organization id and the business scope into the single string the storage layer sees.
  *
- * 转义保证一一对应:`("a", "b|c")` 与 `("a|b", "c")` 拼出来不同。
- * `clear(scope)` 之类按 scope 操作的入口要的就是这个组合后的值。
+ * Escaping guarantees a one-to-one mapping: `("a", "b|c")` and `("a|b", "c")` produce different
+ * strings. Scope-wide entry points such as `clear(scope)` expect this composed value.
  */
 export function composeScope(org: string, key: string): string {
 	assertPart("org", org);
 	assertPart("key", key);
-	return `${escape(org)}${SEPARATOR}${escape(key)}`;
+	return `${escapePart(org)}${SEPARATOR}${escapePart(key)}`;
 }

@@ -14,8 +14,6 @@ export interface LabConfig {
 	readonly gate1: boolean;
 	/** ④ 精排 */
 	readonly gate4: boolean;
-	/** ⑤ 资料版本比对 */
-	readonly gate5: boolean;
 	/** 检索用保留实体的原文（匿名化文本去检索会让两个学生检出同一批片段） */
 	readonly preAnonRetrieval: boolean;
 	/** 上层是否如实声明已脱敏；声明后 SDK 拒绝把 answer 条目放进共享 scope */

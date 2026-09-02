@@ -30,12 +30,10 @@
  * ## 这一轮没有测到的
  *
  * - **① scope 门控**：这份数据没有用户/租户维度，全程单 scope。
- * - **⑤ 资料版本**：没有资料，更没有版本，显式关掉。
- * - **「没有依据的答案不写入」这条不变式**：SDK 的 `cacheable()` 要求 `sourceIds` 非空，
- *   而这份数据的答案是上游预先生成的、不依附任何语料。这里给每条查询造一个
- *   `vcache:<行 id>` 当依据 —— **那是个占位，不是真依据**。不造的话缓存一条都写不进去，
- *   命中率恒为 0 而且不报错；造了就等于这条不变式在本轮没有被测到。两害相权，
- *   选能测到 ②③④ 的那个，并把这句话写进结果文件。
+ * - **⑤ 资料版本**：这道闸已于 2026-09 从 SDK 移除（`sourceIds` 与「没有依据的答案
+ *   不写入」那条不变式跟它一起走了），所以这一轮的管线是 ①②③④。移除前后重放的
+ *   数字**逐字节相同** —— 当时为绕过 `cacheable()` 造的那个占位依据，确实没有参与
+ *   任何判定。
  *
  * ## 阈值不许借
  *
@@ -55,32 +53,13 @@
  *   THETA_Q        ④ 的闸值。给了才开 ④
  *   TOP_K          ③ 召回几条（默认 5）
  */
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createMemoryCacheStore, createSemanticCache } from "../../sdk/src/index.ts";
-import type { CachePrompt, Chunk } from "../../sdk/src/index.ts";
 import { createEncoders } from "../Models.ts";
 import { pct } from "../ProbeMetrics.ts";
-
-interface DataItem {
-	readonly id: unknown;
-	readonly label: number | null;
-	readonly cluster?: number;
-	readonly prompt: string;
-	readonly responses?: Record<string, string>;
-	readonly latencies?: Record<string, number>;
-	readonly emb?: Record<string, Array<number>>;
-}
-
-interface DataFile {
-	readonly source: string;
-	readonly benchmark: string;
-	readonly labelColumn: string | null;
-	readonly labelNoise?: string;
-	readonly rows: number;
-	readonly items: ReadonlyArray<DataItem>;
-}
+import { loadVCacheData, replayTrace, toReplayItem } from "../VCacheReplay.ts";
+import type { ReplayOutcome, VCacheDataItem } from "../VCacheReplay.ts";
 
 const NAME = process.argv[2];
 const LIMIT = process.argv[3] === undefined ? Number.POSITIVE_INFINITY : Number(process.argv[3]);
@@ -99,16 +78,9 @@ if (!NAME) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const IN = join(here, "..", "data", `vcache-${NAME}.json`);
 const OUT = join(here, "..", "data", `vcache-replay-${NAME}.json`);
 
-const data = JSON.parse(await readFile(IN, "utf8")) as DataFile;
-if (data.labelColumn === null) {
-	throw new Error(
-		`${IN} 没有等价组列（${data.benchmark}）—— 没有 oracle 就判不出正命中和假命中，` +
-			"这个脚本对它无能为力。判据只能落回比答案字符串，那是另一套东西。",
-	);
-}
+const { data, items: labelled } = await loadVCacheData(NAME);
 
 /** 固定 seed 的 LCG —— 和取样脚本同一套 */
 let rngState = SEED;
@@ -117,9 +89,9 @@ function rnd(): number {
 	return rngState / 0x7fffffff;
 }
 
-const items = data.items.filter(it => it.label !== null && it.label >= 0).slice(0, LIMIT);
+const items = labelled.slice(0, LIMIT);
 /** Fisher-Yates，用同一个 LCG —— 顺序是这个实验的自变量之一，必须可复现 */
-const trace = [...items];
+const trace = items.map(toReplayItem);
 for (let i = trace.length - 1; i > 0; i--) {
 	const j = Math.floor(rnd() * (i + 1));
 	[trace[i], trace[j]] = [trace[j], trace[i]];
@@ -142,7 +114,7 @@ let embedCalls = 0;
 
 function lookupEncoder(column: string): (texts: ReadonlyArray<string>) => Promise<Array<Array<number>>> {
 	const table = new Map<string, Array<number>>();
-	for (const it of data.items) {
+	for (const it of data.items as ReadonlyArray<VCacheDataItem>) {
 		const v = it.emb?.[column];
 		if (v !== undefined) table.set(it.prompt, v);
 	}
@@ -179,133 +151,21 @@ async function embedQuestions(texts: ReadonlyArray<string>): Promise<Array<Array
 
 // --- 一次重放 ------------------------------------------------------------
 
-interface Outcome {
-	readonly floor: number;
-	readonly gate4: boolean;
-	readonly queries: number;
-	/** 到达时缓存里已有同组条目的查询数 —— 命中率的上限，也是漏命中的分母 */
-	readonly reusable: number;
-	readonly trueHits: number;
-	readonly falseHits: number;
-	readonly missedReuse: number;
-	readonly correctRejects: number;
-	/** 未命中被哪道闸拦下 */
-	readonly exitedAt: Record<string, number>;
-	/** 正命中省下的生成耗时（秒）—— 只有 lmarena 带真耗时 */
-	readonly savedSeconds: number;
-	readonly examples: ReadonlyArray<{ query: string; reused: string; queryLabel: number; reusedLabel: number }>;
-}
-
-async function replay(floor: number, gate4: boolean): Promise<Outcome> {
-	// `LabEncoders.reranker` 是可选属性，不是 `| null` —— 取出来判一次，别在下面重复窄化
+async function replay(floor: number, gate4: boolean): Promise<ReplayOutcome> {
+	// `LabEncoders.reranker` 是可选属性，不是 `| null` —— 取出来判一次
 	const reranker = encoders.reranker;
 	if (gate4 && reranker === undefined) throw new Error("要开 ④ 但没有加载到重排器 —— 检查 CE_MODEL");
-	const cache = createSemanticCache({
-		recall: {
-			scorer: { embedQuestions },
-			thresholds: { floor },
-			calibratedOn: `未在本数据上标定 —— 这一轮是扫描，floor=${floor} 只是曲线上的一个点`,
-		},
+	return replayTrace({
+		items: trace,
+		scopeKey: `vcache:${NAME}`,
+		floor,
+		topK: TOP_K,
+		embedQuestions,
 		rerank:
 			gate4 && reranker !== undefined && THETA_Q !== null
-				? {
-						scorer: reranker,
-						thresholds: { floor: THETA_Q, target: encoders.models.rerankTarget },
-						calibratedOn: `显式 THETA_Q=${THETA_Q}，未在本数据上标定 —— 由调用方负责`,
-					}
+				? { scorer: reranker, thetaQ: THETA_Q, target: encoders.models.rerankTarget }
 				: undefined,
-		store: createMemoryCacheStore(),
-		/**
-		 * 造一个占位依据。**这不是真检索** —— 见文件头那条说明：不造的话
-		 * `cacheable()` 会拒绝写入每一条答案，缓存永远是空的，而且一声不吭。
-		 */
-		retriever: { retrieve: async (text: string): Promise<Array<Chunk>> => [{ id: `vcache:${text}`, text }] },
-		// 单 scope：这份数据没有用户/租户维度，① 因此没有参与
-		scope: () => ({ key: `vcache:${NAME}`, shared: true, org: "lab" }),
-		sourceVersion: () => "v1",
-		gates: { sourceVersion: false },
-		recallLimit: TOP_K,
-		ttlMs: null,
 	});
-
-	/** entryId → 写它的那条查询属于哪个组。命中之后就靠它判对错 */
-	const labelByEntry = new Map<string, number>();
-	/** 缓存里现在有哪些组 —— oracle。没有驱逐，所以只增不减 */
-	const labelsInCache = new Set<number>();
-
-	let reusable = 0;
-	let trueHits = 0;
-	let falseHits = 0;
-	let missedReuse = 0;
-	let correctRejects = 0;
-	let savedSeconds = 0;
-	const exitedAt: Record<string, number> = {};
-	const examples: Array<{ query: string; reused: string; queryLabel: number; reusedLabel: number }> = [];
-	const promptByEntry = new Map<string, string>();
-
-	for (const it of trace) {
-		const label = it.label as number;
-		// **到达那一刻**的状态，必须在 resolve 之前读
-		const hadPartner = labelsInCache.has(label);
-		if (hadPartner) reusable += 1;
-
-		const prompt: CachePrompt = {
-			matchText: it.prompt,
-			retrievalText: it.prompt,
-			redacted: false,
-			context: {},
-		};
-		const answer = it.responses === undefined ? String(it.id) : Object.values(it.responses)[0];
-		const result = await cache.resolve(prompt, async (_p, chunks) => ({
-			kind: "answer" as const,
-			answer,
-			sourceIds: chunks.map(c => c.id),
-		}));
-
-		if (result.outcome === "generated") {
-			if (hadPartner) missedReuse += 1;
-			else correctRejects += 1;
-			const at = result.exitedAt === null ? "没被拦，只是没候选" : `第 ${result.exitedAt} 道闸`;
-			exitedAt[at] = (exitedAt[at] ?? 0) + 1;
-			if (result.entryId !== null) {
-				labelByEntry.set(result.entryId, label);
-				promptByEntry.set(result.entryId, it.prompt);
-				labelsInCache.add(label);
-			}
-			continue;
-		}
-
-		// 命中。对错只看组，不看答案文本 —— 答案是上游生成的，两条同组的答案本来就不一样
-		const reusedLabel = result.entryId === null ? null : (labelByEntry.get(result.entryId) ?? null);
-		if (reusedLabel === label) {
-			trueHits += 1;
-			savedSeconds += it.latencies === undefined ? 0 : (Object.values(it.latencies)[0] ?? 0);
-		} else {
-			falseHits += 1;
-			if (examples.length < 20) {
-				examples.push({
-					query: it.prompt,
-					reused: result.entryId === null ? "（没有 entryId）" : (promptByEntry.get(result.entryId) ?? "（未知条目）"),
-					queryLabel: label,
-					reusedLabel: reusedLabel ?? -1,
-				});
-			}
-		}
-	}
-
-	return {
-		floor,
-		gate4,
-		queries: trace.length,
-		reusable,
-		trueHits,
-		falseHits,
-		missedReuse,
-		correctRejects,
-		exitedAt,
-		savedSeconds,
-		examples,
-	};
 }
 
 // --- 跑 ------------------------------------------------------------------
@@ -323,11 +183,11 @@ console.log(`  轨迹 seed ${SEED}　③ 编码器 ${ENC_MODE === "local" ? `本
 console.log(
 	`  ④ ${THETA_Q === null ? "关（没给 THETA_Q —— 这份数据上没有标定过的闸值，不许借）" : `开，θq=${THETA_Q}（显式给的，未在本数据上标定）`}`,
 );
-console.log("  ① 未参与（单 scope，数据没有用户维度）　⑤ 关（没有资料版本）");
+console.log("  ① 未参与（单 scope，数据没有用户维度）　这一轮的管线是 ①②③④ —— ⑤ 已从 SDK 移除");
 if (data.labelNoise !== undefined) console.log(`  ⚠ ${data.labelNoise}`);
 console.log();
 
-const runs: Array<Outcome> = [];
+const runs: Array<ReplayOutcome> = [];
 for (const floor of FLOORS) {
 	runs.push(await replay(floor, false));
 	if (THETA_Q !== null) runs.push(await replay(floor, true));
@@ -390,11 +250,11 @@ await writeFile(
 			topK: TOP_K,
 			notTested: [
 				"① scope 门控 —— 这份数据没有用户/租户维度，全程单 scope",
-				"⑤ 资料版本 —— 没有资料，更没有版本",
-				"「没有依据的答案不写入」—— 依据是造出来的占位（vcache:<prompt>），这条不变式本轮没测到",
+				"这一轮跑的是 ①②③④ —— ⑤ 资料版本已于 2026-09 从 SDK 移除，和它一起走的还有 sourceIds 与「没有依据的答案不写入」那条不变式",
 			],
 			labelNoise: data.labelNoise,
-			runs: runs.map(r => ({ ...r, examples: r.examples.slice(0, 20) })),
+			// `pairs` 只有标定那一趟才收，这里恒为空 —— 别把一个空数组写进凭据文件
+			runs: runs.map(({ pairs: _pairs, ...r }) => ({ ...r, examples: r.examples.slice(0, 20) })),
 		},
 		null,
 		"\t",

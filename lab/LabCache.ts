@@ -9,6 +9,7 @@
  */
 import {
 	compare,
+	composeScope,
 	createMemoryCacheStore,
 	createMetrics,
 	createSemanticCache,
@@ -22,6 +23,7 @@ import {
 	type GateTrace,
 	type InspectableCacheStore,
 	type Scenario,
+	type ScopeDecision,
 } from "../sdk/src/index.ts";
 import { COURSE, DISTRACTORS, DOCS, ENTITIES, LANGUAGE, SCENARIOS, STUDENT_RECORDS, SYL_V2 } from "./Corpus.ts";
 import { resolveCalibration, type ActiveCalibration } from "./Calibrations.ts";
@@ -36,7 +38,6 @@ import type { LabConfig, LabCounters } from "./types/LabConfig.ts";
  */
 export const BASE_DEFAULTS = {
 	gate1: false,
-	gate5: true,
 	preAnonRetrieval: true,
 	declareRedacted: false,
 	scopeMode: "course",
@@ -95,22 +96,64 @@ export interface LabResult {
 	readonly outcome: string;
 	readonly exitedAt: number | null;
 	readonly entryId: string | null;
-	readonly sourceIds: ReadonlyArray<string>;
+	/** 答案来自哪个 space —— 条目唯一记下来的「依据」，也是清缓存的单位 */
+	readonly space: string;
 	readonly trace: ReadonlyArray<GateTrace>;
 	readonly anonymized: string;
 	readonly retrievalText: string;
 }
 
+/** 「已移交」的场景在它该归属的那个配置下跑出来的结果 */
+export interface LabCoveredUnder {
+	/** 那个配置怎么描述，直接给页面显示 */
+	readonly config: string;
+	readonly ok: boolean;
+	readonly got: "reuse" | "regenerate";
+	readonly space: string;
+	readonly exitedAt: number | null;
+}
+
+/**
+ * 单条场景回放的结果。`handedTo` 非 null = 这条测的是一道已经移除的闸，
+ * 那一栏是它在「现在谁负责」那个配置下跑出来的结果。
+ */
+export type LabScenarioResult = LabResult & {
+	readonly handedTo:
+		| null
+		| { readonly config: string; readonly rejected: string }
+		| {
+				readonly config: string;
+				readonly decision: "reuse" | "regenerate";
+				readonly outcome: string;
+				readonly space: string;
+				readonly exitedAt: number | null;
+		  };
+};
+
 export interface LabBenchRow {
+	/**
+	 * 复用了缓存，但答案来自另一个 space。判据来自 SDK 的 `evaluate`。
+	 *
+	 * **它以前更细**：条目记着自己引了哪些文档，这一栏问的是「首要依据是不是那篇资料」。
+	 * 那个维度已经移除，判据只剩 space；而 scope 隔离在 ① 就挡住了、③ 还复核一遍，
+	 * 所以跨 space 的复用在正常配置下根本发生不了 —— 这一栏于是**几乎恒为 0**，
+	 * 它现在能抓的是 scope 路由错了，抓不到检索精度错了。
+	 */
+	falseHit: boolean;
 	key: string;
 	label: string;
 	note: string;
 	caveat: string | null;
+	/** 非 null = 这条测的是一道已经移除的闸，不算失败 */
+	nowHandledBy: "user-scope" | "unit-scope" | null;
+	/** 在 `nowHandledBy` 指的那个配置下再跑一遍的结果 */
+	coveredUnder: LabCoveredUnder | null;
 	ok: boolean;
 	got: "reuse" | "regenerate";
-	primarySource: string | null;
-	basedOn: ReadonlyArray<string>;
-	expectDoc: string;
+	/** 答案实际来自哪个 space */
+	space: string;
+	/** 该来自哪个 space —— 取播种那一问解析出来的 scope */
+	expectSpace: string;
 	exitedAt: number | null;
 }
 
@@ -121,6 +164,14 @@ export interface LabBenchReport {
 	total: number;
 	falseHit: number;
 	missed: number;
+	/**
+	 * 「已移交」的条数：先前由 ⑥ 拦下、⑥ 移除后改由隔离边界负责的那些。
+	 *
+	 * **它们不计入 `falseHit`。** 在当前配置下它们多半确实命中了，但那不是回归 ——
+	 * 那道闸是被有意拿掉的，代价写在 DESIGN 的「诚实的边界」里。把它们混进假命中，
+	 * 一次设计取舍会永远表现成一批查不出原因的失败。
+	 */
+	movedOut: number;
 }
 
 /**
@@ -154,16 +205,6 @@ export function createLab(
 
 	function fresh(): LabCounters {
 		return { ask: 0, exact: 0, reuse: 0, generated: 0 };
-	}
-
-	/** 指纹只覆盖这条缓存实际引用过的资料 —— 引用资料级，不是课程级。 */
-	function fingerprint(ids: ReadonlyArray<string>): string {
-		return ids
-			.map(id => {
-				const d = docs.find(x => x.id === id);
-				return d ? `${d.id}v${d.version}` : `${id}v?`;
-			})
-			.join(",");
 	}
 
 	/**
@@ -230,10 +271,11 @@ export function createLab(
 	}
 
 
-	// kind 是必填的 —— 缺了它 SDK 会把这条当成 plan 处理（sourceIds 落空）。
+	// kind 是必填的 —— 缺了它 SDK 会把这条当成 plan 处理（答案落空）。
 	// 验证台原来是 .mjs，这个契约变更没在编译期报错，所以踩过一次；转 TS 就是为此。
 	// 生成端是可切换的接口（GEN=stub / claude-cli）。stub 是换序换壳，不是真生成 ——
-	// ⑥ 的支撑度因此天然偏高，θa 的绝对值在它上面标不准。见 Generators.ts。
+	// CE_TARGET=answer 下 ④ 的 candidate 就是这个答案，所以 θq 的绝对值在它上面标不准。
+	// 见 Generators.ts。
 	const generate = (prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload> =>
 		generator.generate(prompt, chunks);
 
@@ -294,22 +336,33 @@ export function createLab(
 					: undefined,
 			store: storeOverride ?? store,
 			retriever: { retrieve: (text, ctx) => retrieveChunks(text, ctx.unit || null, cfg) },
-			// ① PII 门控写在 scope 解析里 —— SDK 不认识 PII，只认 scope 字符串
-			scope: prompt => {
-				// 验证台是单租户，但 org 仍要显式给 —— 让它是个决定，不是一个遗漏
-				const org = "lab";
-				if (cfg.gate1 && prompt.context.pii === "1") {
-					return { key: `user:${prompt.context.userId}`, shared: false, org };
-				}
-				const key =
-					cfg.scopeMode === "unit" ? `course:${COURSE}|unit:${prompt.context.unit || "-"}` : `course:${COURSE}`;
-				return { key, shared: true, org };
-			},
-			sourceVersion: ids => fingerprint(ids),
-			gates: { sourceVersion: cfg.gate5 },
+			scope: prompt => scopeOf(prompt, cfg),
 			recallLimit: cfg.topK,
 			ttlMs: null,
 		});
+	}
+
+	/**
+	 * ① PII 门控写在 scope 解析里 —— SDK 不认识 PII，只认 scope 字符串。
+	 *
+	 * **抽成命名函数，是因为 space 现在是判据。** 场景的期望值要算出「播种那一问落在
+	 * 哪个 space」，而那必须和 SDK 真正用的是同一个函数 —— 复制一份出来算，就是把
+	 * 「标定与实现同算子」这条规矩在 scope 上再破一次。
+	 */
+	function scopeOf(prompt: CachePrompt, cfg: LabConfig): ScopeDecision {
+		// 验证台是单租户，但 org 仍要显式给 —— 让它是个决定，不是一个遗漏
+		const org = "lab";
+		if (cfg.gate1 && prompt.context.pii === "1") {
+			return { key: `user:${prompt.context.userId}`, shared: false, org };
+		}
+		const key = cfg.scopeMode === "unit" ? `course:${COURSE}|unit:${prompt.context.unit || "-"}` : `course:${COURSE}`;
+		return { key, shared: true, org };
+	}
+
+	/** 一次提问落在哪个 space，拼法与 SDK 存进条目的完全一致。 */
+	function spaceOf(input: LabAsk, cfg: LabConfig): string {
+		const decision = scopeOf(toRequest(input, cfg), cfg);
+		return composeScope(decision.org, decision.key);
 	}
 
 	/** 把验证台的一次提问翻译成 SDK 的 CachePrompt。 */
@@ -347,7 +400,7 @@ export function createLab(
 			outcome: result.outcome,
 			exitedAt: result.exitedAt,
 			entryId: result.entryId,
-			sourceIds: result.sourceIds,
+			space: result.scope,
 			trace: result.trace,
 			anonymized: prompt.matchText,
 			retrievalText: prompt.retrievalText,
@@ -385,13 +438,38 @@ export function createLab(
 
 	function bumpCorpus(): string {
 		docs = docs.map(d => (d.id === "syl" ? { ...d, version: 2, text: SYL_V2 } : d));
-		return fingerprint(["syl"]);
+		return docs.find(d => d.id === "syl")?.title ?? "syl";
 	}
 
 	/**
-	 * 场景集回归。判据用 SDK 的 evaluate ——「答案的首要依据是不是那篇资料」，
-	 * 不是「有没有复用」。命中另一条内容正确的缓存也算成功。
+	 * 「资料改版」在场景里怎么演：**改版 + 清掉那个 space**。
+	 *
+	 * 先前只要改版就够了 —— ⑤ 会在读时比出版本不符然后踢掉条目。⑤ 已经移除，读侧
+	 * 再没有任何一道闸看得见改版，所以场景必须把新机制照实跑出来：内容单元是 space，
+	 * 改了就清那一片。少了这一步，这两条场景测的是一道不存在的闸，而且会静静地通过。
 	 */
+	function revise(cache: ReturnType<typeof build>, sc: LabScenario, cfg: LabConfig): Promise<void> {
+		bumpCorpus();
+		const decision = scopeOf(toRequest(sc.seed, cfg), cfg);
+		return cache.clear({ org: decision.org, key: decision.key }).then(() => undefined);
+	}
+
+	/**
+	 * 场景集回归。判据用 SDK 的 evaluate ——「答案来自哪个 space」，不是「有没有复用」。
+	 * 命中另一条内容正确的缓存也算成功。
+	 */
+	/**
+	 * 「已移交」的场景该在哪个配置下被拦下。
+	 *
+	 * ⑥ 移除时的取舍是「代价由隔离边界和缓存键的构成来付」—— 这张表把那句话变成
+	 * 可执行的：每条移交出去的场景都指名一个配置，回放时真的按它再跑一遍。
+	 * 拦不住的话页面上会直接看见，那说明取舍不成立，而不是「文档里那么说的」。
+	 */
+	const COVERAGE: Readonly<Record<"user-scope" | "unit-scope", { config: string; override: Partial<LabConfig> }>> = {
+		"user-scope": { config: "① 检出实体 → user scope（gate1 开）", override: { gate1: true } },
+		"unit-scope": { config: "scope 带上章节（scopeMode: unit）", override: { scopeMode: "unit" } },
+	};
+
 	async function bench(override?: Partial<LabConfig>, storeOverride?: InspectableCacheStore): Promise<LabBenchReport> {
 		const cfg: LabConfig = { ...defaults, ...override };
 		/**
@@ -402,15 +480,6 @@ export function createLab(
 		 * 「换存储不改判定」就成了一句空话，而且空得看不出来——两列数字永远一致。
 		 */
 		const isolated = storeOverride ?? createMemoryCacheStore();
-		const scenarios: Array<Scenario> = SCENARIOS.map((s: LabScenario) => ({
-			key: s.key,
-			label: s.label,
-			expectSourceId: s.expectDoc,
-			seed: toRequest(s.seed, cfg),
-			probe: toRequest(s.probe, cfg),
-			between: s.bumpCorpus ? async () => void bumpCorpus() : undefined,
-		}));
-
 		let report: EvaluationReport;
 		try {
 			// **`build()` 也要在 try 里。** 它会拒绝一些配置（脱敏 × 共享 scope、
@@ -418,6 +487,16 @@ export function createLab(
 			// 先前 build 在 try 外面，于是它一抛错整个请求变成 500，页面上看到的是
 			// 「请求失败」而不是「配置 B 被拒绝，原因是……」。
 			const cache = build(cfg, isolated);
+			const scenarios: Array<Scenario> = SCENARIOS.map((s: LabScenario) => ({
+				key: s.key,
+				label: s.label,
+				// 判据是「答案该来自播种那条所在的 space」—— 移交出去的那几条在移交后的配置下
+				// 会落到另一个 space，那正是移交要的效果，所以它们不计入下面的统计。
+				expectSpace: spaceOf(s.seed, cfg),
+				seed: toRequest(s.seed, cfg),
+				probe: toRequest(s.probe, cfg),
+				between: s.bumpCorpus ? () => revise(cache, s, cfg) : undefined,
+			}));
 			report = await evaluate(cache, scenarios, (p, c) => generator.generate(p, c), {
 				reset: async () => {
 					docs = DOCS.map(d => ({ ...d }));
@@ -431,7 +510,7 @@ export function createLab(
 			docs = DOCS.map(d => ({ ...d }));
 			await isolated.clear();
 			// SDK 拒绝了这个配置 —— 这本身就是有效结果，如实报出来
-			return { rejected: true, reason: String(err instanceof Error ? err.message : err), rows: [], total: 0, falseHit: 0, missed: 0 };
+			return { rejected: true, reason: String(err instanceof Error ? err.message : err), rows: [], total: 0, falseHit: 0, missed: 0, movedOut: 0 };
 		}
 		// 只还原语料版本。手动缓存不归这里管
 		docs = DOCS.map(d => ({ ...d }));
@@ -439,22 +518,85 @@ export function createLab(
 		await isolated.clear();
 
 		const byKey = new Map(SCENARIOS.map(s => [s.key, s]));
+
+		/**
+		 * 「已移交」的那些，再按它该归属的配置跑一遍。
+		 *
+		 * 按配置分组一次跑完，而不是一条一条建缓存：同一个 override 下的几条本来就
+		 * 共享一份配置，分开跑只是多建几次缓存。跑不起来（比如那个配置被 SDK 拒了）
+		 * 不该让整份报告失败 —— 那一列留空，主结果照常出。
+		 */
+		const covered = new Map<string, LabCoveredUnder>();
+		const moved = SCENARIOS.filter(s => s.nowHandledBy !== undefined);
+		for (const mode of ["user-scope", "unit-scope"] as const) {
+			const group = moved.filter(s => s.nowHandledBy === mode);
+			if (group.length === 0) continue;
+			const alt: LabConfig = { ...cfg, ...COVERAGE[mode].override };
+			const altStore = createMemoryCacheStore();
+			try {
+				const altCache = build(alt, altStore);
+				const altReport = await evaluate(
+					altCache,
+					group.map((s: LabScenario) => ({
+						key: s.key,
+						label: s.label,
+						expectSpace: spaceOf(s.seed, alt),
+						seed: toRequest(s.seed, alt),
+						probe: toRequest(s.probe, alt),
+						between: s.bumpCorpus ? () => revise(altCache, s, alt) : undefined,
+					})),
+					(p, c) => generator.generate(p, c),
+					{
+						reset: async () => {
+							docs = DOCS.map(d => ({ ...d }));
+							await altStore.clear();
+						},
+						warm: async (c, g) => {
+							for (const t of DISTRACTORS) await c.resolve(toRequest({ text: t, user: "warm" }, alt), g);
+						},
+					},
+				);
+				for (const r of altReport.rows) {
+					covered.set(r.key, {
+						config: COVERAGE[mode].config,
+						ok: r.ok,
+						got: r.outcome === "generated" ? "regenerate" : "reuse",
+						space: r.actualSpace,
+						exitedAt: r.exitedAt,
+					});
+				}
+			} catch {
+				// 那个配置本身被拒（例如脱敏 × 共享 scope）—— 主结果照常返回，这一列空着
+			} finally {
+				docs = DOCS.map(d => ({ ...d }));
+				await altStore.clear();
+			}
+		}
+
+		const rows = report.rows.map(r => ({
+			/** 假命中的判据用 SDK 那一份 —— 重算一遍就得自己记住 bypassed 不算复用 */
+			falseHit: r.falseHit,
+			key: r.key,
+			label: r.label,
+			note: byKey.get(r.key)?.note ?? "",
+			caveat: byKey.get(r.key)?.caveat ?? null,
+			nowHandledBy: byKey.get(r.key)?.nowHandledBy ?? null,
+			coveredUnder: covered.get(r.key) ?? null,
+			ok: r.ok,
+			got: (r.outcome === "generated" ? "regenerate" : "reuse") as "reuse" | "regenerate",
+			space: r.actualSpace,
+			expectSpace: r.expectSpace,
+			exitedAt: r.exitedAt,
+		}));
+
+		// 已移交的不计入假命中/漏命中 —— 它们测的是一道已经不存在的闸
+		const counted = rows.filter(r => r.nowHandledBy === null);
 		return {
-			rows: report.rows.map(r => ({
-				key: r.key,
-				label: r.label,
-				note: byKey.get(r.key)?.note ?? "",
-				caveat: byKey.get(r.key)?.caveat ?? null,
-				ok: r.ok,
-				got: r.outcome === "generated" ? "regenerate" : "reuse",
-				primarySource: r.primarySource,
-				basedOn: r.actualSourceIds,
-				expectDoc: r.expectSourceId,
-				exitedAt: r.exitedAt,
-			})),
+			rows,
 			total: report.total,
-			falseHit: report.falseHits,
-			missed: report.total - report.passed - report.falseHits,
+			falseHit: counted.filter(r => r.falseHit).length,
+			missed: counted.filter(r => !r.ok && !r.falseHit).length,
+			movedOut: rows.length - counted.length,
 		};
 	}
 
@@ -464,16 +606,46 @@ export function createLab(
 	 * 先前这是浏览器端的四次调用（reset → ask → bump → ask），第一步就把手动
 	 * 缓存清了。挪到服务端一次做完，手动那边什么都不会少。
 	 */
-	async function scenario(key: string, override?: Partial<LabConfig>): Promise<LabResult | null> {
+	async function scenario(key: string, override?: Partial<LabConfig>): Promise<LabScenarioResult | null> {
 		const sc = SCENARIOS.find(s => s.key === key);
 		if (!sc) return null;
 		const cfg: LabConfig = { ...defaults, ...override };
+		const main = await replay(sc, cfg);
+
+		/**
+		 * 「已移交」的场景再跑一遍它该归属的那个配置。
+		 *
+		 * 这一条是给点开这条场景的人看的：它现在会命中，而页面必须当场回答「那谁来管」。
+		 * 只讲不跑的话，DESIGN 里「代价由隔离边界来付」就只是一句声明。
+		 */
+		if (sc.nowHandledBy === undefined) return { ...main, handedTo: null };
+		const plan = COVERAGE[sc.nowHandledBy];
+		try {
+			const alt = await replay(sc, { ...cfg, ...plan.override });
+			return {
+				...main,
+				handedTo: {
+					config: plan.config,
+					decision: alt.decision,
+					space: alt.space,
+					exitedAt: alt.exitedAt,
+					outcome: alt.outcome,
+				},
+			};
+		} catch (err) {
+			// 那个配置被 SDK 拒了也是有效结果，如实说，别让整条场景变成 500
+			return { ...main, handedTo: { config: plan.config, rejected: String(err instanceof Error ? err.message : err) } };
+		}
+	}
+
+	/** 播种 →（可选改版）→ 探测，跑在一份一次性缓存上。 */
+	async function replay(sc: LabScenario, cfg: LabConfig): Promise<LabResult> {
 		const isolated = createMemoryCacheStore();
 		const cache = build(cfg, isolated);
 		const snapshot = docs.map(d => ({ ...d }));
 		try {
 			await cache.resolve(toRequest(sc.seed, cfg), (p, c) => generator.generate(p, c));
-			if (sc.bumpCorpus) bumpCorpus();
+			if (sc.bumpCorpus) await revise(cache, sc, cfg);
 			return await runOn(cache, sc.probe, cfg);
 		} finally {
 			docs = snapshot;

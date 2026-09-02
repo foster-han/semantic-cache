@@ -1,87 +1,68 @@
 /**
- * 写入路径与存储契约。
+ * The write path and the store contract.
  *
- * 「什么不写」和「写进去还能不能读回来」是这一层的全部 —— 而这两件事出错都不报错：
- * 没有依据的答案会稳稳顶掉一条好缓存；同 (scope, hash) 取哪一条不确定的话，
- * 换个存储后端 ② 命中的就是另一个答案。
+ * What is refused, and whether what was stored reads back, is all there is at this layer — and
+ * both fail silently: if which row wins for the same (scope, hash) is undefined, ② hits a
+ * different answer on a different store backend.
  */
-import { strict as assert } from "node:assert";
-import { test } from "node:test";
+
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
 import type { CacheEntry } from "../src/types/CacheStore.ts";
 import type { CachedPayload } from "../src/types/Pipeline.ts";
 import { harness } from "./Fakes.ts";
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
 
 const P = { matchText: "什么是过拟合？", retrievalText: "什么是过拟合？", context: {} };
 
-test("没有任何资料依据的 answer 不写入 —— 否则它会顶掉那条本来好好的旧缓存", async () => {
-	const { cache, store } = harness();
-	const result = await cache.resolve(P, async () => ({ kind: "answer", answer: "查不到资料", sourceIds: [] }));
+/**
+ * **This used to be refused.** While entries recorded which documents they cited, an answer citing
+ * nothing was out of reach of both ⑤ and `invalidateSource`, so a retrieval outage would generate
+ * one and it would reliably displace a perfectly good older entry — `cacheable()` therefore turned
+ * it away. The source dimension is gone, every entry is invalidated the same way (`clear()` on its
+ * space), and there is no longer a category of entry that invalidation cannot reach. So the guard
+ * had nothing left to discriminate on and went with it.
+ *
+ * The cost is real and worth naming: a retrieval outage now writes its content-free answers into
+ * the cache, and they live until the TTL expires or the space is cleared. `CachePolicy.noStore` is
+ * the place to keep them out — the caller can see the outage, the library cannot.
+ */
+test("an answer with no retrieved chunks behind it is written like any other", async () => {
+	const { cache, store } = harness({ retrieve: () => [] });
+	const result = await cache.resolve(P, async () => ({ kind: "answer", answer: "查不到资料" }));
 	assert.equal(result.outcome, "generated");
-	assert.equal(result.entryId, null);
-	assert.equal((await store.all()).length, 0);
-	assert.match(result.trace.at(-1)?.detail ?? "", /不写入缓存/u);
+	assert.equal(result.entryId, (await store.all())[0].id);
 });
 
-test("plan 条目本来就没有 sourceIds，照写", async () => {
+test("plan entries are written like answer entries", async () => {
 	const { cache, store } = harness();
 	const result = await cache.resolve(P, async () => ({ kind: "plan", plan: { tool: "t" } }));
 	assert.equal(result.entryId, (await store.all())[0].id);
 });
 
-test("writeMany 是一次批量编码，不是 N 次单条调用", async () => {
+test("writeMany is one batch embedding, not N single calls", async () => {
 	const { cache, counts, store } = harness();
 	const items = ["问题 1", "问题 2", "问题 3"].map(q => ({
 		prompt: { matchText: q, retrievalText: q, context: {} },
-		payload: { kind: "answer" as const, answer: `${q} 的答案`, sourceIds: ["n1"] },
+		payload: { kind: "answer" as const, answer: `${q} 的答案` },
 	}));
 	await cache.writeMany(items);
 	assert.equal((await store.all()).length, 3);
 	assert.equal(counts.questions, 1, "三条的召回向量应当一次编完");
 });
 
-test("writeMany 的版本指纹按 sourceIds 去重 —— 批量回填常常整批共用一组资料", async () => {
-	let calls = 0;
-	const seen: Array<string> = [];
-	const { cache } = harness({
-		sourceVersion: ids => {
-			calls += 1;
-			seen.push(ids.join(","));
-			return `v-${ids.join(",")}`;
-		},
-	});
-	const written = await cache.writeMany(
-		[
-			{ q: "问题 1", src: ["n1", "n2"] },
-			{ q: "问题 2", src: ["n1", "n2"] },
-			{ q: "问题 3", src: ["n1", "n2"] },
-			{ q: "问题 4", src: ["n9"] },
-		].map(x => ({
-			prompt: { matchText: x.q, retrievalText: x.q, context: {} },
-			payload: { kind: "answer" as const, answer: "a", sourceIds: x.src },
-		})),
-	);
-	assert.equal(calls, 2, "两组不同的 sourceIds，就该只调两次");
-	assert.deepEqual(seen.sort(), ["n1,n2", "n9"]);
-	// 去重不能把指纹弄串：每条要拿到自己那一组的值
-	assert.deepEqual(
-		written.map(e => e.sourceVersion),
-		["v-n1,n2", "v-n1,n2", "v-n1,n2", "v-n9"],
-	);
-});
-
-test("per-entry ttlMs 覆盖全局；null 表示不过期", async () => {
+test("a per-entry ttlMs overrides the global one; null means it never expires", async () => {
 	const clock = { t: 1_000 };
 	const { cache, store } = harness({ ttlMs: 60_000, now: () => clock.t });
-	const short = await cache.write(P, { kind: "answer", answer: "短", sourceIds: ["n1"] }, { ttlMs: 10 });
+	const short = await cache.write(P, { kind: "answer", answer: "短" }, { ttlMs: 10 });
 	const forever = await cache.write(
 		{ matchText: "另一问", retrievalText: "另一问", context: {} },
-		{ kind: "answer", answer: "长", sourceIds: ["n1"] },
+		{ kind: "answer", answer: "长" },
 		{ ttlMs: null },
 	);
 	const global = await cache.write(
 		{ matchText: "第三问", retrievalText: "第三问", context: {} },
-		{ kind: "answer", answer: "默认", sourceIds: ["n1"] },
+		{ kind: "answer", answer: "默认" },
 	);
 	assert.equal(short.expiresAt, 1_010);
 	assert.equal(forever.expiresAt, null);
@@ -95,7 +76,7 @@ test("per-entry ttlMs 覆盖全局；null 表示不过期", async () => {
 	assert.equal((await store.all()).length, 2);
 });
 
-test("同 (scope, matchHash) 有多条时取最新 —— 同毫秒则取 id 大的", async () => {
+test("with several rows for the same (scope, matchHash) the newest wins — within the same millisecond, the larger id", async () => {
 	const store = createMemoryCacheStore({ now: () => 5_000 });
 	const base: Omit<CacheEntry, "id" | "createdAt"> = {
 		scope: "course:1",
@@ -105,8 +86,6 @@ test("同 (scope, matchHash) 有多条时取最新 —— 同毫秒则取 id 大
 		kind: "answer",
 		answer: "",
 		plan: {},
-		sourceIds: ["n1"],
-		sourceVersion: "v1",
 		expiresAt: null,
 	};
 	await store.put({ ...base, id: "a", createdAt: 1_000, answer: "旧" });
@@ -118,11 +97,15 @@ test("同 (scope, matchHash) 有多条时取最新 —— 同毫秒则取 id 大
 	await store.put({ ...base, id: "zzz", createdAt: 1_000, answer: "同毫秒 大 id" });
 	assert.equal((await store.getByHash("course:1", "h"))?.answer, "同毫秒 大 id");
 
-	// id 重复必须抛错：静默丢弃会让一条缓存凭空消失，覆盖则会改写别的进程写的内容
-	await assert.rejects(store.put({ ...base, id: "zzz", createdAt: 9_000 }), /id 重复/u);
+	// A duplicate id has to throw: dropping it silently makes an entry vanish, and overwriting
+	// rewrites what another process wrote.
+	await assert.rejects(
+		store.put({ ...base, id: "zzz", createdAt: 9_000 }),
+		/[Dd]uplicate (cache entry|document) id/u,
+	);
 });
 
-test("all() 按 createdAt 升序、同毫秒按 id —— 三种后端必须给同一个顺序", async () => {
+test("all() orders by createdAt ascending and by id within the same millisecond — all three backends must agree on the order", async () => {
 	const store = createMemoryCacheStore();
 	const base: Omit<CacheEntry, "id" | "createdAt" | "matchHash"> = {
 		scope: "course:1",
@@ -131,24 +114,25 @@ test("all() 按 createdAt 升序、同毫秒按 id —— 三种后端必须给�
 		kind: "answer",
 		answer: "a",
 		plan: {},
-		sourceIds: ["n1"],
-		sourceVersion: "v1",
 		expiresAt: null,
 	};
-	// 故意最后写入 createdAt 最早的那条 —— 插入顺序与契约顺序在这里分叉
+	// The oldest createdAt is written last on purpose, so insertion order and contract order diverge.
 	await store.put({ ...base, id: "b", matchHash: "h1", createdAt: 2_000 });
 	await store.put({ ...base, id: "zzz", matchHash: "h2", createdAt: 3_000 });
 	await store.put({ ...base, id: "mmm", matchHash: "h3", createdAt: 3_000 });
 	await store.put({ ...base, id: "a", matchHash: "h4", createdAt: 1_000 });
-	assert.deepEqual((await store.all()).map(e => e.id), ["a", "b", "mmm", "zzz"]);
+	assert.deepEqual(
+		(await store.all()).map(e => e.id),
+		["a", "b", "mmm", "zzz"],
+	);
 });
 
-test("singleFlight：并发的同一个问题只生成一次；关掉后各自生成", async () => {
+test("singleFlight: the same question asked concurrently generates once; with it off each generates on its own", async () => {
 	let calls = 0;
 	const slow = async (): Promise<CachedPayload> => {
 		calls += 1;
 		await new Promise(r => setTimeout(r, 5));
-		return { kind: "answer", answer: "A", sourceIds: ["n1"] };
+		return { kind: "answer", answer: "A" };
 	};
 	const merged = harness();
 	await Promise.all([merged.cache.resolve(P, slow), merged.cache.resolve(P, slow), merged.cache.resolve(P, slow)]);
@@ -161,15 +145,16 @@ test("singleFlight：并发的同一个问题只生成一次；关掉后各自�
 	assert.equal(calls, 2);
 });
 
-test("合流键里必须带 retrievalText —— 否则等于亲手制造占位符塌陷", async () => {
+test("the merge key must include retrievalText — otherwise you are hand-building a placeholder collapse", async () => {
 	let calls = 0;
 	const slow = async (): Promise<CachedPayload> => {
 		calls += 1;
 		await new Promise(r => setTimeout(r, 5));
-		return { kind: "answer", answer: "A", sourceIds: ["n1"] };
+		return { kind: "answer", answer: "A" };
 	};
 	const { cache } = harness({ scope: () => ({ key: "user:x", shared: false, org: "org:1" }) });
-	// 匿名化之后两个学生的 matchText 完全相同，实体只在 retrievalText 里
+	// After anonymisation the two students share an identical matchText; the entities live only in
+	// retrievalText.
 	await Promise.all([
 		cache.resolve({ matchText: "<PERSON_1> 的分数", retrievalText: "张三的分数", context: {} }, slow),
 		cache.resolve({ matchText: "<PERSON_1> 的分数", retrievalText: "李四的分数", context: {} }, slow),
@@ -177,28 +162,36 @@ test("合流键里必须带 retrievalText —— 否则等于亲手制造占位�
 	assert.equal(calls, 2, "这两个请求不是同一个问题，不能合流");
 });
 
-test("失效：evict 收数组、clear 按 scope、invalidateSource 按资料 id", async () => {
-	const { cache, store } = harness({ scope: prompt => ({ key: `course:${prompt.context.courseId ?? "-"}`, shared: true, org: "org:1" }) });
+/**
+ * `clear()` by space is the **only** bulk invalidation left. `invalidateSource(id)` used to sit
+ * beside it and delete every entry citing one document; per-document association is gone, so the
+ * whole space is the unit.
+ */
+test("invalidation: evict takes an array, clear works by space", async () => {
+	const { cache, store } = harness({
+		scope: prompt => ({ key: `course:${prompt.context.courseId ?? "-"}`, shared: true, org: "org:1" }),
+	});
 	const written = await cache.writeMany(
 		[
-			{ q: "问题 1", src: ["n1"], course: "1" },
-			{ q: "问题 2", src: ["n1", "n2"], course: "1" },
-			{ q: "问题 3", src: ["n2"], course: "2" },
+			{ q: "问题 1", course: "1" },
+			{ q: "问题 2", course: "1" },
+			{ q: "问题 3", course: "2" },
 		].map(x => ({
 			prompt: { matchText: x.q, retrievalText: x.q, context: { courseId: x.course } },
-			payload: { kind: "answer" as const, answer: "a", sourceIds: x.src },
+			payload: { kind: "answer" as const, answer: "a" },
 		})),
 	);
-	assert.equal(await cache.invalidateSource("n1"), 2, "引用过这篇资料的都该失效");
+	// clear takes { org, key } and the library does the joining — passing a string was the old
+	// spelling that deleted zero rows without complaint.
+	assert.equal(await cache.clear({ org: "org:1", key: "course:1" }), 2, "同一个 space 里的两条一起清掉");
 	assert.equal((await store.all()).length, 1);
-	// clear 收 { org, key }，拼接由库做 —— 传字符串是先前那种「删 0 条不报错」的写法
 	assert.equal(await cache.clear({ org: "org:1", key: "course:2" }), 1);
 	assert.equal((await store.all()).length, 0);
 
 	await cache.writeMany(
 		["问题 4", "问题 5"].map(q => ({
 			prompt: { matchText: q, retrievalText: q, context: { courseId: "1" } },
-			payload: { kind: "answer" as const, answer: "a", sourceIds: ["n9"] },
+			payload: { kind: "answer" as const, answer: "a" },
 		})),
 	);
 	await cache.evict((await store.all()).map(e => e.id));

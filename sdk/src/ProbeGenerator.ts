@@ -1,4 +1,3 @@
-import { hashKey } from "./VectorMath.ts";
 import type {
 	GeneratedProbe,
 	ProbeGenerationOptions,
@@ -7,47 +6,57 @@ import type {
 	ProbeTier,
 	QuestionPhrasing,
 } from "./types/ProbeGeneration.ts";
+import { hashKey } from "./VectorMath.ts";
 
 /**
- * 从上传的课程资料生成判别力探针。
+ * Generates discrimination probes from uploaded course material.
  *
- * 三条规则决定了这里的所有取舍：
+ * Three rules drive every trade-off here:
  *
- * 1. **难负例来自同一单元。**`L1 正则化` 与 `L2 正则化` 词汇几乎全重叠、意思不同，
- *    双编码器在这一类上本来就分不开。跨单元的对子容易得多，混在一起会把 margin
- *    撑得虚宽 —— 所以按档分开，报告也按档给。
- * 2. **正例不能靠模板造。**「什么是 X」和「X 是什么意思」在字面上几乎相同，任何
- *    编码器都能过，标出来的 margin 是假的。所以没有改写来源时**不造正例**，
- *    并在报告里说清楚这组探针只能检出一半的问题。
- * 3. **取样必须确定。**同一批资料跑两次要得到同一组探针，否则「这个阈值标在什么
- *    上面」这句话就没有意义。所以按内容哈希排序取前 N，不用随机数。
+ * 1. **Hard negatives come from the same unit.** `L1 regularization` and `L2 regularization` share
+ *    almost all their vocabulary and differ in meaning; a bi-encoder cannot separate that class to
+ *    begin with. Cross-unit pairs are far easier, and mixing them in stretches the margin falsely
+ *    wide — so they are kept in separate tiers, and the report is given per tier.
+ * 2. **Positives cannot be templated.** "What is X" and "what does X mean" are nearly identical on
+ *    the surface, any encoder clears them, and the resulting margin is fake. So with no paraphrase
+ *    source, **no positives are generated**, and the report says plainly that this probe set can
+ *    only detect half the problem.
+ * 3. **Sampling must be deterministic.** Running twice over the same material has to produce the
+ *    same probes, or "what were these thresholds calibrated on" means nothing. So the top N are
+ *    taken by content-hash order, with no randomness.
  */
 
 const DEFAULT_LIMITS: Readonly<Record<ProbeTier, number>> = {
-	// 天花板检查，两对足够 —— 它不该有信息量，有就是模型坏了
+	// A ceiling check; two pairs suffice — it should carry no information, and if it does the model
+	// is broken.
 	identical: 2,
 	paraphrase: 12,
-	// 这个场景真正的危险来源，给最多的额度
+	// The real source of danger in this scenario, so it gets the largest quota.
 	sibling: 20,
 	distant: 8,
 };
 
 /**
- * 按内容哈希稳定排序后取前 `limit` 条。**同一批资料必然得到同一组输出，与实参
- * 顺序无关** —— 调用方那边先按 id 定了序，理由见 `generateProbes` 里那段注释。
+ * Take the first `limit` items after a stable sort by content hash. **The same material necessarily
+ * yields the same output, independently of argument order** — the caller has already fixed an order
+ * by id; see the comment inside `generateProbes` for why.
  *
- * **`key` 的分隔符必须是文本里不可能出现的字符。**用 `|` 拼的话，
- * `(a="x|y", b="z")` 和 `(a="x", b="y|z")` 会算出同一个排序键 —— 结果**仍然**
- * 确定（JS 的 `Array.sort` 自 ES2019 起是稳定的，同键项保持原有相对次序），
- * 但那是在拿一个语言版本的保证去兜一个本可以直接消除的歧义。
+ * **The `key` separator must be a character that cannot occur in the text.** Joined with `|`,
+ * `(a="x|y", b="z")` and `(a="x", b="y|z")` compute the same sort key. The result would **still** be
+ * deterministic (JS's `Array.sort` has been stable since ES2019, so equal keys keep their relative
+ * order), but that leans on a language-version guarantee to paper over an ambiguity that can simply
+ * be removed.
  *
- * 同一条「字段拼成一个键」的问题在别处后果重得多：`flightKey` 上是错答案、
- * `composeScope` 上是跨租户读串。**两边的解法不同**，而且是有意的 —— `flightKey`
- * 只活在进程内，用 `\u0000` 分隔最省；`composeScope` 要存进库、要人读，所以走转义。
- * 这里跟 `flightKey` 同类，用前者。
+ * The same "join fields into one key" problem has far heavier consequences elsewhere: on
+ * `flightKey` it is a wrong answer, on `composeScope` it is a cross-tenant read. **The two are
+ * solved differently, deliberately** — `flightKey` lives only in-process, so a `\u0000` separator is
+ * the cheapest thing that works; `composeScope` is stored and read by humans, so it escapes
+ * instead. This is the `flightKey` kind, and uses the former.
  */
 function takeStable<T>(items: ReadonlyArray<T>, limit: number, key: (item: T) => string): Array<T> {
-	if (items.length <= limit) return [...items];
+	if (items.length <= limit) {
+		return [...items];
+	}
 	return items
 		.map(item => ({ item, order: hashKey(key(item)) }))
 		.sort((x, y) => (x.order < y.order ? -1 : x.order > y.order ? 1 : 0))
@@ -56,11 +65,12 @@ function takeStable<T>(items: ReadonlyArray<T>, limit: number, key: (item: T) =>
 }
 
 /**
- * 收集每篇资料的问法。
+ * Collects the phrasings for each document.
  *
- * 顺序是：调用方给的 `questions` 优先（老师的 FAQ、历史提问日志都比现生成的准），
- * 不够再用 `phrasing` 补。**`phrasing` 抛错就让它抛** —— 一门课少了几个概念的改写，
- * 标出来的探针就偏，而这件事从结果上看不出来。重试策略是调用方的事。
+ * The order is: the caller's `questions` first (a teacher's FAQ or a log of past questions both beat
+ * anything generated on the spot), topped up from `phrasing` when there are not enough. **Let
+ * `phrasing` throw if it throws** — a course missing paraphrases for a few concepts produces skewed
+ * probes, and that is not visible in the result. Retry policy is the caller's business.
  */
 async function collectQuestions(
 	sources: ReadonlyArray<ProbeSource>,
@@ -75,12 +85,15 @@ async function collectQuestions(
 			continue;
 		}
 		const generated = await phrasing(source.title, perConcept - given.length, source);
-		byDoc.set(source.id, [...new Set([...given, ...generated])].filter(q => q.trim() !== ""));
+		byDoc.set(
+			source.id,
+			[...new Set([...given, ...generated])].filter(q => q.trim() !== ""),
+		);
 	}
 	return byDoc;
 }
 
-/** 造负例时用的那一句。没有问法就退回标题 —— 只对负例成立，正例不走这条路。 */
+/** The sentence used to build a negative. With no phrasings it falls back to the title — valid for negatives only; positives never take this path. */
 function negativeText(source: ProbeSource, questions: ReadonlyArray<string>): string {
 	return questions[0] ?? source.title;
 }
@@ -90,26 +103,35 @@ export async function generateProbes(
 	options: ProbeGenerationOptions = {},
 ): Promise<ProbeGenerationReport> {
 	if (sources.length < 2) {
-		throw new Error(`探针生成至少需要两篇资料，收到 ${sources.length} 篇 —— 一篇资料造不出任何负例对。`);
+		throw new Error(
+			`Probe generation needs at least two documents, received ${sources.length} — a single document cannot form any negative pair.`,
+		);
 	}
 	const duplicated = sources.length - new Set(sources.map(s => s.id)).size;
 	if (duplicated > 0) {
-		throw new Error(`资料 id 有 ${duplicated} 个重复。id 是探针里 aDoc/bDoc 的指向，重复会让 ④ 的问↔答自检取到错的答案。`);
+		throw new Error(
+			`${duplicated} duplicate document id(s). Ids are what a probe's aDoc/bDoc point at, and duplicates make gate ④'s question-to-answer self-check fetch the wrong answer.`,
+		);
 	}
 
 	const perConcept = options.phrasingsPerConcept ?? 2;
 	if (perConcept < 2) {
-		throw new Error(`phrasingsPerConcept=${perConcept} 造不出正例：一个概念至少要两种问法，才谈得上「同一件事的不同说法」。`);
+		throw new Error(
+			`phrasingsPerConcept=${perConcept} cannot produce a positive: one concept needs at least two phrasings before "the same thing said differently" means anything.`,
+		);
 	}
 	const limits = { ...DEFAULT_LIMITS, ...options.limits };
 	/**
-	 * **先按 id 定序，再往下生成。**
+	 * **Fix an order by id first, then generate.**
 	 *
-	 * 负例对是 `i < j` 两两配出来的，所以实参顺序决定了同一对里谁是 `a` 谁是 `b` ——
-	 * 而 `takeStable` 的排序键就是 `[tier, a, b]`。同一批资料换个上传顺序，键就全变了，
-	 * 选出来的探针是**另一组**（8 篇同章资料、额度 20：正序与逆序选出的 20 对几乎不重叠）。
-	 * 于是「同一批输入必然得到同一组输出」只在数组逐位相同时成立，而标定跑的就是这组
-	 * 探针 —— 阈值会跟着上传顺序漂。id 唯一性上面已经查过，所以这个序是全序。
+	 * Negative pairs are formed as `i < j`, so argument order decides which of a pair is `a` and
+	 * which is `b` — and `takeStable`'s sort key is `[tier, a, b]`. Upload the same material in a
+	 * different order and every key changes, selecting **a different set** of probes (with 8
+	 * same-chapter documents and a quota of 20, forward and reverse order select 20 pairs that
+	 * barely overlap). "The same input necessarily yields the same output" would then hold only when
+	 * the arrays match element for element — while calibration runs on exactly this probe set, so
+	 * the thresholds would drift with upload order. Id uniqueness was checked above, so this is a
+	 * total order.
 	 */
 	const ordered = [...sources].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 	const questions = await collectQuestions(ordered, options.phrasing, perConcept);
@@ -120,7 +142,7 @@ export async function generateProbes(
 		const phrasings = questions.get(source.id) ?? [];
 		if (phrasings.length >= 1) {
 			identical.push({
-				label: `逐字相同 · ${source.title}`,
+				label: `identical · ${source.title}`,
 				a: phrasings[0],
 				b: phrasings[0],
 				shouldMatch: true,
@@ -129,10 +151,11 @@ export async function generateProbes(
 				bDoc: source.id,
 			});
 		}
-		// 正例只从真实存在的两种问法来。凑不出两条就没有这一对，不用模板补
+		// Positives come only from two phrasings that genuinely exist. Fewer than two means no pair;
+		// nothing is filled in from a template.
 		for (let i = 1; i < phrasings.length; i++) {
 			paraphrase.push({
-				label: `同义改写 · ${source.title}`,
+				label: `paraphrase · ${source.title}`,
 				a: phrasings[0],
 				b: phrasings[i],
 				shouldMatch: true,
@@ -150,7 +173,7 @@ export async function generateProbes(
 			const [left, right] = [ordered[i], ordered[j]];
 			const sameUnit = left.unit === right.unit;
 			const probe: GeneratedProbe = {
-				label: `${sameUnit ? "同章不同概念" : "跨章"} · ${left.title} ／ ${right.title}`,
+				label: `${sameUnit ? "same unit, different concept" : "different unit"} · ${left.title} / ${right.title}`,
 				a: negativeText(left, questions.get(left.id) ?? []),
 				b: negativeText(right, questions.get(right.id) ?? []),
 				shouldMatch: false,
@@ -181,34 +204,36 @@ export async function generateProbes(
 	const warnings: Array<string> = [];
 	if (counts.paraphrase === 0) {
 		warnings.push(
-			"一条正例都没有：既没给 questions（每篇两条以上），也没接 phrasing。" +
-				"这组探针只能检出「负例分不开」（假命中的来源），检不出「正例被误拒」（命中率白掉的来源）—— " +
-				"拿它标出来的闸只会越标越严。",
+			"Not a single positive: neither `questions` (two or more per document) nor a `phrasing` hook was supplied. " +
+				'This probe set can only detect "negatives are not separable" (the source of false hits), not "positives are wrongly refused" (the source of hit rate thrown away) — ' +
+				"a gate calibrated on it only ever gets stricter.",
 		);
 	}
 	const titleFallback = sources.filter(s => (questions.get(s.id) ?? []).length === 0).length;
 	if (titleFallback > 0) {
 		warnings.push(
-			`${titleFallback}/${sources.length} 篇资料没有问法，负例那一侧退回用标题当问句。` +
-				"标题和学生真会打出来的句子不是同一个分布，这批对子的分数偏乐观。",
+			`${titleFallback}/${sources.length} documents have no phrasings, so the negative side falls back to using the title as the question. ` +
+				"Titles and the sentences students actually type are not the same distribution, so these pairs score optimistically.",
 		);
 	}
 	if (counts.sibling === 0) {
 		warnings.push(
-			"没有同章负例：所有资料的 unit 互不相同，或只有一篇。" +
-				"难负例（同章相邻概念）恰好是这个场景假命中的主要来源，缺了它 margin 会虚宽。",
+			"No same-unit negatives: every document has a distinct unit, or there is only one. " +
+				"Hard negatives (adjacent concepts within a unit) are the main source of false hits in this scenario, and without them the margin is falsely wide.",
 		);
 	}
 	const units = new Set(sources.map(s => s.unit)).size;
 	if (units === 1) {
-		warnings.push("所有资料同属一个 unit，没有跨章负例 —— 无法判断 margin 里有多少来自容易那一档。");
+		warnings.push(
+			"Every document belongs to one unit, so there are no cross-unit negatives — there is no way to tell how much of the margin comes from the easy tier.",
+		);
 	}
 
 	const calibratedOn =
-		`自动探针 · ${sources.length} 篇资料 / ${units} 个单元 · ` +
-		`${counts.identical + counts.paraphrase} 正例（逐字 ${counts.identical}、改写 ${counts.paraphrase}）+ ` +
-		`${counts.sibling + counts.distant} 负例（同章 ${counts.sibling}、跨章 ${counts.distant}）` +
-		(warnings.length > 0 ? ` · ⚠ ${warnings.length} 条告警` : "");
+		`auto probes · ${sources.length} documents / ${units} units · ` +
+		`${counts.identical + counts.paraphrase} positives (identical ${counts.identical}, paraphrase ${counts.paraphrase}) + ` +
+		`${counts.sibling + counts.distant} negatives (same unit ${counts.sibling}, cross unit ${counts.distant})` +
+		(warnings.length > 0 ? ` · ⚠ ${warnings.length} warning(s)` : "");
 
 	return {
 		probes: [...chosen.identical, ...chosen.paraphrase, ...chosen.sibling, ...chosen.distant],

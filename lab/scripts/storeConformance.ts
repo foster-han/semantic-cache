@@ -1,8 +1,8 @@
 /**
  * 存储接口一致性。
  *
- * `compareStores.ts` 比的是端到端结论，走的只有 `resolve` 那条路，`getById` 和
- * `evictBySource` 根本碰不到。这里直接对着 `InspectableCacheStore` 的十个方法（热路径 8 个 + `all` / `clear`）跑同一串操作，
+ * `compareStores.ts` 比的是端到端结论，走的只有 `resolve` 那条路，`getById`、`clearScope`、
+ * `purgeExpired` 根本碰不到。这里直接对着 `InspectableCacheStore` 的每一个方法跑同一串操作，
  * 两种后端的可观察结果必须逐项相同。
  *
  * 重点覆盖三处容易在真库上写错、而内存实现天然不会错的地方：
@@ -21,7 +21,7 @@ function vec(seed: number): Array<number> {
 	return Array.from({ length: DIM }, (_, i) => Math.sin(seed * (i + 1)));
 }
 
-function entry(id: string, scope: string, hash: string, seed: number, sources: Array<string>, expiresAt: number | null): CacheEntry {
+function entry(id: string, scope: string, hash: string, seed: number, expiresAt: number | null): CacheEntry {
 	return {
 		id,
 		scope,
@@ -31,8 +31,6 @@ function entry(id: string, scope: string, hash: string, seed: number, sources: A
 		kind: "answer",
 		answer: `答案 ${id}`,
 		plan: {},
-		sourceIds: sources,
-		sourceVersion: sources.map(s => `${s}v1`).join(","),
 		createdAt: 1_000 + seed,
 		expiresAt,
 		meta: { note: `m${id}` },
@@ -40,13 +38,12 @@ function entry(id: string, scope: string, hash: string, seed: number, sources: A
 }
 
 /**
- * plan 条目：**没有答案向量、没有 sourceIds、没有 meta。**
+ * plan 条目：**答案是空串、没有 meta。**
  *
- * 这一支最容易在真库上分叉，因为三种后端对「空」的落法完全不同：pgvector 存不了
- * 0 维向量所以落 NULL、Redis 落字符串 `"[]"`、内存就是空数组；`meta: undefined`
- * 那边同理（NULL / 空串 / undefined）。往返回来必须都是同一个形状，否则
- * 「换存储不改判定」在 plan 这一支就是空话 —— 而 `compareStores.ts` 走的场景集
- * 全是 answer，永远碰不到它。
+ * 这一支最容易在真库上分叉，因为三种后端对「空」的落法完全不同：`meta: undefined`
+ * 在 pgvector 是 NULL、在 Redis 是空串、在内存就是 undefined。往返回来必须都是同一个
+ * 形状，否则「换存储不改判定」在 plan 这一支就是空话 —— 而 `compareStores.ts` 走的
+ * 场景集全是 answer，永远碰不到它。
  */
 function planEntry(id: string, scope: string, hash: string, seed: number): CacheEntry {
 	return {
@@ -58,8 +55,6 @@ function planEntry(id: string, scope: string, hash: string, seed: number): Cache
 		kind: "plan",
 		answer: "",
 		plan: { tool: "getGrade", assignment: "2" },
-		sourceIds: [],
-		sourceVersion: "",
 		createdAt: 1_000 + seed,
 		expiresAt: null,
 	};
@@ -70,11 +65,11 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	const out: Array<string> = [];
 	await store.clear();
 
-	await store.put(entry("a", "course:1", "h-a", 1, ["n1"], null));
-	await store.put(entry("b", "course:1", "h-b", 2, ["n1", "n2"], null));
-	await store.put(entry("c", "course:2", "h-a", 3, ["n1"], null));
+	await store.put(entry("a", "course:1", "h-a", 1, null));
+	await store.put(entry("b", "course:1", "h-b", 2, null));
+	await store.put(entry("c", "course:2", "h-a", 3, null));
 	// 已过期：任何读路径都不该看见它，但 all() 要看得见
-	await store.put(entry("d", "course:1", "h-d", 4, ["n3"], now() - 1));
+	await store.put(entry("d", "course:1", "h-d", 4, now() - 1));
 
 	out.push(`all=${(await store.all()).map(e => e.id).join(",")}`);
 	out.push(`byHash(course:1,h-a)=${(await store.getByHash("course:1", "h-a"))?.id ?? "null"}`);
@@ -85,11 +80,10 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	out.push(`byId(d 已过期)=${(await store.getById("d"))?.id ?? "null"}`);
 	out.push(`byId(不存在)=${(await store.getById("zzz"))?.id ?? "null"}`);
 
-	// 标量字段要逐字往返，尤其是 bigint（驱动会给字符串）、text[] 和 jsonb
+	// 标量字段要逐字往返，尤其是 bigint（驱动会给字符串）和 jsonb
 	const roundtrip = await store.getById("b");
 	out.push(
-		`往返 b: text=${roundtrip?.matchText} sources=${roundtrip?.sourceIds.join("|")} ` +
-			`version=${roundtrip?.sourceVersion} created=${roundtrip?.createdAt} meta=${JSON.stringify(roundtrip?.meta)}`,
+		`往返 b: text=${roundtrip?.matchText} created=${roundtrip?.createdAt} meta=${JSON.stringify(roundtrip?.meta)}`,
 	);
 	/**
 	 * 向量**不能**要求逐位相等：pgvector 的 `vector` 是 float4，Redis 的 vectorset
@@ -109,8 +103,7 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	const plan = await store.getById("p");
 	out.push(
 		`往返 p(plan): kind=${plan?.kind} answer="${plan?.answer}" plan=${JSON.stringify(plan?.plan)} ` +
-			`sources=${JSON.stringify(plan?.sourceIds)} ` +
-			`version="${plan?.sourceVersion}" meta=${plan?.meta === undefined ? "undefined" : JSON.stringify(plan.meta)}`,
+			`meta=${plan?.meta === undefined ? "undefined" : JSON.stringify(plan.meta)}`,
 	);
 	out.push(`byHash(course:1,h-p)=${(await store.getByHash("course:1", "h-p"))?.id ?? "null"}`);
 	// plan 条目照样要能被召回
@@ -122,22 +115,21 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	out.push(`near=${near.map(c => `${c.entry.id}:${c.similarity.toFixed(6)}`).join(" ")}`);
 	out.push(`near(空 scope)=${(await store.searchNearest("course:9", vec(1), 3)).length}`);
 
-	out.push(`evictBySource(n2)=${await store.evictBySource("n2")}`);
-	out.push(`剩余=${(await store.all()).map(e => e.id).join(",")}`);
 	await store.evict("a");
 	out.push(`evict(a) 后=${(await store.all()).map(e => e.id).join(",")}`);
-	out.push(`evictBySource(不存在)=${await store.evictBySource("nope")}`);
+	out.push(`evict(不存在) 不抛`);
+	await store.evict("nope");
 
 	// clearScope 只清一个 scope，别的 scope 不能被牵连
-	await store.put(entry("e", "course:2", "h-e", 5, ["n4"], null));
+	await store.put(entry("e", "course:2", "h-e", 5, null));
 	out.push(`clearScope(course:2)=${await store.clearScope("course:2")}`);
 	out.push(`clearScope 后=${(await store.all()).map(e => e.id).join(",")}`);
 	out.push(`clearScope(空 scope)=${await store.clearScope("course:9")}`);
 
 	/* 同 (scope, matchHash) 多条 —— 并发写入会造出来，取哪一条必须确定 */
 	await store.clear();
-	await store.put(entry("old", "course:1", "dup", 1, ["n1"], null));
-	await store.put(entry("new", "course:1", "dup", 2, ["n1"], null));
+	await store.put(entry("old", "course:1", "dup", 1, null));
+	await store.put(entry("new", "course:1", "dup", 2, null));
 	out.push(`重复哈希 getByHash=${(await store.getByHash("course:1", "dup"))?.id ?? "null"}`);
 
 	/**
@@ -147,7 +139,7 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	 * 而这条契约先前没有任何测试碰过 —— 三者一旦分叉，② 命中的就是不同的答案。
 	 */
 	await store.clear();
-	const sameMs = { ...entry("aaa", "course:1", "tie", 1, ["n1"], null), createdAt: 4_242 };
+	const sameMs = { ...entry("aaa", "course:1", "tie", 1, null), createdAt: 4_242 };
 	await store.put(sameMs);
 	await store.put({ ...sameMs, id: "zzz", answer: "同毫秒 大 id" });
 	await store.put({ ...sameMs, id: "mmm", answer: "同毫秒 中 id" });
@@ -156,14 +148,14 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	/* id 重复必须抛错，不能静默丢弃也不能覆盖 —— 拿一个**库里已有**的 id 去写 */
 	let duplicateRejected = "没有抛错";
 	try {
-		await store.put(entry("zzz", "course:1", "other", 9, ["n1"], null));
+		await store.put(entry("zzz", "course:1", "other", 9, null));
 	} catch {
 		duplicateRejected = "抛错";
 	}
 	out.push(`put 同 id 两次=${duplicateRejected}　库里 ${(await store.all()).length} 条`);
 
 	/* purgeExpired 只删过期的 */
-	await store.put(entry("gone", "course:1", "h-gone", 6, ["n1"], now() - 1));
+	await store.put(entry("gone", "course:1", "h-gone", 6, now() - 1));
 	out.push(`purgeExpired=${await store.purgeExpired()}`);
 	out.push(`purge 后=${(await store.all()).map(e => e.id).join(",")}`);
 
@@ -201,11 +193,11 @@ async function evictionRun(policy: "fifo" | "rr" | "lru" | "lfu", s: Inspectable
 	 * `touch` 打在不存在的 id 上静默返回，于是 lru/lfu 跑出和 fifo 一样的结果、
 	 * 记账也是「无」。四种策略"一致"但一致地什么都没测到。
 	 */
-	for (let i = 0; i < 3; i++) await s.put(entry(`e${i}`, "course:1", `h-${i}`, i + 1, ["n1"], null));
+	for (let i = 0; i < 3; i++) await s.put(entry(`e${i}`, "course:1", `h-${i}`, i + 1, null));
 	await s.touch("e0");
 	await s.touch("e0");
 	await s.touch("e1");
-	await s.put(entry("e3", "course:1", "h-3", 4, ["n1"], null));
+	await s.put(entry("e3", "course:1", "h-3", 4, null));
 
 	const kept = (await s.all()).map(x => x.id).sort();
 	out.push(policy === "rr" ? `${policy}: 留 ${kept.length} 条（随机，只比条数）` : `${policy}: ${kept.join(",")}`);
@@ -224,7 +216,7 @@ async function evictionRun(policy: "fifo" | "rr" | "lru" | "lfu", s: Inspectable
 	 * 「用得多的老条目压着新条目」是 LFU 固有的，那半边没治，要衰减才治得了。
 	 */
 	if (policy === "lfu") {
-		await s.put(entry("brandnew", "course:1", "h-new", 99, ["n1"], null));
+		await s.put(entry("brandnew", "course:1", "h-new", 99, null));
 		const after = (await s.all()).map(x => x.id);
 		out.push(`lfu: 新条目留下了吗=${after.includes("brandnew") ? "留下" : "**立刻被淘汰**"}`);
 
@@ -238,10 +230,10 @@ async function evictionRun(policy: "fifo" | "rr" | "lru" | "lfu", s: Inspectable
 		 */
 		await s.clear();
 		const capped = `${LFU_COUNT_CAP + 477}`;
-		await s.put({ ...entry("超封顶但很久没用", "course:1", "h-cap1", 11, ["n1"], null), useCount: LFU_COUNT_CAP + 477, lastUsedAt: 100 });
-		await s.put({ ...entry("刚过封顶但刚用过", "course:1", "h-cap2", 12, ["n1"], null), useCount: LFU_COUNT_CAP + 77, lastUsedAt: 200 });
-		await s.put({ ...entry("填位1", "course:1", "h-cap3", 13, ["n1"], null), useCount: 1, lastUsedAt: 150 });
-		await s.put({ ...entry("填位2", "course:1", "h-cap4", 14, ["n1"], null), useCount: 1, lastUsedAt: 160 });
+		await s.put({ ...entry("超封顶但很久没用", "course:1", "h-cap1", 11, null), useCount: LFU_COUNT_CAP + 477, lastUsedAt: 100 });
+		await s.put({ ...entry("刚过封顶但刚用过", "course:1", "h-cap2", 12, null), useCount: LFU_COUNT_CAP + 77, lastUsedAt: 200 });
+		await s.put({ ...entry("填位1", "course:1", "h-cap3", 13, null), useCount: 1, lastUsedAt: 150 });
+		await s.put({ ...entry("填位2", "course:1", "h-cap4", 14, null), useCount: 1, lastUsedAt: 160 });
 		out.push(`lfu: 次数 ${capped} 与 ${LFU_COUNT_CAP + 77} 封顶后同分 → 留 ${(await s.all()).map(x => x.id).sort().join(",")}`);
 	}
 
@@ -253,9 +245,9 @@ async function evictionRun(policy: "fifo" | "rr" | "lru" | "lfu", s: Inspectable
 	 * 三个后端先前都是这个毛病，所以这一条不是回归测试，是新增的共同判据。
 	 */
 	await s.clear();
-	await s.put({ ...entry("过期但最近用过", "course:1", "h-x0", 21, ["n1"], 4_000), lastUsedAt: 4_999, useCount: 9 });
+	await s.put({ ...entry("过期但最近用过", "course:1", "h-x0", 21, 4_000), lastUsedAt: 4_999, useCount: 9 });
 	for (let i = 1; i <= 3; i++) {
-		await s.put({ ...entry(`活${i}`, "course:1", `h-x${i}`, 21 + i, ["n1"], null), lastUsedAt: 1_000 + i, useCount: 1 });
+		await s.put({ ...entry(`活${i}`, "course:1", `h-x${i}`, 21 + i, null), lastUsedAt: 1_000 + i, useCount: 1 });
 	}
 	const survivors = (await s.all()).map(x => x.id).sort();
 	out.push(
@@ -273,8 +265,8 @@ async function evictionRun(policy: "fifo" | "rr" | "lru" | "lfu", s: Inspectable
 	 * 但没超容量」这个只有显式调用才看得见的状态。
 	 */
 	await s.clear();
-	await s.put({ ...entry("过期未清理", "course:1", "h-y0", 31, ["n1"], 4_000), lastUsedAt: 4_999, useCount: 9 });
-	await s.put({ ...entry("活着的", "course:1", "h-y1", 32, ["n1"], null), lastUsedAt: 1_000, useCount: 1 });
+	await s.put({ ...entry("过期未清理", "course:1", "h-y0", 31, 4_000), lastUsedAt: 4_999, useCount: 9 });
+	await s.put({ ...entry("活着的", "course:1", "h-y1", 32, null), lastUsedAt: 1_000, useCount: 1 });
 	out.push(`${policy}: 容量以下 evictOverCapacity 返回 ${await s.evictOverCapacity("course:1")}，剩 ${(await s.all()).length} 条`);
 
 	await s.clear();

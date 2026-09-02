@@ -1,74 +1,84 @@
 import type { CachePrompt } from "./Pipeline.ts";
 
 /**
- * 这个 prompt 该不该进缓存，在任何一道闸之前判。
+ * Whether this prompt should enter the cache at all, decided ahead of every gate.
  *
- * **为什么不能交给那五道闸。**五道闸问的都是「这条缓存**还**成不成立」——
- * ③④ 管问题像不像、⑤ 管资料改版了没有。但有一类问题是**从来就不该被写进去**的：
+ * **Why the five gates cannot do this.** Every gate asks whether a cached entry is **still** valid
+ * — ③④ ask whether the questions are alike, ⑤ asks whether the sources have changed. But some
+ * questions should **never have been written in the first place**:
  *
- * - 「那第二个呢」 —— 离开这次对话，`matchText` 本身就不完整
- * - 「帮我提交作业」 —— 根本不是问答，是动作
- * - 「出五道练习题」 —— 没有唯一答案
+ * - "and the second one?" — outside this conversation, `matchText` is not even complete
+ * - "submit my homework for me" — not a question at all, it is an action
+ * - "give me five practice problems" — has no single correct answer
  *
- * 让闸去拦有两个问题：一是要走完召回+检索+支撑度才发现不该用，付了全部成本什么也没省；
- * 二是它**拦不住写入** —— 下一次同样的问题就是一次假命中。所以判定必须在最前面，
- * 而且判定为 `bypass` 时**不发写入票据**，从类型上保证它写不进去。
+ * Leaving these to the gates has two problems. First, you only discover the entry is unusable
+ * after paying for recall, retrieval and support scoring, so you pay the full cost and save
+ * nothing. Second, the gates **cannot stop the write** — the next identical question is then a
+ * false hit. So the decision has to come first, and a `bypass` verdict **issues no write ticket**,
+ * making the write impossible at the type level.
  *
- * **判据尽量别用问题文本。**措辞是无穷的，词表漏一条就是持续的错答案。而 agent 在
- * 回答前本来就要判「要不要调工具、要不要把历史塞进 prompt、这是解释题还是生成题」——
- * 这三个判断直接给出上面三类，零成本且远比分类器准。所以这一层只定契约，
- * 信号从 `prompt.context` 来，和 `ScopeResolver` 取用同一个通道。
+ * **Try not to base the decision on the question text.** Phrasings are unbounded, and one missing
+ * entry in a word list is a persistently wrong answer. Meanwhile an agent already decides, before
+ * answering, whether to call tools, whether to feed history into the prompt, and whether this is an
+ * explanation or a generation task — those three decisions yield the three categories above for
+ * free, and far more accurately than a classifier. So this layer only defines the contract; the
+ * signals arrive through `prompt.context`, the same channel `ScopeResolver` uses.
  */
 
 /**
- * 处置。三个字段都不给 = 照常缓存。
+ * The disposition. All three fields absent means cache as usual.
  *
- * 「短 TTL」不是一种模式而是一个数字，所以它和两个开关并列，不另开一档 ——
- * 多造一个 mode 只会让调用方在 `switch` 里写两条一模一样的分支。
+ * "Short TTL" is a number rather than a mode, so it sits alongside the two switches instead of
+ * getting a category of its own — an extra mode would only make callers write two identical
+ * branches in a `switch`.
  */
 export interface CacheDisposition {
 	/**
-	 * 不读缓存，值是理由。语义同 HTTP `Cache-Control: no-cache`。
+	 * Do not read the cache; the value is the reason. Same semantics as HTTP `Cache-Control: no-cache`.
 	 *
-	 * 一道闸都不跑，直接去生成。**单独用**就是「重新回答」：跳过查询强制重生成，
-	 * 但新答案照常写回去替换旧的 —— 一个学生的一次不满意，变成对后面所有人的改进。
+	 * No gate runs; generation happens directly. **On its own** this means "answer again": skip the
+	 * lookup and force regeneration, but write the new answer back over the old one — one student's
+	 * dissatisfaction becomes an improvement for everyone after them.
 	 */
 	readonly noCache?: string;
 	/**
-	 * 不写缓存，值是理由。语义同 HTTP `Cache-Control: no-store`。
+	 * Do not write the cache; the value is the reason. Same semantics as HTTP `Cache-Control: no-store`.
 	 *
-	 * **拿不到写入票据** —— 不是「这次不写」，是从类型到运行期都写不进去。
-	 * 单独用就是「能读别人的，但别把我这份存成标准答案」。
+	 * **No write ticket is issued** — this is not "skip the write this time", it is impossible to
+	 * write, from the types through to runtime. On its own it means "you may read what others left,
+	 * but do not store mine as the canonical answer".
 	 */
 	readonly noStore?: string;
 	/**
-	 * 覆盖全局 TTL。**时效性内容走这里，不走 `noStore`。**
+	 * Override the global TTL. **Time-sensitive content belongs here, not in `noStore`.**
 	 *
-	 * 「作业什么时候截止」和「现在还能交吗」文本上分不开，问题侧的闸也分不开，
-	 * 但它们依据的都是课程表 —— 按依据文档的性质给一个短 TTL，
-	 * 就不必去精确区分这两句话。`null` = 不过期，`undefined` = 用全局值。
+	 * "When is the assignment due" and "can I still submit it" are textually inseparable, and the
+	 * question-side gates cannot separate them either — but both rest on the course schedule. Give a
+	 * short TTL based on the nature of the source document and the two sentences need never be told
+	 * apart. `null` means never expire; `undefined` means use the global value.
 	 */
 	readonly ttlMs?: number | null;
 }
 
 /**
- * 两个开关正交，四种组合都有用：
+ * The two switches are orthogonal, and all four combinations are useful:
  *
- * | noCache | noStore | 行为 | 场景 |
+ * | noCache | noStore | Behaviour | When |
  * |---|---|---|---|
- * | — | — | 查、命中就复用；没命中就生成并存 | 绝大多数问题 |
- * | ✓ | ✓ | 不查、生成、不存 | 「那第二个呢」 |
- * | ✓ | — | 不查、强制生成、**写回替换旧的** | 「重新回答」 |
- * | — | ✓ | 照常查，没命中就生成但不存 | 「出五道练习题」 |
+ * | — | — | Look up, reuse on a hit; generate and store on a miss | Almost every question |
+ * | ✓ | ✓ | No lookup, generate, do not store | "and the second one?" |
+ * | ✓ | — | No lookup, force generation, **write back over the old entry** | "answer again" |
+ * | — | ✓ | Look up as usual, generate on a miss but do not store | "give me five practice problems" |
  *
- * 借 HTTP 的词而不是自造 `bypass`：这套语义每个工程师都已经懂，
- * 而且它天生就是分读写两侧的 —— 自造一个布尔表达不了中间那两行。
+ * The HTTP vocabulary is borrowed rather than a `bypass` of our own invention: every engineer
+ * already understands these semantics, and they are natively split across the read and write sides
+ * — a single boolean of our own could not express the middle two rows.
  */
 
 /**
- * 和 `ScopeResolver` 同形：构造期给一次，每次请求拿 `prompt` 判。
+ * Same shape as `ScopeResolver`: supplied once at construction, consulted per request with `prompt`.
  *
- * 需要按请求变化的信号（这轮是不是追问、agent 要不要调工具）走 `prompt.context`——
- * 那是既有的按请求通道，不必为此改 `lookup` 的签名。
+ * Signals that vary per request (is this a follow-up, does the agent need tools) travel through
+ * `prompt.context` — the existing per-request channel, so `lookup`'s signature need not change.
  */
 export type CachePolicy = (prompt: CachePrompt) => Promise<CacheDisposition> | CacheDisposition;
