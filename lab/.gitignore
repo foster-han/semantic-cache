@@ -6,3 +6,11 @@ data/*
 !data/langcache-*.json
 # 分数也是凭据：FINDINGS 的表全是从它算出来的，而重算一遍要跑九个模型
 !data/scores.json
+# vCache 的取样与重放结果。**两个都要入库，缺一个就说不通** ——
+# 只入重放结果就是「结论入库、依据不入库」，而 datasets-server 的分页顺序不保证
+# 跨时间稳定，重取一份未必是同一批行。lmarena 那份 5 MB 里 83% 是真 LLM 答案，
+# 正是它让「省下多少生成」能用秒算而不是用次数猜 —— 删不得。
+!data/vcache-lmarena.json
+!data/vcache-search.json
+!data/vcache-replay-lmarena.json
+!data/vcache-replay-search.json

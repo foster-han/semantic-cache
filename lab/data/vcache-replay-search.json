@@ -1,0 +1,567 @@
+{
+	"source": "vCache/SemBenchmarkSearchQueries · default · train",
+	"benchmark": "search",
+	"queries": 4000,
+	"groups": 3538,
+	"trueHitCeiling": 0.1155,
+	"ceilingNote": "上限管的是正命中占比，不是命中率 —— 假命中不受它约束",
+	"traceSeed": 20260902,
+	"encoder": {
+		"mode": "local",
+		"model": "Xenova/all-MiniLM-L6-v2"
+	},
+	"reranker": null,
+	"topK": 5,
+	"notTested": [
+		"① scope 门控 —— 这份数据没有用户/租户维度，全程单 scope",
+		"⑤ 资料版本 —— 没有资料，更没有版本",
+		"「没有依据的答案不写入」—— 依据是造出来的占位（vcache:<prompt>），这条不变式本轮没测到"
+	],
+	"labelNoise": "标签来自搜索日志聚类，非人工标注，实测有明显噪声（同组里混进过不同州、不同作品）—— 假命中率是相对这份标注的数，别当人判的",
+	"runs": [
+		{
+			"floor": 0.7,
+			"gate4": false,
+			"queries": 4000,
+			"reusable": 372,
+			"trueHits": 279,
+			"falseHits": 757,
+			"missedReuse": 79,
+			"correctRejects": 2885,
+			"exitedAt": {
+				"第 3 道闸": 2964
+			},
+			"savedSeconds": 0,
+			"examples": [
+				{
+					"query": "cheap car rentals fll airport",
+					"reused": "car rentals in orlando airport",
+					"queryLabel": 24782,
+					"reusedLabel": 101371
+				},
+				{
+					"query": "best suv with smoothest ride",
+					"reused": "best 3 row luxury suv",
+					"queryLabel": 189766,
+					"reusedLabel": 216361
+				},
+				{
+					"query": "conversion cm to inches calculator",
+					"reused": "converter meters to feet and inches",
+					"queryLabel": 136151,
+					"reusedLabel": 92141
+				},
+				{
+					"query": "car rental sfo international airport",
+					"reused": "car rentals in orlando airport",
+					"queryLabel": 198311,
+					"reusedLabel": 101371
+				},
+				{
+					"query": "bluestacks 1 download for windows 10",
+					"reused": "download bluestacks for windows 7",
+					"queryLabel": 142821,
+					"reusedLabel": 296721
+				},
+				{
+					"query": "bank holidays in september 2019",
+					"reused": "bank holiday uk august 2019",
+					"queryLabel": 34751,
+					"reusedLabel": 338681
+				},
+				{
+					"query": "blue cross of michigan login",
+					"reused": "blue cross blue shield of arizona login",
+					"queryLabel": 8272,
+					"reusedLabel": 39181
+				},
+				{
+					"query": "department for work and pensions address",
+					"reused": "department of work and pensions contact number",
+					"queryLabel": 6594,
+					"reusedLabel": 355461
+				},
+				{
+					"query": "bed & bath and beyond",
+					"reused": "bed bath and beyond lincoln ne",
+					"queryLabel": 105971,
+					"reusedLabel": 172991
+				},
+				{
+					"query": "can you have diet soda on keto diet",
+					"reused": "can you eat apples on keto diet",
+					"queryLabel": 8971,
+					"reusedLabel": 84881
+				},
+				{
+					"query": "bed bath & beyond 20% coupon",
+					"reused": "bed bath and beyond online coupon code",
+					"queryLabel": 25271,
+					"reusedLabel": 247121
+				},
+				{
+					"query": "clash of clans on kindle",
+					"reused": "clash royale for kindle fire",
+					"queryLabel": 263822,
+					"reusedLabel": 67414
+				},
+				{
+					"query": "email to white house trump",
+					"reused": "donald trump address white house",
+					"queryLabel": 65557,
+					"reusedLabel": 65551
+				},
+				{
+					"query": "citibank telephone number customer service",
+					"reused": "citibank lost card phone number",
+					"queryLabel": 16791,
+					"reusedLabel": 300041
+				},
+				{
+					"query": "best deals on phones and plans",
+					"reused": "best deals on cell phone plans",
+					"queryLabel": 491641,
+					"reusedLabel": 491643
+				},
+				{
+					"query": "dollar car rental mco airport",
+					"reused": "car rentals in orlando airport",
+					"queryLabel": 16003,
+					"reusedLabel": 101371
+				},
+				{
+					"query": "brother printers downloads windows 10",
+					"reused": "brother printer not printing from computer",
+					"queryLabel": 102831,
+					"reusedLabel": 36091
+				},
+				{
+					"query": "create your own wordsearch for free",
+					"reused": "create your own word search puzzle free",
+					"queryLabel": 211041,
+					"reusedLabel": 235261
+				},
+				{
+					"query": "dvla change of name and address",
+					"reused": "dvla license change of address",
+					"queryLabel": 20342,
+					"reusedLabel": 6731
+				},
+				{
+					"query": "bath and body shop canada",
+					"reused": "bath and body online shopping",
+					"queryLabel": 135361,
+					"reusedLabel": 277891
+				}
+			]
+		},
+		{
+			"floor": 0.78,
+			"gate4": false,
+			"queries": 4000,
+			"reusable": 413,
+			"trueHits": 254,
+			"falseHits": 395,
+			"missedReuse": 142,
+			"correctRejects": 3209,
+			"exitedAt": {
+				"第 3 道闸": 3351
+			},
+			"savedSeconds": 0,
+			"examples": [
+				{
+					"query": "bluestacks 1 download for windows 10",
+					"reused": "download bluestacks for windows 7",
+					"queryLabel": 142821,
+					"reusedLabel": 296721
+				},
+				{
+					"query": "department for work and pensions address",
+					"reused": "department of work and pensions contact number",
+					"queryLabel": 6594,
+					"reusedLabel": 355461
+				},
+				{
+					"query": "blue cross mn sign in",
+					"reused": "blue cross of michigan login",
+					"queryLabel": 131381,
+					"reusedLabel": 8272
+				},
+				{
+					"query": "citibank telephone number customer service",
+					"reused": "citibank lost card phone number",
+					"queryLabel": 16791,
+					"reusedLabel": 300041
+				},
+				{
+					"query": "best deals on phones and plans",
+					"reused": "best deals on cell phone plans",
+					"queryLabel": 491641,
+					"reusedLabel": 491643
+				},
+				{
+					"query": "brother printers downloads windows 10",
+					"reused": "brother printer not printing from computer",
+					"queryLabel": 102831,
+					"reusedLabel": 36091
+				},
+				{
+					"query": "dvla change of name and address",
+					"reused": "dvla license change of address",
+					"queryLabel": 20342,
+					"reusedLabel": 6731
+				},
+				{
+					"query": "central standard time to eastern time",
+					"reused": "central time vs. eastern time",
+					"queryLabel": 41121,
+					"reusedLabel": 130711
+				},
+				{
+					"query": "can you connect xbox controller to pc",
+					"reused": "can you use an xbox controller on pc",
+					"queryLabel": 113671,
+					"reusedLabel": 288891
+				},
+				{
+					"query": "bootable usb for windows 10",
+					"reused": "download bootable usb windows 10",
+					"queryLabel": 8801,
+					"reusedLabel": 192683
+				},
+				{
+					"query": "college football tv schedule today",
+					"reused": "college bowl game tv schedule",
+					"queryLabel": 12731,
+					"reusedLabel": 353814
+				},
+				{
+					"query": "exchange rate canadian to us dollar",
+					"reused": "canadian dollar exchange rate calculator",
+					"queryLabel": 20311,
+					"reusedLabel": 247142
+				},
+				{
+					"query": "best chicken noodle soup recipe",
+					"reused": "chicken noodle soup instant pot recipe",
+					"queryLabel": 85911,
+					"reusedLabel": 129662
+				},
+				{
+					"query": "convert cm to inches ft",
+					"reused": "conversion cm to inches calculator",
+					"queryLabel": 332771,
+					"reusedLabel": 136151
+				},
+				{
+					"query": "cure for ulcers in stomach",
+					"reused": "diet for ulcers in stomach",
+					"queryLabel": 113515,
+					"reusedLabel": 136052
+				},
+				{
+					"query": "average height for american women",
+					"reused": "average height of men in usa",
+					"queryLabel": 68731,
+					"reusedLabel": 12612
+				},
+				{
+					"query": "best time of year to go to india",
+					"reused": "best time to visit india",
+					"queryLabel": 48392,
+					"reusedLabel": 48391
+				},
+				{
+					"query": "convert kg to pounds and ounces",
+					"reused": "convert pound to kilogram calculator",
+					"queryLabel": 51471,
+					"reusedLabel": 131971
+				},
+				{
+					"query": "bank of america customer service address",
+					"reused": "bank of america branch number",
+					"queryLabel": 57862,
+					"reusedLabel": 355081
+				},
+				{
+					"query": "download movies from amazon prime on laptop",
+					"reused": "can you download amazon prime movies",
+					"queryLabel": 269041,
+					"reusedLabel": 364491
+				}
+			]
+		},
+		{
+			"floor": 0.85,
+			"gate4": false,
+			"queries": 4000,
+			"reusable": 438,
+			"trueHits": 186,
+			"falseHits": 174,
+			"missedReuse": 241,
+			"correctRejects": 3399,
+			"exitedAt": {
+				"第 3 道闸": 3640
+			},
+			"savedSeconds": 0,
+			"examples": [
+				{
+					"query": "department for work and pensions address",
+					"reused": "department of work and pensions contact number",
+					"queryLabel": 6594,
+					"reusedLabel": 355461
+				},
+				{
+					"query": "best deals on phones and plans",
+					"reused": "best deals on cell phone plans",
+					"queryLabel": 491641,
+					"reusedLabel": 491643
+				},
+				{
+					"query": "central standard time to eastern time",
+					"reused": "central time vs. eastern time",
+					"queryLabel": 41121,
+					"reusedLabel": 130711
+				},
+				{
+					"query": "can you connect xbox controller to pc",
+					"reused": "can you use an xbox controller on pc",
+					"queryLabel": 113671,
+					"reusedLabel": 288891
+				},
+				{
+					"query": "bootable usb for windows 10",
+					"reused": "download bootable usb windows 10",
+					"queryLabel": 8801,
+					"reusedLabel": 192683
+				},
+				{
+					"query": "college football tv schedule today",
+					"reused": "college bowl game tv schedule",
+					"queryLabel": 12731,
+					"reusedLabel": 353814
+				},
+				{
+					"query": "convert cm to inches ft",
+					"reused": "conversion cm to inches calculator",
+					"queryLabel": 332771,
+					"reusedLabel": 136151
+				},
+				{
+					"query": "best time of year to go to india",
+					"reused": "best time to visit india",
+					"queryLabel": 48392,
+					"reusedLabel": 48391
+				},
+				{
+					"query": "download movies from amazon prime on laptop",
+					"reused": "can you download amazon prime movies",
+					"queryLabel": 269041,
+					"reusedLabel": 364491
+				},
+				{
+					"query": "england bank holidays 2019 uk",
+					"reused": "bank holiday uk august 2019",
+					"queryLabel": 17641,
+					"reusedLabel": 338681
+				},
+				{
+					"query": "beanie baby price guide 2019",
+					"reused": "beanie babies price guide uk",
+					"queryLabel": 114062,
+					"reusedLabel": 114064
+				},
+				{
+					"query": "bexar county deed record search",
+					"reused": "bexar county tax office property search",
+					"queryLabel": 74261,
+					"reusedLabel": 74268
+				},
+				{
+					"query": "create new gmail account create",
+					"reused": "create a gmail account email address",
+					"queryLabel": 179381,
+					"reusedLabel": 395751
+				},
+				{
+					"query": "connecting an xbox controller to pc",
+					"reused": "can you use an xbox controller on pc",
+					"queryLabel": 113671,
+					"reusedLabel": 288891
+				},
+				{
+					"query": "central time and eastern time",
+					"reused": "central time vs. eastern time",
+					"queryLabel": 41122,
+					"reusedLabel": 130711
+				},
+				{
+					"query": "converting pdf to word doc",
+					"reused": "convert pdf in word free",
+					"queryLabel": 253561,
+					"reusedLabel": 134321
+				},
+				{
+					"query": "best long term care insurance policies",
+					"reused": "buy long term care insurance",
+					"queryLabel": 95392,
+					"reusedLabel": 95396
+				},
+				{
+					"query": "download realtek hd audio driver",
+					"reused": "download realtek hd audio manager windows 10",
+					"queryLabel": 51132,
+					"reusedLabel": 134921
+				},
+				{
+					"query": "axis bank customer care contact",
+					"reused": "axis bank customer care mail id",
+					"queryLabel": 151521,
+					"reusedLabel": 309663
+				},
+				{
+					"query": "email to president trump at white house",
+					"reused": "email to white house trump",
+					"queryLabel": 65556,
+					"reusedLabel": 65557
+				}
+			]
+		},
+		{
+			"floor": 0.92,
+			"gate4": false,
+			"queries": 4000,
+			"reusable": 457,
+			"trueHits": 100,
+			"falseHits": 49,
+			"missedReuse": 350,
+			"correctRejects": 3501,
+			"exitedAt": {
+				"第 3 道闸": 3851
+			},
+			"savedSeconds": 0,
+			"examples": [
+				{
+					"query": "best deals on phones and plans",
+					"reused": "best deals on cell phone plans",
+					"queryLabel": 491641,
+					"reusedLabel": 491643
+				},
+				{
+					"query": "england bank holidays 2020 england",
+					"reused": "england bank holidays 2019 uk",
+					"queryLabel": 439041,
+					"reusedLabel": 17641
+				},
+				{
+					"query": "central time and eastern time",
+					"reused": "central time vs. eastern time",
+					"queryLabel": 41122,
+					"reusedLabel": 130711
+				},
+				{
+					"query": "email to president trump at white house",
+					"reused": "email to white house trump",
+					"queryLabel": 65556,
+					"reusedLabel": 65557
+				},
+				{
+					"query": "best foods to lower cholesterol naturally",
+					"reused": "best foods to eat to lower cholesterol",
+					"queryLabel": 261162,
+					"reusedLabel": 211371
+				},
+				{
+					"query": "convert pdf to ms word",
+					"reused": "converting pdf to word doc",
+					"queryLabel": 20811,
+					"reusedLabel": 253561
+				},
+				{
+					"query": "change address on driving licence",
+					"reused": "change of address on driving license",
+					"queryLabel": 372981,
+					"reusedLabel": 3941
+				},
+				{
+					"query": "combining pdf files into one document",
+					"reused": "combine 2 pdf files into one",
+					"queryLabel": 66911,
+					"reusedLabel": 138431
+				},
+				{
+					"query": "best eye cream for dark circles and bags",
+					"reused": "eye cream for dark circles",
+					"queryLabel": 223083,
+					"reusedLabel": 223081
+				},
+				{
+					"query": "bank holidays in april 2020",
+					"reused": "bank holidays 2019 and 2020",
+					"queryLabel": 243731,
+					"reusedLabel": 6141
+				},
+				{
+					"query": "count unique values in a column excel",
+					"reused": "excel 2016 count unique values",
+					"queryLabel": 18481,
+					"reusedLabel": 291801
+				},
+				{
+					"query": "car-t cell therapy in canada",
+					"reused": "car t cell treatment canada",
+					"queryLabel": 196454,
+					"reusedLabel": 1964510
+				},
+				{
+					"query": "children and family services florida",
+					"reused": "family and children services florida",
+					"queryLabel": 153831,
+					"reusedLabel": 36044
+				},
+				{
+					"query": "converting a pdf to word",
+					"reused": "converting pdf to word doc",
+					"queryLabel": 20811,
+					"reusedLabel": 253561
+				},
+				{
+					"query": "best way to kill yourself",
+					"reused": "easist way to kill yourself",
+					"queryLabel": 113385,
+					"reusedLabel": 275201
+				},
+				{
+					"query": "convert to word to pdf",
+					"reused": "converting pdf to word doc",
+					"queryLabel": 34721,
+					"reusedLabel": 253561
+				},
+				{
+					"query": "convert euros to usd calculator",
+					"reused": "euro to dollar conversion calculator",
+					"queryLabel": 77081,
+					"reusedLabel": 36731
+				},
+				{
+					"query": "citibank credit card customer service phone number",
+					"reused": "citibank telephone number customer service",
+					"queryLabel": 158201,
+					"reusedLabel": 16791
+				},
+				{
+					"query": "california state tax rate 2018",
+					"reused": "ca state tax rate 2019",
+					"queryLabel": 52921,
+					"reusedLabel": 2751
+				},
+				{
+					"query": "blue shield blue cross federal",
+					"reused": "blue cross blue shield federal",
+					"queryLabel": 442822,
+					"reusedLabel": 442821
+				}
+			]
+		}
+	]
+}
