@@ -22,5 +22,4 @@ export const {
 	SCENARIOS,
 	RERANK_PROBES,
 	compose,
-	refineSuffix,
 } = active;

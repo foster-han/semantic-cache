@@ -69,7 +69,7 @@ test("F2 影子模式 + ⑥ 判负：同上", async () => {
 	await harness({ store }).cache.resolve(ASK, answering("原答案"));
 	const [before] = await store.all();
 
-	const shadowed = harness({ store, shadow: true, passage: { "CHUNK n1": forCosine(0.1) } });
+	const shadowed = harness({ store, shadow: true });
 	await shadowed.cache.resolve(ASK, answering("影子里新生成的"));
 
 	const after = await store.all();
@@ -95,32 +95,6 @@ test("F2 影子模式 + policy bypass：一道闸都没跑，写入也一并跳�
 
 /* ---------- F3：noStore + 中带 + refine ---------- */
 
-test("F3 noStore + 中带 + refine：返回微调结果但不写回，不能让拒发的票据炸掉 resolve", async () => {
-	const store = createMemoryCacheStore();
-	// 先正常灌一条
-	await harness({ store }).cache.resolve(ASK, answering("原答案"));
-	const [before] = await store.all();
-
-	// 支撑度落进 [low, high) 的微调带 → mid
-	const { cache } = harness({
-		store,
-		policy: noStore,
-		passage: { "CHUNK n1": forCosine(0.85) },
-		support: { high: 0.9, low: 0.8 },
-		refine: async () => ({ kind: "answer" as const, answer: "微调过的", sourceIds: ["n1"] }),
-	});
-	const result = await cache.resolve(OPEN, answering("不该走到完整生成"));
-
-	assert.equal(result.outcome, "refine");
-	assert.equal(result.payload.kind === "answer" && result.payload.answer, "微调过的");
-	const after = await store.all();
-	assert.equal(after.length, 1);
-	assert.equal(after[0].answer, "原答案", "noStore 下微调结果只用这一次，旧条目原样保留");
-	assert.equal(after[0].id, before.id);
-});
-
-/* ---------- F5：shadow 分支必须排在 noStore 之前 ---------- */
-
 test("F5 shadow + noStore + 本会命中：wouldReuse 必须是 true", async () => {
 	const store = createMemoryCacheStore();
 	await harness({ store }).cache.resolve(ASK, answering("原答案"));
@@ -134,18 +108,3 @@ test("F5 shadow + noStore + 本会命中：wouldReuse 必须是 true", async () 
 
 /* ---------- F6：exitedAt 在各分支上一致 ---------- */
 
-test("F6 中带落到不写入的分支时，exitedAt 仍如实记成 6", async () => {
-	const store = createMemoryCacheStore();
-	await harness({ store }).cache.resolve(ASK, answering("原答案"));
-
-	// mid 且没有 refine → 退化成完整生成；noStore 让它走不写入那条返回
-	const { cache } = harness({
-		store,
-		policy: noStore,
-		passage: { "CHUNK n1": forCosine(0.85) },
-		support: { high: 0.9, low: 0.8 },
-	});
-	const result = await cache.resolve(OPEN, answering("完整生成的"));
-	assert.equal(result.outcome, "generated");
-	assert.equal(result.exitedAt, 6, "被 ⑥ 放弃的中带，各分支都该记 6");
-});

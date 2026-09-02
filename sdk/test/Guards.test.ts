@@ -74,7 +74,6 @@ test("守卫跑在任何编码之前 —— 别先付掉一整批 embedding 再�
 		/共享 scope/u,
 	);
 	assert.equal(counts.questions, 0, "召回向量不该被编码");
-	assert.equal(counts.passage, 0, "答案向量更不该");
 });
 
 test("写入票据配错 prompt：文本不一致要抛", async () => {

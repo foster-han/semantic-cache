@@ -29,7 +29,7 @@ test("plan 条目本来就没有 sourceIds，照写", async () => {
 	assert.equal(result.entryId, (await store.all())[0].id);
 });
 
-test("writeMany 是两次批量编码，不是 2N 次单条调用", async () => {
+test("writeMany 是一次批量编码，不是 N 次单条调用", async () => {
 	const { cache, counts, store } = harness();
 	const items = ["问题 1", "问题 2", "问题 3"].map(q => ({
 		prompt: { matchText: q, retrievalText: q, context: {} },
@@ -38,7 +38,6 @@ test("writeMany 是两次批量编码，不是 2N 次单条调用", async () => 
 	await cache.writeMany(items);
 	assert.equal((await store.all()).length, 3);
 	assert.equal(counts.questions, 1, "三条的召回向量应当一次编完");
-	assert.equal(counts.passage, 1, "三条的答案向量也是一次");
 });
 
 test("writeMany 的版本指纹按 sourceIds 去重 —— 批量回填常常整批共用一组资料", async () => {
@@ -106,7 +105,6 @@ test("同 (scope, matchHash) 有多条时取最新 —— 同毫秒则取 id 大
 		kind: "answer",
 		answer: "",
 		plan: {},
-		answerVector: [1, 0, 0],
 		sourceIds: ["n1"],
 		sourceVersion: "v1",
 		expiresAt: null,
@@ -133,7 +131,6 @@ test("all() 按 createdAt 升序、同毫秒按 id —— 三种后端必须给�
 		kind: "answer",
 		answer: "a",
 		plan: {},
-		answerVector: [1, 0, 0],
 		sourceIds: ["n1"],
 		sourceVersion: "v1",
 		expiresAt: null,

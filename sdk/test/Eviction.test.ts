@@ -22,7 +22,6 @@ function entry(id: string, scope = "s", createdAt = 1000): CacheEntry {
 		kind: "answer",
 		answer: `a-${id}`,
 		plan: {},
-		answerVector: [1, 0],
 		sourceIds: ["n1"],
 		sourceVersion: "n1v1",
 		createdAt,
@@ -160,7 +159,7 @@ test("touch 不存在的条目静默返回 —— 它可能刚被并发驱逐", 
 test("lfu：刚写进来的条目不能被自己触发的淘汰立刻删掉", async () => {
 	const store = createMemoryCacheStore({ eviction: { policy: "lfu", capacity: 2 } });
 	const base = { scope: "s", kind: "answer" as const, matchText: "", matchHash: "h", matchVector: [1], answer: "",
-		plan: {}, answerVector: [], sourceIds: [], sourceVersion: "", expiresAt: null };
+		plan: {}, sourceIds: [], sourceVersion: "", expiresAt: null };
 
 	// 两条老条目，各被用过一次
 	await store.put({ ...base, id: "old-a", matchHash: "a", createdAt: 1, lastUsedAt: 1, useCount: 1 });
@@ -179,7 +178,7 @@ test("lfu：刚写进来的条目不能被自己触发的淘汰立刻删掉", as
 test("lfu：用得多的老条目仍然压得住新条目 —— 只解「进不来」，不改 LFU 本意", async () => {
 	const store = createMemoryCacheStore({ eviction: { policy: "lfu", capacity: 2 } });
 	const base = { scope: "s", kind: "answer" as const, matchText: "", matchHash: "h", matchVector: [1], answer: "",
-		plan: {}, answerVector: [], sourceIds: [], sourceVersion: "", expiresAt: null };
+		plan: {}, sourceIds: [], sourceVersion: "", expiresAt: null };
 
 	await store.put({ ...base, id: "hot-a", matchHash: "a", createdAt: 1, lastUsedAt: 1, useCount: 9 });
 	await store.put({ ...base, id: "hot-b", matchHash: "b", createdAt: 2, lastUsedAt: 2, useCount: 9 });

@@ -13,9 +13,14 @@ export {
 	assertDiscriminates,
 	checkPairEncoder,
 	checkReranker,
-	checkRetrievalEncoder,
+	suggestThreshold,
 } from "./DiscriminationCheck.ts";
-export type { DiscriminationReport, ProbePair } from "./DiscriminationCheck.ts";
+export type {
+	DiscriminationReport,
+	ProbePair,
+	ThresholdSuggestion,
+	ThresholdSuggestionOptions,
+} from "./DiscriminationCheck.ts";
 export { generateProbes } from "./ProbeGenerator.ts";
 export type {
 	GeneratedProbe,
@@ -32,8 +37,8 @@ export { createMetrics } from "./Metrics.ts";
 export type { LatencyStats, Metrics, MetricsOptions, MetricsRecording, MetricsSnapshot } from "./Metrics.ts";
 export { compare, evaluate, sourceIdsOf } from "./Evaluation.ts";
 export type { ComparisonReport, EvaluationHooks, EvaluationReport, Scenario, ScenarioOutcome } from "./Evaluation.ts";
-export type { EncoderRole, PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "./types/Encoders.ts";
-export type { Calibrated, RecallStage, RerankStage, SupportStage } from "./types/Calibration.ts";
+export type { EncoderRole, PairEncoder, Reranker, RerankTarget } from "./types/Encoders.ts";
+export type { Calibrated, RecallStage, RerankStage } from "./types/Calibration.ts";
 export type { CacheEntry, CacheStore, Candidate, InspectableCacheStore } from "./types/CacheStore.ts";
 export type { EvictionConfig, EvictionPolicy } from "./types/Eviction.ts";
 // 三个后端共用的淘汰序参数。导出是为了让一致性测试能断言「三处封在同一个值上」
@@ -54,7 +59,6 @@ export type {
 	LookupOutcome,
 	LookupResult,
 	Outcome,
-	Refine,
 	ScopeResolver,
 	WriteItem,
 	WriteOptions,

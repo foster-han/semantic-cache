@@ -66,18 +66,6 @@ test("⑤ 判负时不驱逐 —— 评估不该按未验证的判据删数据",
 	assert.equal((await store.all()).length, 0);
 });
 
-test("⑥ 判负时也不驱逐", async () => {
-	const store = createMemoryCacheStore();
-	const warm = harness({ store });
-	await warm.cache.resolve(ASK, answering("原答案"));
-
-	// 答案向量是写入时存下的，改不了；让**片段**编码远离才能让 ⑥ 判负
-	const shadowed = harness({ store, shadow: true, passage: { "CHUNK n1": forCosine(0.1) } });
-	const found = await shadowed.cache.lookup(ASK);
-	assert.equal(found.exitedAt, 6);
-	assert.equal((await store.all()).length, 1, "⑥ 的驱逐是破坏性的，影子模式下必须挡住");
-});
-
 test("lookup 在影子模式下把命中降级成 shadow，真实判定留在 wouldHave", async () => {
 	const store = createMemoryCacheStore();
 	await harness({ store }).cache.resolve(ASK, answering("原答案"));

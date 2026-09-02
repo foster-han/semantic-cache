@@ -445,7 +445,7 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 	},
 ];
 
-/** 拼答案。模板语言必须与语料语言一致 —— 混语会系统性压低 ⑥ 的支撑度。 */
+/** 拼答案。模板语言必须与语料语言一致 —— 混语答案与它引用的资料语言对不上。 */
 export function compose(chunks: ReadonlyArray<ComposeChunk>): string {
 	if (chunks.length === 0) return "（本课程下没有可用资料）";
 	const top = chunks[0];
@@ -456,6 +456,3 @@ export function compose(chunks: ReadonlyArray<ComposeChunk>): string {
 	return `简单说：${lead}${rest ? `\n\n展开一点：${rest}` : ""}${also}\n\n（依据：《${top.title}》v${top.version}）`;
 }
 
-export function refineSuffix(title: string): string {
-	return `\n（已按本次检索到的《${title}》微调）`;
-}

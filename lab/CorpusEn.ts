@@ -244,7 +244,7 @@ export const SCENARIOS: ReadonlyArray<LabScenario> = [
 ];
 
 /** Compose an answer. The template language must match the corpus language —
- *  a mixed-language answer systematically depresses gate ⑥'s support score. */
+ *  a mixed-language answer is a language mismatch with the corpus it cites. */
 export function compose(chunks: ReadonlyArray<ComposeChunk>): string {
 	if (chunks.length === 0) return "(No material available for this course.)";
 	const top = chunks[0];
@@ -255,6 +255,3 @@ export function compose(chunks: ReadonlyArray<ComposeChunk>): string {
 	return `In short: ${lead}${rest ? `\n\nIn more detail: ${rest}` : ""}${also}\n\n(Based on "${top.title}" v${top.version}.)`;
 }
 
-export function refineSuffix(title: string): string {
-	return `\n(Adjusted against "${title}" retrieved for this question.)`;
-}

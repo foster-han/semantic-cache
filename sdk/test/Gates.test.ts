@@ -1,5 +1,5 @@
 /**
- * 六道闸的判定。
+ * 五道闸的判定。
  *
  * 每个测试对应一次实测踩过的坑，或一条被写进 DESIGN 的不变式 —— 它们此前只由散文
  * 守着，改一行实现不会有任何东西变红。
@@ -42,13 +42,11 @@ test("③ 向量召回：没有候选、或最高余弦低于下限，都在这�
 	const empty = harness();
 	const cold = await empty.cache.lookup(P);
 	assert.equal(cold.exitedAt, 3);
-	assert.equal(cold.chunks, null, "没走到 ⑥ 时 chunks 必须是 null，好让调用方知道要自己检索");
 
 	const { cache } = harness({ pair: { "问题 B": forCosine(0.2) }, recallFloor: 0.9 });
 	await cache.resolve(P, async () => ({ kind: "answer", answer: "A", sourceIds: ["n1"] }));
 	const low = await cache.lookup({ matchText: "问题 B", retrievalText: "问题 B", context: {} });
 	assert.equal(low.exitedAt, 3);
-	assert.equal(low.support, null);
 });
 
 test("④ 精排：不提供 RerankStage 就是没有这道闸（标 off，不拿它的闸值去卡余弦）", async () => {
@@ -178,54 +176,7 @@ test("⑤ 资料版本：不符就驱逐；关掉这道闸时标 would-exit 并�
 	assert.equal(verdicts(passed.trace)[5], "would-exit", "关掉的闸要如实标出「本会拦下」");
 });
 
-test("⑥ 的算子是 top-1：旧答案自己的来源还在 top-k 里也不能救它（取 max 会漏）", async () => {
-	// Vapnik → Breiman 那次的形状：问 Breiman，检索回来的第一篇换了，
-	// 但缓存答案的来源文档仍排在第二位，和自己比当然满分。
-	let chunks: Array<Chunk> = [{ id: "own", text: "CHUNK own" }];
-	const { cache, store } = harness({
-		passage: { "旧答案": BASE, "CHUNK own": BASE, "CHUNK other": forCosine(0.5) },
-		retrieve: () => chunks.map(c => ({ ...c })),
-		support: { high: 0.9, low: 0.8 },
-		recallFloor: 0.1,
-	});
-	await cache.resolve(P, async () => ({ kind: "answer", answer: "旧答案", sourceIds: ["own"] }));
-	chunks = [{ id: "other", text: "CHUNK other" }, { id: "own", text: "CHUNK own" }];
-
-	const found = await cache.lookup(P);
-	assert.equal(found.exitedAt, 6, "top-1 换了一篇就该拦下 —— 取 max 会被自己的来源顶到 1.0");
-	closeTo(found.support, 0.5, "支撑度必须来自 top-1 那一篇");
-	assert.equal((await store.all()).length, 0, "判定为无效的条目要驱逐");
-});
-
-test("⑥ 判不了 ≠ 判定为无效：检索没返回片段时不复用，但**不驱逐**", async () => {
-	const { cache, store } = harness({ retrieve: () => [] });
-	await cache.resolve(P, async () => ({ kind: "answer", answer: "A", sourceIds: ["n1"] }));
-	const seeded = (await store.all()).length;
-	assert.equal(seeded, 1);
-
-	const found = await cache.lookup(P);
-	assert.equal(found.exitedAt, 6);
-	assert.equal(found.support, null, "没算出支撑度就该是 null，不是 0");
-	assert.match(found.trace.find(t => t.gate === 6)?.detail ?? "", /判不了/u);
-	assert.equal((await store.all()).length, 1, "一次检索故障不能顺手删掉它读到的缓存");
-});
-
-test("⑥ 关掉时照常算分并标 would-exit —— 一次运行就能看出关掉会怎样", async () => {
-	const { cache, store } = harness({
-		gates: { answerCheck: false },
-		passage: { A: BASE, [DEFAULT_CHUNK.text]: forCosine(0.1) },
-	});
-	await cache.resolve(P, async () => ({ kind: "answer", answer: "A", sourceIds: ["n1"] }));
-	const found = await cache.lookup(P);
-	assert.equal(found.outcome, "exact");
-	const gate6 = found.trace.find(t => t.gate === 6);
-	assert.equal(gate6?.verdict, "off");
-	assert.ok((gate6?.score ?? 1) < 0.2, "分数照算，好让 A/B 看清代价");
-	assert.match(gate6?.detail ?? "", /本该拦下/u);
-	assert.equal((await store.all()).length, 1);
-});
-
-test("plan 条目：⑤⑥ 都不适用，标 off 并直接复用", async () => {
+test("plan 条目：⑤ 不适用，标 off 并直接复用", async () => {
 	const { cache } = harness();
 	const plan = async () => ({ kind: "plan" as const, plan: { tool: "getGrade", assignment: "2" } });
 	const first = await cache.resolve(P, plan);
@@ -233,7 +184,6 @@ test("plan 条目：⑤⑥ 都不适用，标 off 并直接复用", async () => 
 	const second = await cache.resolve(P, plan);
 	assert.equal(second.outcome, "exact");
 	assert.deepEqual(verdicts(second.trace)[5], "off");
-	assert.deepEqual(verdicts(second.trace)[6], "off");
 	assert.equal(second.payload.kind, "plan");
 	assert.equal(second.sourceIds.length, 0);
 });

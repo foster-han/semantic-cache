@@ -1,30 +1,23 @@
 /**
- * 三个模型角色。**它们比的不是同一类东西，不能共用一个模型。**
+ * 两个模型角色。**它们比的不是同一类东西，不能共用一个模型。**
  *
- * 这个区分不是洁癖，是实测出来的：拿句对相似度模型（paraphrase-*）去做
- * 问题↔段落的检索，「什么是过拟合？」检出来的第一名是「批归一化」（0.366），
- * 换成检索训练的模型后是「过拟合」（0.888）。拿段落重排器（ms-marco）去比
- * 问题↔问题，中文上四组难度递减的输入全部落在 0.9975–0.9988，跨度 0.0013。
+ * 这个区分不是洁癖，是实测出来的：拿段落重排器（ms-marco）去比问题↔问题，
+ * 中文上四组难度递减的输入全部落在 0.9975–0.9988，跨度 0.0013；反过来拿句对
+ * 相似度模型（paraphrase-*）去做问题↔段落的检索，「什么是过拟合？」检出来的
+ * 第一名是「批归一化」（0.366）。
  *
  * 两次错误**都不报错**：模型正常加载、返回合法的 0~1 分数、程序跑完。
- * 所以类型上把三个角色分开，并且要求每个角色上线前过 `checkDiscrimination`。
+ * 所以类型上把角色分开，并且要求每个角色上线前过 `checkDiscrimination`。
+ *
+ * **先前这里有第三个角色 `RetrievalEncoder`（问题↔段落）**，供 ⑥ 回答有效性校验
+ * 使用。⑥ 已移除，检索交回调用方自己的 RAG，所以这个角色不再属于本库 ——
+ * 那次检索任务错配的实测仍留在上面，因为它说明的是「角色不能共用」，不是 ⑥。
  */
 
 /** 问题 ↔ 问题（对称）。用于缓存条目的召回。 */
 export interface PairEncoder {
 	/** 一批问句 → 归一化后的向量。同一实现内维度必须一致。 */
 	embedQuestions(texts: ReadonlyArray<string>): Promise<Array<Array<number>>>;
-}
-
-/**
- * 问题 ↔ 段落（非对称）。用于检索资料，以及回答有效性校验。
- *
- * 查询侧和文档侧必须分开：E5 一类模型要求 `query:` / `passage:` 前缀，
- * 混用会让分数失去意义。两侧输出必须落在**同一个向量空间**。
- */
-export interface RetrievalEncoder {
-	embedQuery(texts: ReadonlyArray<string>): Promise<Array<Array<number>>>;
-	embedPassage(texts: ReadonlyArray<string>): Promise<Array<Array<number>>>;
 }
 
 /**
@@ -62,4 +55,4 @@ export interface Reranker {
 	score(query: string, candidate: string): Promise<number>;
 }
 
-export type EncoderRole = "pair" | "retrieval" | "rerank";
+export type EncoderRole = "pair" | "rerank";

@@ -63,7 +63,7 @@ export interface ScopeDecision {
  */
 export type ScopeResolver = (prompt: CachePrompt) => Promise<ScopeDecision> | ScopeDecision;
 
-export type GateId = 1 | 2 | 3 | 4 | 5 | 6;
+export type GateId = 1 | 2 | 3 | 4 | 5;
 
 export type GateVerdict =
 	| "pass"
@@ -83,12 +83,10 @@ export interface GateTrace {
 	/**
 	 * 这一步**真的删掉了一条条目**。
 	 *
-	 * **驱逐必须由这个字段声明，不能从 `verdict === "exit"` 反推。** ⑥ 的 `exit`
-	 * 里有一半什么都没删：「判不了」（检索没返回片段、条目没有答案向量）刻意保留
-	 * 条目，无资料依据的答案不写入也不删，中带微调失败同样保留旧条目；影子模式下
-	 * ⑤⑥ 判负也一律不删。
+	 * **驱逐必须由这个字段声明，不能从 `verdict === "exit"` 反推。** 有一半的
+	 * `exit` 什么都没删：无资料依据的答案不写入也不删，影子模式下 ⑤ 判负也不删。
 	 *
-	 * 反推的话，retriever 一次故障会让看板报出「N 次 ⑥ 判负驱逐」而缓存一条没动 ——
+	 * 反推的话，一次上游故障会让看板报出「N 次判负驱逐」而缓存一条没动 ——
 	 * 「一次故障不改变缓存状态」这条不变量会被指标自己打穿，而且是从最可信的那一侧
 	 * （看板）打穿。`Metrics.ts` 因此只认这个字段。
 	 */
@@ -100,8 +98,6 @@ export type Outcome =
 	| "exact"
 	/** 语义命中并通过全部校验 */
 	| "reuse"
-	/** 命中但支撑度只到中带，用旧答案 + 新片段做了一次短生成 */
-	| "refine"
 	/** 未命中或被某道闸拦下，走了完整生成 */
 	| "generated"
 	/**
@@ -155,11 +151,11 @@ export type Generate = (prompt: CachePrompt, chunks: ReadonlyArray<Chunk>) => Pr
 /**
  * 缓存里存的是什么 —— 这个区分决定了哪些闸适用，也决定了脱敏后能不能跨主体共享。
  *
- * **answer**：文本答案，含实体特定内容。依赖语料，所以要过 ⑤ 版本比对和
- * ⑥ 回答校验；脱敏后**不能**跨主体共享，否则甲的答案会被安上乙的名字。
+ * **answer**：文本答案，含实体特定内容。依赖语料，所以要过 ⑤ 版本比对；
+ * 脱敏后**不能**跨主体共享，否则甲的答案会被安上乙的名字。
  *
  * **plan**：工具调用计划，实体是**参数**而不是内容。不依赖语料（⑤ 不适用），
- * 没有实体特定内容（⑥ 不适用），执行时用当前请求的实体填参、当场做授权检查。
+ * 执行时用当前请求的实体填参、当场做授权检查。
  * 脱敏后跨主体共享**正是所求** —— 一个模板服务所有人，塌得越彻底缓存效率越高。
  *
  * 贵的是 LLM 判断"该调哪个工具、传什么参数"，工具调用本身很便宜，
@@ -173,9 +169,9 @@ export type CachedPayload =
 			 * 据以生成的资料，顺序即重要性。
 			 *
 			 * **空数组的 answer 条目 ⑤ 和 `invalidateSource` 都够不着**：版本指纹恒为
-			 * 空串所以永远"一致"，而按资料 id 的批量失效匹配不到空数组。⑥ 仍然照常
-			 * 保护它。真正的问题在更前面 —— 一个没有任何检索依据的 RAG 答案，
-			 * 要么是拒答要么是幻觉，该不该进缓存值得先想清楚。
+			 * 空串所以永远"一致"，而按资料 id 的批量失效匹配不到空数组。移除 ⑥ 之后
+			 * 它连答案侧的兜底也没有了 —— 所以 `cacheable()` 直接拒绝写入这种条目，
+			 * 那道守卫从「多一层保险」变成了唯一一层。
 			 */
 			readonly sourceIds: ReadonlyArray<string>;
 	  }
@@ -198,24 +194,19 @@ export interface GeneratedAnswer {
 	readonly sourceIds: ReadonlyArray<string>;
 }
 
-/** 旧答案 + 新片段的短生成。不提供时中带退化为完整生成。 */
-export type Refine = (
-	cachedAnswer: string,
-	prompt: CachePrompt,
-	chunks: ReadonlyArray<Chunk>,
-) => Promise<CachedPayload>;
-
 /**
  * 闸门开关。
  *
  * **④ 精排不在这里** —— 它由 `RerankStage` 提供与否决定。开关和阈值分家，
  * 正是尺度混用的温床：关掉开关却留着阈值，那个阈值就会被套到另一个尺度上。
+ *
+ * 先前这里还有 ⑥ 回答有效性校验的开关。⑥ 已移除 —— 它对应的两类失效
+ * （同词不同指、实体塌陷）源于缓存键有损，而那该由键的设计和读侧条件解决，
+ * 不该由一道在答案侧兜底的闸解决。
  */
 export interface GateSwitches {
 	/** ⑤ 资料版本比对 */
 	readonly sourceVersion: boolean;
-	/** ⑥ 回答有效性校验 */
-	readonly answerCheck: boolean;
 }
 
 /**
@@ -251,8 +242,6 @@ export type LookupOutcome =
 	| "exact"
 	/** 语义命中且过了全部校验 */
 	| "reuse"
-	/** 命中，但支撑度只到中带 —— 旧答案还在，用不用由调用方决定 */
-	| "mid"
 	/** 没有可用条目 */
 	| "miss"
 	/**
@@ -274,9 +263,9 @@ export type LookupOutcome =
 /**
  * 只读匹配的结果。
  *
- * **`lookup` 不生成、也不写入新条目**，但它会驱逐被 ⑤⑥ 判定为失效的旧条目 ——
- * 那是维护，不是写入：一条版本已过期或已不被语料支撑的缓存，读到它的那一刻就
- * 该消失，留着只会让下一个请求再判一次。
+ * **`lookup` 不生成、也不写入新条目**，但它会驱逐被 ⑤ 判定为失效的旧条目 ——
+ * 那是维护，不是写入：一条版本已过期的缓存，读到它的那一刻就该消失，
+ * 留着只会让下一个请求再判一次。
  */
 export interface LookupResult {
 	readonly outcome: LookupOutcome;
@@ -287,11 +276,6 @@ export interface LookupResult {
 	/** 被哪道闸拦下；命中时为 null */
 	readonly exitedAt: GateId | null;
 	readonly trace: ReadonlyArray<GateTrace>;
-	/**
-	 * ⑥ 已经检索过的片段。**没走到 ⑥ 时是 null** —— 那时调用方要自己检索。
-	 * 走到过就直接用，别再检索一遍。
-	 */
-	readonly chunks: ReadonlyArray<Chunk> | null;
 	/**
 	 * `CachePolicy` 说「别读」的理由；没说就是 null。
 	 *
@@ -313,8 +297,6 @@ export interface LookupResult {
 	 * 「重新回答」只有前者，「出五道练习题」只有后者。
 	 */
 	readonly noStoreReason: string | null;
-	/** ⑥ 的支撑度；没算到时为 null */
-	readonly support: number | null;
 	/**
 	 * 取写入票据。**是个函数而不是字段**：② 精确命中那条路径本来不需要召回向量，
 	 * 为了填一个多半用不上的字段去付一次模型调用，正好毁掉那一层的全部价值。

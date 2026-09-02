@@ -1,4 +1,4 @@
-import type { PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "./Encoders.ts";
+import type { PairEncoder, Reranker, RerankTarget } from "./Encoders.ts";
 
 /**
  * 一个打分器和**为它标定的**阈值绑在一起。
@@ -43,11 +43,3 @@ export type RecallStage = Calibrated<PairEncoder, { readonly floor: number }>;
  * 等于把这套类型设计的意义抵消掉。
  */
 export type RerankStage = Calibrated<Reranker, { readonly floor: number; readonly target: RerankTarget }>;
-
-/**
- * ⑥ 回答校验：答案向量与 **top-1** 检索片段的余弦尺度。
- *
- * 算子固定为 top-1，不给选择 —— 取重心会稀释信号，取 max 会被旧答案
- * 自己的来源片段顶起来。标定时也必须用同一个算子。
- */
-export type SupportStage = Calibrated<RetrievalEncoder, { readonly high: number; readonly low: number }>;

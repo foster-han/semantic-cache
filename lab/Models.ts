@@ -7,7 +7,20 @@
  *
  * MODE=stub 是零依赖的玩具相似度，只用来跑通控制流；**分数没有统计意义**。
  */
-import type { PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "../sdk/src/index.ts";
+import type { PairEncoder, Reranker, RerankTarget } from "../sdk/src/index.ts";
+
+/**
+ * 问题 ↔ 段落（非对称）。**这是验证台自己那个玩具 RAG 的编码器，不是缓存的角色。**
+ *
+ * 先前它是 SDK 的 `RetrievalEncoder`，供 ⑥ 回答有效性校验使用。⑥ 移除后 SDK 不再有
+ * 这个角色 —— 库不实现检索，`Retriever` 由调用方传入。验证台恰好就是那个调用方，
+ * 没有真 RAG 可接，所以自己留一份：查询侧与文档侧分开（E5 一类要 `query:`/`passage:`
+ * 前缀），两侧必须落在同一个向量空间。
+ */
+export interface LabRetrievalEncoder {
+	embedQuery(texts: ReadonlyArray<string>): Promise<Array<Array<number>>>;
+	embedPassage(texts: ReadonlyArray<string>): Promise<Array<Array<number>>>;
+}
 
 /**
  * 默认语料是英文（`Corpus.ts`），所以默认编码器也是英文的。
@@ -58,14 +71,43 @@ const CE_TARGET: RerankTarget = process.env.CE_TARGET === "answer" ? "answer" : 
  * 模型的元数据靠猜，猜错了没人告诉你。
  *
  * 表里只放**查过出处**的。查法：读模型仓库的 `1_Pooling/config.json`。
+ * **「查过」是指逐个仓库查过，不是查过一个就按系列推广** —— 先前那条
+ * `/gte-|bge-(?!reranker)/ → cls` 就是这么错的，见下面 gte 两行。
  */
 const POOLING_BY_MODEL: ReadonlyArray<readonly [RegExp, "mean" | "cls", string]> = [
 	// 读过 1_Pooling/config.json：pooling_mode_cls_token=true
 	[/^redis\/langcache-embed/u, "cls", "读过 1_Pooling/config.json"],
-	// gte / bge 系列的 embedding 模型官方都取 [CLS]
-	[/gte-|bge-(?!reranker)/u, "cls", "gte / bge embedding 官方用 [CLS]"],
+	// 读过 bge-small/base/large-en-v1.5 与 bge-m3 的 1_Pooling：都是 cls。reranker 不是 embedding，排除
+	[/bge-(?!reranker)/u, "cls", "读过 1_Pooling/config.json：bge embedding 用 [CLS]"],
+	/**
+	 * **gte 分两代，pooling 相反，一条 `gte-` 盖不住。**
+	 *
+	 * 逐个读过 1_Pooling/config.json：thenlper 的 gte-small/base/large 是
+	 * `pooling_mode_mean_tokens`，Alibaba-NLP 的 gte-*-en-v1.5 与 gte-multilingual-base
+	 * 才是 `pooling_mode_cls_token`。先前一条 `/gte-/ → cls` 把前一代也判成了 cls ——
+	 * 实测 `RETR_MODEL=Xenova/gte-small` 在本语料检索上 top-1 从 92.3% 掉到 80.8%
+	 * （26 题里的 3 题，量级别当准数；方向是确定的，见 _probe_retrievalEncoders.ts）。
+	 *
+	 * **它比没有规则更坏**：落到回落分支至少会打一行警告，而这条会打着
+	 * 「gte / bge embedding 官方用 [CLS]」的理由自信地配错。所以两代各写一行，
+	 * 两代都不匹配的 gte 变体宁可落到警告，也不替它猜。
+	 */
+	[/^Alibaba-NLP\/gte-|gte-[a-z-]*v1\.5/u, "cls", "读过 1_Pooling/config.json：gte 的 v1.5 一代用 [CLS]"],
+	[/gte-(?:small|base|large)$/u, "mean", "读过 1_Pooling/config.json：thenlper 那一代 gte 用 mean"],
+	// 读过 arctic-embed 的 xs/s/m/l 与 m-v2.0 的 1_Pooling：整个系列都是 cls
+	[/snowflake-arctic-embed-/u, "cls", "读过 1_Pooling/config.json：arctic-embed 用 [CLS]"],
 	// E5 官方 README 明确 average pooling
 	[/e5-/u, "mean", "E5 官方用 average pooling"],
+	// 读过 nomic-embed-text v1 与 v1.5 的 1_Pooling：都是 mean
+	[/nomic-embed-text-v1(?:\.5)?$/u, "mean", "读过 1_Pooling/config.json：nomic-embed-text 用 mean"],
+	// 读过 jina-embeddings-v2 的 small-en 与 base-en 的 1_Pooling：都是 mean。v3 没查过，不替它猜
+	[/jina-embeddings-v2-(?:small|base)-en$/u, "mean", "读过 1_Pooling/config.json：jina v2 用 mean"],
+	/**
+	 * `PAIR_MODEL` 的默认值自己不在表里，于是**默认配置每次启动都在喊「这可能是错的」**。
+	 * 回落撞对了（读过 1_Pooling：all-MiniLM-L6-v2 与 L12-v2 都是 mean），但一行天天响的
+	 * 警告会被训练成噪音，等它真为某个未知模型响起时就没人看了。写进表里让它闭嘴。
+	 */
+	[/all-MiniLM-L(?:6|12)-v2/u, "mean", "读过 1_Pooling/config.json：all-MiniLM 用 mean"],
 	// sentence-transformers 的 paraphrase-* 系列是 mean
 	[/paraphrase-/u, "mean", "sentence-transformers paraphrase-* 为 mean"],
 ];
@@ -115,7 +157,7 @@ function poolingFor(id: string, override: string | undefined, role: string): Poo
 	return "mean";
 }
 
-export interface LabEncoders extends PairEncoder, RetrievalEncoder {
+export interface LabEncoders extends PairEncoder, LabRetrievalEncoder {
 	readonly mode: "stub" | "local";
 	readonly note: string;
 	readonly rerankAvailable: boolean;

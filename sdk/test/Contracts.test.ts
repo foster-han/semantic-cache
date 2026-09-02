@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
 import { createSemanticCache } from "../src/SemanticCache.ts";
 import { assertFiniteVector, cosine, hashKey, normalizeKey } from "../src/VectorMath.ts";
-import type { RecallStage, RerankStage, SupportStage } from "../src/types/Calibration.ts";
+import type { RecallStage, RerankStage } from "../src/types/Calibration.ts";
 import type { RerankTarget } from "../src/types/Encoders.ts";
 import { harness } from "./Fakes.ts";
 
@@ -26,13 +26,6 @@ test("recallLimit 必须是大于 1 的整数 —— 非整数在真库上才炸
 test("余弦尺度的阈值越界要当场抛，别留给运行期变成恒放行/恒拦下", () => {
 	assert.throws(() => harness({ recallFloor: 1.5 }), /recall\.thresholds\.floor/u);
 	assert.throws(() => harness({ recallFloor: Number.NaN }), /recall\.thresholds\.floor/u);
-	assert.throws(() => harness({ support: { high: 2, low: 0.9 } }), /support\.thresholds\.high/u);
-	assert.throws(() => harness({ support: { high: 0.9, low: -1.2 } }), /support\.thresholds\.low/u);
-});
-
-test("support 的置信带反了要抛 —— high 是复用下界，low 是驱逐上界", () => {
-	assert.throws(() => harness({ support: { high: 0.8, low: 0.9 } }), /置信带反了/u);
-	assert.doesNotThrow(() => harness({ support: { high: 0.9, low: 0.9 } }));
 });
 
 test("④ 的闸值只查有限数，不查 [-1,1] —— 重排器的尺度不是余弦", () => {
@@ -54,26 +47,17 @@ test("④ 的 target 必须是 question 或 answer —— 拼错了会静默落�
 });
 
 test("calibratedOn 是必填且不能是空串 —— 阈值离开标定语境就没有意义", () => {
-	assert.doesNotThrow(() => buildWith({}), "三个 stage 都给了 calibratedOn 就该通过");
+	assert.doesNotThrow(() => buildWith({}), "两个 stage 都给了 calibratedOn 就该通过");
 	assert.throws(() => buildWith({ recall: "" }), /recall\.calibratedOn 不能是空串/u);
-	assert.throws(() => buildWith({ support: "  " }), /support\.calibratedOn 不能是空串/u);
 	assert.throws(() => buildWith({ rerank: "" }), /rerank\.calibratedOn 不能是空串/u);
 });
 
-/** 只有上面那个测试需要绕过 harness 的默认 calibratedOn，所以三个 stage 在这里现拼 */
-function buildWith(blank: { recall?: string; support?: string; rerank?: string }): void {
+/** 只有上面那个测试需要绕过 harness 的默认 calibratedOn，所以两个 stage 在这里现拼 */
+function buildWith(blank: { recall?: string; rerank?: string }): void {
 	const recall: RecallStage = {
 		scorer: { async embedQuestions(texts) { return texts.map(() => [1, 0, 0]); } },
 		thresholds: { floor: 0.5 },
 		calibratedOn: blank.recall ?? "本次标定语境",
-	};
-	const support: SupportStage = {
-		scorer: {
-			async embedQuery(texts) { return texts.map(() => [1, 0, 0]); },
-			async embedPassage(texts) { return texts.map(() => [1, 0, 0]); },
-		},
-		thresholds: { high: 0.9, low: 0.8 },
-		calibratedOn: blank.support ?? "本次标定语境",
 	};
 	const rerank: RerankStage = {
 		scorer: { async score() { return 1; } },
@@ -82,7 +66,6 @@ function buildWith(blank: { recall?: string; support?: string; rerank?: string }
 	};
 	createSemanticCache({
 		recall,
-		support,
 		rerank,
 		store: createMemoryCacheStore(),
 		retriever: { async retrieve() { return []; } },
@@ -112,11 +95,10 @@ test("非有限分量三个后端一律抛 —— 一个坏编码器不能在内
 	const store = createMemoryCacheStore();
 	const entry = {
 		id: "e1", scope: "s", matchText: "q", matchHash: "h", matchVector: [Number.NaN, 0, 0],
-		kind: "answer" as const, answer: "a", plan: {}, answerVector: [1, 0, 0],
+		kind: "answer" as const, answer: "a", plan: {}, 
 		sourceIds: [], sourceVersion: "", createdAt: 1, expiresAt: null,
 	};
 	await assert.rejects(() => store.put(entry), /matchVector 第 0 维是 NaN/u);
-	await assert.rejects(() => store.put({ ...entry, matchVector: [1, 0, 0], answerVector: [0, Number.NaN, 0] }), /answerVector 第 1 维/u);
 	await assert.rejects(() => store.searchNearest("s", [Number.NaN, 0, 0], 5), /查询向量第 0 维/u);
 });
 

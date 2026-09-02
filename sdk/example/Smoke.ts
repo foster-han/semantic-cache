@@ -1,5 +1,5 @@
 /**
- * 端到端冒烟：用确定性的假模型跑完六道闸，不下载任何东西。
+ * 端到端冒烟：用确定性的假模型跑完五道闸，不下载任何东西。
  *
  * 假模型的"向量"是词袋哈希投影 —— 分数没有语义意义，但足以让每道闸真正
  * 被触发一次，验证接线正确。真模型下的行为要用 evaluate() 在你自己的
@@ -12,8 +12,8 @@
  */
 import { createSemanticCache } from "../src/SemanticCache.ts";
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
-import { assertDiscriminates, checkRetrievalEncoder } from "../src/DiscriminationCheck.ts";
-import type { PairEncoder, Reranker, RetrievalEncoder } from "../src/types/Encoders.ts";
+import { assertDiscriminates, checkPairEncoder } from "../src/DiscriminationCheck.ts";
+import type { PairEncoder, Reranker } from "../src/types/Encoders.ts";
 import type { Chunk, Retriever } from "../src/types/Retrieval.ts";
 import type { CachedPayload, CachePrompt } from "../src/types/Pipeline.ts";
 
@@ -30,10 +30,6 @@ function bag(text: string, dim = 128): Array<number> {
 }
 
 const pair: PairEncoder = { async embedQuestions(t) { return t.map(x => bag(x)); } };
-const retrieval: RetrievalEncoder = {
-	async embedQuery(t) { return t.map(x => bag(x)); },
-	async embedPassage(t) { return t.map(x => bag(x)); },
-};
 const rerank: Reranker = {
 	async score(q, c) {
 		const a = bag(q);
@@ -84,7 +80,6 @@ const cache = createSemanticCache({
 	// 阈值跟着打分器走 —— 换打分器就拿不到旧尺度的阈值
 	recall: { scorer: pair, thresholds: { floor: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
 	rerank: { scorer: rerank, thresholds: { floor: 0.3, target: "question" }, calibratedOn: "假模型词袋，仅供跑通" },
-	support: { scorer: retrieval, thresholds: { high: 0.35, low: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
 	store,
 	retriever,
 	// PII 门控就写在这里：检出实体 → 个人隔离，否则同课共享
@@ -126,10 +121,10 @@ function must(condition: boolean, what: string): void {
 	console.error(`  ✖ 不变式失效：${what}`);
 }
 
-/* 0. 上线前：判别力自检 */
-const report = await checkRetrievalEncoder(retrieval, [
-	{ label: "该命中", a: "什么是过拟合", b: docs.get("n5")!.text, shouldMatch: true },
-	{ label: "不该命中", a: "什么是过拟合", b: docs.get("syl")!.text, shouldMatch: false },
+/* 0. 上线前：判别力自检。③ 的句对角色 —— 拿两个问句比，不是问句比段落 */
+const report = await checkPairEncoder(pair, [
+	{ label: "该命中", a: "什么是过拟合", b: "过拟合是什么意思", shouldMatch: true },
+	{ label: "不该命中", a: "什么是过拟合", b: "课程怎么打分", shouldMatch: false },
 ]);
 console.log(`自检 margin=${report.margin.toFixed(4)} usable=${report.usable}`);
 assertDiscriminates(report);
@@ -146,18 +141,25 @@ const bumped = line("改版后再问", await ask("期中考试考几章？", "�
 must(bumped.exitedAt === 5, `语料改版后该被 ⑤ 拦下，实际 exitedAt=${String(bumped.exitedAt)}`);
 must(bumped.outcome === "generated", "被 ⑤ 拦下之后该走完整生成");
 
-console.log("\n--- ⑥ 实体塌陷（匿名化后两条字面相同）---");
+/**
+ * 实体塌陷：**⑥ 移除之后这一条会照常发生，这里把它钉成不变式。**
+ *
+ * 两个学生的问句匿名化成同一个字面 `<PERSON_1> 的作业二扣了多少？`，共享 scope 下
+ * 就是同一个键，于是 Bob 拿到 Alice 的答案。先前 ⑥ 会在答案侧拦住它 —— 检索用的是
+ * 保留实体的原文，回来的片段是 rec:bob，跟 Alice 的答案对不上。
+ *
+ * 断言写成「确实塌了」而不是删掉这一节：它是移除 ⑥ 的**代价清单**，
+ * 而下面 ① 那一节是替代方案。哪天有人让键带上实体、或默认收紧 scope，
+ * 这条断言会失败，逼着人回来重读这段说明 —— 那正是要的效果。
+ */
+console.log("\n--- 实体塌陷（匿名化后两条字面相同，⑥ 已移除）---");
 await store.clear();
 line("播种 Alice", await ask("<PERSON_1> 的作业二扣了多少？", "alice 的作业二扣了多少？"));
 const bob = line("探测 Bob", await ask("<PERSON_1> 的作业二扣了多少？", "bob 的作业二扣了多少？"));
-must(bob.sourceIds[0] !== "rec:alice", "Bob 拿到了 Alice 的答案 —— ⑥ 没拦住占位符塌陷");
+must(bob.sourceIds[0] === "rec:alice", "共享 scope + 匿名化的键必然塌陷 —— 没塌说明别处变了，回来重读这段");
 
-console.log("\n--- 同上，但检索误用匿名化文本（硬前提被破坏）---");
-await store.clear();
-line("播种 Alice", await ask("<PERSON_1> 的作业二扣了多少？", "alice 的作业二扣了多少？"));
-line("探测 Bob", await ask("<PERSON_1> 的作业二扣了多少？", "<PERSON_1> 的作业二扣了多少？"));
-
-console.log("\n--- ① 门控：检出 PII 就个人隔离 ---");
+/* ① 门控就是上面那一条的解法：把实体放回隔离边界，键就不再有损 */
+console.log("\n--- ① 门控：检出 PII 就个人隔离（实体塌陷的正解）---");
 await store.clear();
 line("Alice(pii)", await ask("<PERSON_1> 的作业二扣了多少？", "alice 的作业二扣了多少？", { pii: "1", userId: "u1" }));
 const bobIsolated = line("Bob(pii)", await ask("<PERSON_1> 的作业二扣了多少？", "bob 的作业二扣了多少？", { pii: "1", userId: "u2" }));
@@ -169,7 +171,6 @@ await store.clear();
 const planCache = createSemanticCache({
 	recall: { scorer: pair, thresholds: { floor: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
 	rerank: { scorer: rerank, thresholds: { floor: 0.3, target: "question" }, calibratedOn: "假模型词袋，仅供跑通" },
-	support: { scorer: retrieval, thresholds: { high: 0.35, low: 0.3 }, calibratedOn: "假模型词袋，仅供跑通" },
 	store,
 	retriever,
 	// 共享 scope，且声明已脱敏 —— 对 plan 来说这正是想要的
@@ -216,11 +217,10 @@ try {
 console.log("\n--- 匹配 / 写入 / 获取 / 失效 ---");
 await store.clear();
 
-/* 1. 匹配：空缓存必然 miss，⑥ 还没走到所以 chunks 是 null */
+/* 1. 匹配：空缓存必然 miss */
 const cold = await cache.lookup({ matchText: "什么是过拟合？", retrievalText: "什么是过拟合？", context: {} });
-console.log(`lookup(冷)      ${cold.outcome.padEnd(8)} exitedAt=${cold.exitedAt} chunks=${cold.chunks === null ? "null（需自己检索）" : cold.chunks.length}`);
+console.log(`lookup(冷)      ${cold.outcome.padEnd(8)} exitedAt=${cold.exitedAt}`);
 must(cold.outcome === "miss", "空缓存必然 miss");
-must(cold.chunks === null, "没走到 ⑥ 时 chunks 必须是 null，否则调用方会以为不用自己检索");
 
 /* 2. 写入：票据来自刚才那次 lookup —— scope 不用再解，向量不用再编 */
 const chunks = await retriever.retrieve("什么是过拟合？", {});
@@ -241,13 +241,10 @@ must(got !== null, "刚写进去的条目该能按 id 取回");
 must(written.expiresAt !== null, "给了 ttlMs 就该有过期时间");
 must(written.meta?.requestId === "r-1", "meta 该原样存下来");
 
-/* 4. 再匹配：这次该命中，而且 ⑥ 已经检索过，chunks 可以直接拿去用 */
+/* 4. 再匹配：这次该命中。**lookup 不检索** —— 片段由调用方自己拿 */
 const warm = await cache.lookup({ matchText: "过拟合是什么意思？", retrievalText: "过拟合是什么意思？", context: {} });
-console.log(
-	`lookup(热)      ${warm.outcome.padEnd(8)} entryId=${warm.entryId} 支撑度=${warm.support?.toFixed(4) ?? "-"} chunks=${warm.chunks?.length ?? "null"}`,
-);
+console.log(`lookup(热)      ${warm.outcome.padEnd(8)} entryId=${warm.entryId}`);
 must(warm.outcome === "reuse", `同义提问该命中，实际 ${warm.outcome}`);
-must(warm.chunks !== null && warm.support !== null, "走到过 ⑥ 就该把片段和支撑度带出来");
 
 /* 5. 失效：老师改了 n5，这一批立刻失效，不必等 ⑤ 在读时发现 */
 const dropped = await cache.invalidateSource("n5");

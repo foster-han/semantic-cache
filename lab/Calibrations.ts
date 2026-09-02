@@ -23,11 +23,7 @@ export interface CalibrationRow {
 	readonly generator: GeneratorKind;
 	/** ③ 召回下限（句对模型的余弦尺度） */
 	readonly recallFloor: number;
-	/** ⑥ 支撑度两档（检索模型 passage 空间，top-1 算子） */
-	readonly thetaAHi: number;
-	readonly thetaALo: number;
 	readonly recallNote: string;
-	readonly supportNote: string;
 }
 
 /**
@@ -55,9 +51,9 @@ export interface RerankCalibrationRow {
 /**
  * ③ 的下限不是判别阈值，是「像得够不够格进候选集」的地板，所以三种组合共用一句话。
  * 它没被探针标定过 —— 英文那轮 `calibrateCosine.ts` 的结论恰恰是纯余弦分不开近义反义
- * （margin −0.2936），说明这个尺度上不存在一个能同时管住两类错的值。取宽，让 ④/⑥ 去管。
+ * （margin −0.2936），说明这个尺度上不存在一个能同时管住两类错的值。取宽，让 ④ 去管。
  */
-const RECALL_NOTE = "召回地板，未经探针标定：纯余弦分不开近义反义（英文实测 margin −0.2936），所以取宽，判别交给 ④/⑥";
+const RECALL_NOTE = "召回地板，未经探针标定：纯余弦分不开近义反义（英文实测 margin −0.2936），所以取宽，判别交给 ④";
 
 /**
  * ④ 标定表。**没标定过的 (模型 × 形态) 组合查不到就是查不到**，不借用 ——
@@ -80,7 +76,7 @@ export const RERANK_CALIBRATIONS: ReadonlyArray<RerankCalibrationRow> = [
 			"lab/_probe_ce6.ts 量分数、_probe_ce7.ts 量这个数有多可信。**0.3494 不是测出来的最优值，是按代价不对称选的平台端点**：" +
 			"错误最少（4/18）对应的 θ 平台是 0.3494~0.9720（宽 0.62，因为分数极端双峰、中间是空的），" +
 			"bootstrap 95% 区间 0.287~0.999 —— 这份数据定不出 θq 的位置，只定出它落在一个很宽的空隙里。" +
-			"取下界而不是中点 0.6607，因为 ④ 的假正后面还有 ⑤⑥ 接着，而假负是净损失（那正是「④ 砍掉 2 次合法复用」那条负收益的成因）。" +
+			"取下界而不是中点 0.6607，因为 ④ 的假正后面还有 ⑤ 接着，而假负是净损失（那正是「④ 砍掉 2 次合法复用」那条负收益的成因）。" +
 			"泛化误差看留一交叉验证：27.8%，不是训练误差那个 22.2%。**这一行只对拼接式生成成立**：" +
 			"candidate 是 compose() 拼的答案，换真生成端要重标",
 	},
@@ -128,64 +124,42 @@ export const CALIBRATIONS: ReadonlyArray<CalibrationRow> = [
 		encoders: "local",
 		generator: "stub",
 		recallFloor: 0.45,
-		thetaAHi: 0.973,
-		thetaALo: 0.935,
 		recallNote: RECALL_NOTE,
-		supportNote: `${ZH_LOCAL_SUPPORT}，stub 生成 1 次采样：该复用中位 0.9926 / 该拦下中位 0.9154 → margin 0.0772`,
 	},
 	{
 		corpus: "zh",
 		encoders: "local",
 		generator: "claude-cli",
 		recallFloor: 0.45,
-		thetaAHi: 0.96,
-		thetaALo: 0.926,
 		recallNote: RECALL_NOTE,
-		supportNote: `${ZH_LOCAL_SUPPORT}，claude-cli 3 次采样取中位：0.9768 / 0.9096 → margin 0.0672（最坏 0.9732 vs 0.9407）`,
 	},
 	{
 		corpus: "zh",
 		encoders: "local",
 		generator: "deepseek",
 		recallFloor: 0.45,
-		thetaAHi: 0.967,
-		thetaALo: 0.936,
 		recallNote: RECALL_NOTE,
-		supportNote: `${ZH_LOCAL_SUPPORT}，deepseek 5 次采样取中位：0.9831 / 0.9205 → margin 0.0626（最坏 0.9743 vs 0.9464）`,
 	},
 	{
 		corpus: "en",
 		encoders: "local",
 		generator: "stub",
 		recallFloor: 0.45,
-		thetaAHi: 0.923,
-		thetaALo: 0.91,
 		recallNote: RECALL_NOTE,
-		supportNote:
-			"⚠ **这两个数已作废,待重标**:0.923 / 0.910 是在 `multilingual-e5-small` 的 passage 空间上标的,"
-			+ "而检索模型的默认值已改成 `e5-small-v2` —— 换了检索模型,θa 就是别人分布上的产物。"
-			+ "原标定:en 语料 · multilingual-e5-small passage 空间 · top-1 算子 · stub 生成 · scripts/calibrate.ts。"
-			+ "重标:`CORPUS_LANG=en` 配真生成端跑 scripts/calibrate.ts —— en × 真生成端本来也一行都没有",
 	},
 	{
 		corpus: "zh",
 		encoders: "stub",
 		generator: "stub",
 		recallFloor: 0.45,
-		thetaAHi: 0.97,
-		thetaALo: 0.96,
 		recallNote: STUB_ENCODER_NOTE,
-		supportNote: STUB_ENCODER_NOTE,
 	},
 	{
 		corpus: "en",
 		encoders: "stub",
 		generator: "stub",
 		recallFloor: 0.45,
-		thetaAHi: 0.97,
-		thetaALo: 0.96,
 		recallNote: STUB_ENCODER_NOTE,
-		supportNote: STUB_ENCODER_NOTE,
 	},
 ];
 
@@ -204,12 +178,9 @@ export interface ActiveCalibration {
 	readonly thetaQ: number | null;
 	/** ④ 的形态 —— θq 只在这个形态下有意义，页面和 trace 要一起显示 */
 	readonly rerankTarget: RerankTarget;
-	readonly thetaAHi: number;
-	readonly thetaALo: number;
-	/** 三个 stage 各自的 `calibratedOn` —— 它们标定于不同的东西，不该共用一句话 */
+	/** 两个 stage 各自的 `calibratedOn` —— 它们标定于不同的东西，不该共用一句话 */
 	readonly recallNote: string;
 	readonly rerankNote: string;
-	readonly supportNote: string;
 	/** 一行摘要，给启动日志和页面横幅 */
 	readonly summary: string;
 	/** 没有这个组合的行，借了别人的 */
@@ -284,8 +255,6 @@ export function resolveCalibration(target: CalibrationTarget): ActiveCalibration
 	const overrides = {
 		recallFloor: readOverride("RECALL_FLOOR", false),
 		thetaQ: readOverride("THETA_Q", true),
-		thetaAHi: readOverride("THETA_A_HI", false),
-		thetaALo: readOverride("THETA_A_LO", false),
 	};
 	const overridden = Object.entries(overrides)
 		.filter(([, v]) => v !== undefined)
@@ -302,17 +271,13 @@ export function resolveCalibration(target: CalibrationTarget): ActiveCalibration
 		recallFloor: (overrides.recallFloor as number | undefined) ?? borrowedRow.recallFloor,
 		thetaQ,
 		rerankTarget: target.rerankTarget,
-		thetaAHi: (overrides.thetaAHi as number | undefined) ?? borrowedRow.thetaAHi,
-		thetaALo: (overrides.thetaALo as number | undefined) ?? borrowedRow.thetaALo,
 		recallNote: `${borrowedRow.recallNote}${suffix}`,
 		// ④ 的 note 不带 suffix：借用与覆盖说的是主表那三个阈值，θq 走的是自己那张表
 		rerankNote: overridden.includes("thetaQ") ? `${rerankNote}；⚠ θq 被 THETA_Q= 覆盖，已不是表里的数` : rerankNote,
-		supportNote: `${borrowedRow.supportNote}${suffix}`,
 		summary:
 			`标定：${label(target)}${exact ? "" : "（借用）"}　` +
 			`③ ${(overrides.recallFloor as number | undefined) ?? borrowedRow.recallFloor}　` +
-			`④ ${thetaQ === null ? "无（这道闸关着）" : `${thetaQ}（${formLabel}）`}　` +
-			`⑥ ${(overrides.thetaAHi as number | undefined) ?? borrowedRow.thetaAHi} / ${(overrides.thetaALo as number | undefined) ?? borrowedRow.thetaALo}` +
+			`④ ${thetaQ === null ? "无（这道闸关着）" : `${thetaQ}（${formLabel}）`}` +
 			(notes.length === 0 ? "" : `\n${notes.join("\n")}`),
 		borrowed: exact === undefined,
 		overridden,

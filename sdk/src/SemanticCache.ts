@@ -1,6 +1,6 @@
 import { cosine, hashKey, normalizeKey } from "./VectorMath.ts";
 import { composeScope } from "./Scope.ts";
-import type { RecallStage, RerankStage, SupportStage } from "./types/Calibration.ts";
+import type { RecallStage, RerankStage } from "./types/Calibration.ts";
 import type { CachePolicy } from "./types/CachePolicy.ts";
 import type { CacheEntry, CacheStore } from "./types/CacheStore.ts";
 import type { Chunk, Retriever, SourceVersionResolver } from "./types/Retrieval.ts";
@@ -14,7 +14,6 @@ import type {
 	Generate,
 	LookupOutcome,
 	LookupResult,
-	Refine,
 	ScopeResolver,
 	WriteItem,
 	WriteOptions,
@@ -29,14 +28,11 @@ import type {
  */
 export const DEFAULT_GATES: GateSwitches = {
 	sourceVersion: true,
-	answerCheck: true,
 };
 
 export interface SemanticCacheOptions {
 	/** ③ 召回：打分器与**为它标定的**余弦下限 */
 	readonly recall: RecallStage;
-	/** ⑥ 回答校验：打分器与为它标定的两档支撑度阈值 */
-	readonly support: SupportStage;
 	/**
 	 * ④ 精排：打分器与为它标定的闸值。
 	 * **不提供就是没有这道闸**，不会退化成拿它的闸值去卡召回余弦。
@@ -46,7 +42,6 @@ export interface SemanticCacheOptions {
 	readonly retriever: Retriever;
 	readonly scope: ScopeResolver;
 	readonly sourceVersion: SourceVersionResolver;
-	readonly refine?: Refine;
 	readonly gates?: Partial<GateSwitches>;
 	/** ③ 召回条数。**必须大于 1**，否则 ④ 精排无候选可排。 */
 	readonly recallLimit?: number;
@@ -72,7 +67,7 @@ export interface SemanticCacheOptions {
 	 * 与 `CacheResult.wouldReuse` 里，配 `Metrics` 的 `shadow.wouldReuseRate` 看
 	 * 「真开了能命中多少」。
 	 *
-	 * 不驱逐是要点：⑤⑥ 判负是破坏性的，而影子模式的目的恰恰是检验它们判得对不对 ——
+	 * 不驱逐是要点：⑤ 判负是破坏性的，而影子模式的目的恰恰是检验它判得对不对 ——
 	 * 一边评估一边按评估结果删数据，等于用没验证过的判据毁掉证据。
 	 */
 	readonly shadow?: boolean;
@@ -134,9 +129,10 @@ function assertCalibratedOn(stage: string, value: string): void {
  *   ③ 向量召回   —— top-k，k 必须 > 1
  *   ④ 精排       —— 主精度杠杆
  *   ⑤ 资料版本   —— 确定性判据，不用相似度判过期。仅对 answer 条目适用
- *   ⑥ 回答校验   —— 旧答案是否仍被检索片段支撑。仅对 answer 条目适用
  *
- * ② 命中也要过 ⑤⑥：缓存键建在脱敏文本上时，占位符塌陷对精确匹配同样成立。
+ * ② 命中也要过 ⑤：问题逐字相同，不代表它当初依据的那批资料还是老样子。
+ *
+ * 读路径上没有检索 —— `Retriever` 只在确定要生成时才调一次。
  */
 /**
  * 绕开时的「票据」：调用它必然抛。
@@ -190,7 +186,6 @@ function bypassTicket(reason: string): () => Promise<WriteTicket> {
 export function createSemanticCache(options: SemanticCacheOptions) {
 	const gates: GateSwitches = { ...DEFAULT_GATES, ...options.gates };
 	const recall = options.recall;
-	const support = options.support;
 	const rerank = options.rerank;
 	const recallLimit = options.recallLimit ?? 5;
 	const ttlMs = options.ttlMs === undefined ? 60 * 60 * 1000 : options.ttlMs;
@@ -229,14 +224,6 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	 * 类型设计一路在防的事。所以 rerank 的闸值只查「是不是有限数」。
 	 */
 	assertCosineThreshold("recall.thresholds.floor", recall.thresholds.floor);
-	assertCosineThreshold("support.thresholds.high", support.thresholds.high);
-	assertCosineThreshold("support.thresholds.low", support.thresholds.low);
-	if (support.thresholds.high < support.thresholds.low) {
-		throw new Error(
-			`support 的置信带反了：high ${support.thresholds.high} < low ${support.thresholds.low}。` +
-				"high 是「直接复用」的下界，low 是「驱逐」的上界，中间那段才是微调带。",
-		);
-	}
 	if (rerank && !Number.isFinite(rerank.thresholds.floor)) {
 		throw new Error(`rerank.thresholds.floor 必须是有限数，收到 ${String(rerank.thresholds.floor)}。`);
 	}
@@ -252,7 +239,6 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		);
 	}
 	assertCalibratedOn("recall", recall.calibratedOn);
-	assertCalibratedOn("support", support.calibratedOn);
 	if (rerank) assertCalibratedOn("rerank", rerank.calibratedOn);
 
 	/**
@@ -266,7 +252,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	}
 
 	/* ------------------------------------------------------------------ *
-	 * 匹配 —— 只读路径。跑 ①～⑥，不生成、不写新条目。
+	 * 匹配 —— 只读路径。跑 ①～⑤，不生成、不写新条目。
 	 * ------------------------------------------------------------------ */
 
 	async function lookup(prompt: CachePrompt): Promise<LookupResult> {
@@ -314,8 +300,8 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		/** `noStore` 生效时票据必须拒发 —— 不是「这次不写」，是写不进去 */
 		const issueTicket = noStoreReason === null ? prepareWrite : bypassTicket(noStoreReason);
 
-		function miss(exitedAt: GateId, chunks: ReadonlyArray<Chunk> | null, support: number | null): LookupResult {
-			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt, trace, chunks, support, wouldHave: null, noCacheReason, noStoreReason, prepareWrite: issueTicket };
+		function miss(exitedAt: GateId): LookupResult {
+			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt, trace, wouldHave: null, noCacheReason, noStoreReason, prepareWrite: issueTicket };
 		}
 
 		// `noCache`：一道闸都不跑。trace 保持空的 —— 记成某道闸的判定就是假话
@@ -327,8 +313,6 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				sourceIds: [],
 				exitedAt: null,
 				trace,
-				chunks: null,
-				support: null,
 				wouldHave: null,
 				noCacheReason,
 				noStoreReason,
@@ -395,7 +379,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				detail: (candidates.length === 0 ? "该 scope 下没有候选" : `最高余弦 ${top?.toFixed(4)} 低于召回下限`) + foreignNote,
 				score: top,
 			});
-			return miss(3, null, null);
+			return miss(3);
 		}
 		trace.push({
 			gate: 3,
@@ -417,7 +401,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			 *   - 回落到 `matchText` → 拿问↔答标定的 θq 去卡问↔问的分数，尺度混用
 			 *   - **这道闸对它们不适用** ← 选用
 			 *
-			 * 和 ⑤⑥ 对 plan 不适用是同一个道理，DESIGN 里已经立了这个先例。
+			 * 和 ⑤ 对 plan 不适用是同一个道理，DESIGN 里已经立了这个先例。
 			 *
 			 * **但「不适用」在混合 scope 里等于「让位」，这一点必须说清。** 只要 top-k
 			 * 里还有一条 answer，胜出者就在 answer 里挑 —— plan 条目连 ③ 排第一也拿不到
@@ -482,7 +466,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 							`，标定于：${rerank.calibratedOn}）${skipNote}${winnerNote}`,
 						score: questionScore,
 					});
-					return miss(4, null, null);
+					return miss(4);
 				}
 				trace.push({
 					gate: 4,
@@ -508,9 +492,8 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	}
 
 	/**
-	 * ⑤ ⑥ 与置信带。**被判定失效的条目在这里驱逐** —— 那是维护而不是写入：
-	 * 一条版本已过期或已不被语料支撑的缓存，读到它的那一刻就该消失。
-	 * 中带条目不驱逐：它没失效，只是不够有把握，留不留由上层决定。
+	 * ⑤ 资料版本比对。**被判定失效的条目在这里驱逐** —— 那是维护而不是写入：
+	 * 一条版本已过期的缓存，读到它的那一刻就该消失，留着只会让下一个请求再判一次。
 	 */
 	async function verify(
 		entry: CacheEntry,
@@ -521,23 +504,16 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		wasExact: boolean,
 		/**
 		 * 策略的两个理由原样透传。`noCache` 走不到这里（它在闸之前就返回了），
-		 * 但 `noStore` 走得到 —— 中带那条路会 refine 后写回，必须拿不到票据。
+		 * 但 `noStore` 走得到 —— 一次合法的写回也要先过它。
 		 */
 		reasons: { readonly noCacheReason: string | null; readonly noStoreReason: string | null },
 	): Promise<LookupResult> {
-		// 快速失败：脱敏 × 共享 × answer 是必然出错的组合，早点抛，
-		// 别先付掉一次检索和两次 embedding 再抛。
+		// 快速失败：脱敏 × 共享 × answer 是必然出错的组合，早点抛。
 		guard(entry.kind);
 
-		/* plan 条目：不依赖语料、无实体特定内容 —— ⑤⑥ 都不适用 */
+		/* plan 条目：不依赖语料 —— ⑤ 不适用 */
 		if (entry.kind === "plan") {
 			trace.push({ gate: 5, name: "资料版本比对", verdict: "off", detail: "plan 条目不依赖语料" });
-			trace.push({
-				gate: 6,
-				name: "回答有效性校验",
-				verdict: "off",
-				detail: "plan 条目无实体特定内容 —— 实体是参数，执行时填参并授权",
-			});
 			if (!shadow) await options.store.touch(entry.id);
 			return {
 				outcome: shadow ? "shadow" : wasExact ? "exact" : "reuse",
@@ -547,8 +523,6 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				sourceIds: [],
 				exitedAt: null,
 				trace,
-				chunks: null,
-				support: null,
 				...reasons,
 				prepareWrite,
 			};
@@ -567,7 +541,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				evicted: !shadow,
 			});
 			if (!shadow) await options.store.evict(entry.id);
-			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 5, trace, chunks: null, support: null, wouldHave: null, ...reasons, prepareWrite };
+			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 5, trace, wouldHave: null, ...reasons, prepareWrite };
 		}
 		trace.push({
 			gate: 5,
@@ -576,67 +550,19 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			detail: stale ? "版本不符，但该闸已关闭 —— 过期答案会被放行" : "版本一致",
 		});
 
-		/* ⑥ 回答有效性 —— 检索必须用保留实体的原文 */
-		const chunks = await options.retriever.retrieve(prompt.retrievalText, prompt.context);
-
 		/**
-		 * **「判不了」和「判定为无效」必须分开。**
+		 * ⑤ 之后就是命中。**读路径到此为止，不检索。**
 		 *
-		 * 没有片段时 supportScore 返回 0，必然低于 low。先前这里直接驱逐，于是
-		 * retriever 一次故障（向量库超时、索引重建、连接断）就会让**每一次读都顺手
-		 * 删掉它读到的那条缓存** —— 一次故障可以静默清空整个缓存，而且从日志上看
-		 * 每一条都"依法驱逐"。缺证据不是有罪。
+		 * 先前这里还有 ⑥ 回答有效性校验：拿旧答案的向量和这次检索到的 top-1 片段
+		 * 算余弦，低于 θa 就驳回。它精确对应两类失效 —— 同词不同指、实体塌陷 ——
+		 * 而那两类的根源都是**缓存键有损**：匿名化拿掉了实体，消歧上下文留在
+		 * `context` 而不在键里。键里带全了决定答案的一切就不会有这两类，
+		 * 该在键的设计和读侧条件上解决，不该在答案侧兜底。
 		 *
-		 * 本次仍然不复用（保守），但条目留着。
-		 */
-		if (gates.answerCheck && (chunks.length === 0 || entry.answerVector.length === 0)) {
-			trace.push({
-				gate: 6,
-				name: "回答有效性校验",
-				verdict: "exit",
-				detail: chunks.length === 0 ? "检索没有返回任何片段，判不了 —— 本次不复用，但不驱逐" : "条目没有答案向量，判不了 —— 本次不复用，但不驱逐",
-				// 显式写出来：这条 exit 不是驱逐。缺证据不是有罪，指标也不许当成有罪
-				evicted: false,
-			});
-			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 6, trace, chunks, support: null, wouldHave: null, ...reasons, prepareWrite };
-		}
-
-		const supportValue = await supportScore(entry, chunks);
-		const wouldExit = supportValue < support.thresholds.low;
-		if (gates.answerCheck && wouldExit) {
-			trace.push({
-				gate: 6,
-				name: "回答有效性校验",
-				verdict: "exit",
-				detail:
-					`支撑度 ${supportValue.toFixed(4)} 低于 ${support.thresholds.low}（标定于：${support.calibratedOn}）` +
-					`，${shadow ? "影子模式不驱逐" : `驱逐 ${entry.id}`}`,
-				score: supportValue,
-				evicted: !shadow,
-			});
-			if (!shadow) await options.store.evict(entry.id);
-			return { outcome: "miss", payload: null, entryId: null, sourceIds: [], exitedAt: 6, trace, chunks, support: supportValue, wouldHave: null, ...reasons, prepareWrite };
-		}
-		trace.push({
-			gate: 6,
-			name: "回答有效性校验",
-			verdict: !gates.answerCheck ? "off" : wouldExit ? "would-exit" : "pass",
-			detail: !gates.answerCheck
-				? `已关闭（支撑度本会是 ${supportValue.toFixed(4)}${wouldExit ? "，本该拦下" : ""}）`
-				: `支撑度 ${supportValue.toFixed(4)}`,
-			score: supportValue,
-		});
-
-		/* 置信带 */
-		const confident = supportValue >= support.thresholds.high || !gates.answerCheck;
-		/**
-		 * 命中记账。`fifo`/`rr` 的存储实现里这是真正的空操作（不发请求），
-		 * 所以这里无条件调 —— 策略知识留在存储里，判定逻辑不该知道用的哪一种。
-		 *
-		 * 中带也算命中：它复用了这条条目的答案。
+		 * 移除它同时去掉了读路径上唯一一次 `retriever.retrieve()` 与一次 embedding。
 		 */
 		if (!shadow) await options.store.touch(entry.id);
-		const real: LookupOutcome = confident ? (wasExact ? "exact" : "reuse") : "mid";
+		const real: LookupOutcome = wasExact ? "exact" : "reuse";
 		return {
 			outcome: shadow ? "shadow" : real,
 			wouldHave: shadow ? real : null,
@@ -645,34 +571,11 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			sourceIds: entry.sourceIds,
 			exitedAt: null,
 			trace,
-			chunks,
-			support: supportValue,
 			...reasons,
 			prepareWrite,
 		};
 	}
 
-	/**
-	 * 支撑度 = 旧答案与**首个**检索片段的余弦。
-	 *
-	 * 算子选择踩过两次坑，都不是小事：
-	 *
-	 * - **重心（centroid）**：一门课只有两三篇文档时，top-k 会把无关的也捞回来，
-	 *   平均之后信号被稀释，实体塌陷拦不住。
-	 * - **取 max**：语义是「有某个片段撑得住旧答案」——可旧答案**自己的来源片段**
-	 *   往往还在 top-k 里，跟自己比当然高分，max 被它顶起来。实测里
-	 *   Vapnik→Breiman 那条就是这样漏的：问 Breiman，检索回来的三篇里仍有
-	 *   Vapnik 那篇，而缓存答案正是从它生成的。
-	 *
-	 * 正确的语义是「旧答案和**现在会据以回答的那篇**一不一致」，也就是 top-1。
-	 * 这同时保证了标定与实现用的是同一个算子 —— 标定时拿单篇文档比、实现却取
-	 * top-k 的 max，标出来的阈值根本不适用。
-	 */
-	async function supportScore(entry: CacheEntry, chunks: ReadonlyArray<Chunk>): Promise<number> {
-		if (chunks.length === 0 || entry.answerVector.length === 0) return 0;
-		const [top] = await support.scorer.embedPassage([chunks[0].text]);
-		return cosine(entry.answerVector, top);
-	}
 
 	/* ------------------------------------------------------------------ *
 	 * 写入
@@ -814,20 +717,6 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			return pending;
 		}
 
-		/* 一次编码所有答案。答案向量必须落在 passage 空间才能和检索片段比；plan 不需要 */
-		const answerIndexes: Array<number> = [];
-		for (let i = 0; i < items.length; i++) if (items[i].payload.kind === "answer") answerIndexes.push(i);
-		const answerVectors = new Map<number, ReadonlyArray<number>>();
-		if (answerIndexes.length > 0) {
-			const encoded = await support.scorer.embedPassage(
-				answerIndexes.map(i => {
-					const payload = items[i].payload;
-					return payload.kind === "answer" ? payload.answer : "";
-				}),
-			);
-			for (let k = 0; k < answerIndexes.length; k++) answerVectors.set(answerIndexes[k], encoded[k]);
-		}
-
 		const written: Array<CacheEntry> = [];
 		for (let i = 0; i < items.length; i++) {
 			const { prompt, payload } = items[i];
@@ -852,7 +741,6 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				matchVector: slot.matchVector ?? [],
 				answer: isAnswer ? payload.answer : "",
 				plan: isAnswer ? {} : payload.plan,
-				answerVector: answerVectors.get(i) ?? [],
 				sourceIds,
 				sourceVersion: isAnswer ? await sourceVersionOf(sourceIds) : "",
 				createdAt: created,
@@ -974,8 +862,8 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	 * `invalidateSource` 也够不着（按资料 id 的批量失效匹配不到空数组），而
 	 * `getByHash` 取最新 —— 它会稳稳地顶掉那条本来好好的旧缓存。
 	 *
-	 * ⑥ 那边把"判不了"和"判定为无效"分开了，故障期间不再删缓存；这里是另一半：
-	 * 故障期间也不往里写。两半都到位，一次检索故障才真的不改变缓存状态。
+	 * 这是「一次故障不改变缓存状态」的写入侧那一半：读路径除了 ⑤ 判出的版本失效
+	 * 什么都不删，写路径拒收没有依据的产物。缺一半那条不变式就是空话。
 	 *
 	 * plan 条目不依赖语料，本来就没有 sourceIds，照写。
 	 */
@@ -988,34 +876,20 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 	 *
 	 * 反过来（先删后写）看着更直觉，但那把「替换」变成了「先删掉，然后试着写一条」：
 	 * 生成抛错、写入抛错、产物没有资料依据 —— 任何一种都让旧条目白白消失。实测过一次：
-	 * 中带条目 + 一次生成失败 = 净丢一条本来还能用的缓存，而这正是「一次故障不改变
-	 * 缓存状态」那条不变式要防的事（⑥ 判不了时不驱逐、无依据的答案不写入，是同一条的另两半）。
+	 * 一次生成失败 = 净丢一条本来还能用的缓存，而这正是「一次故障不改变缓存状态」
+	 * 那条不变式要防的事（无依据的答案不写入，是同一条的另一半）。
 	 *
 	 * 顺序反过来之后，同 (scope, matchHash) 的两条会共存几毫秒 —— 这是安全的：
 	 * `getByHash` 的契约就是取最新的那条，读到的一定是替换后的那一条。
 	 */
-	/**
-	 * 替换一条：写新的，成功后驱逐旧的。
-	 *
-	 * 驱逐由 `writeMany` 统一做（`supersedes`），和「写入前查重」是同一段逻辑 ——
-	 * 两者都是「写完之后收掉一条该走的」，没必要两套。
-	 */
-	async function replaceEntry(
-		supersededId: string,
-		prompt: CachePrompt,
-		payload: CachedPayload,
-		writeOptions: WriteOptions | undefined,
-		ticket: WriteTicket,
-	): Promise<CacheEntry> {
-		return write(prompt, payload, { ...writeOptions, ticket, supersedes: supersededId });
-	}
 
 	/**
 	 * 合流键。
 	 *
 	 * **`retrievalText` 必须在键里。** 上游做了匿名化时，两个学生问同一句话会得到
-	 * 相同的 `matchText`，但 `retrievalText` 里的实体不同 —— 那正是 ⑥ 存在的理由。
-	 * 只按 matchText 合流，等于亲手制造这套东西一路在防的占位符塌陷。
+	 * 相同的 `matchText`，但 `retrievalText` 里的实体不同 —— 检索出来的片段因此不同，
+	 * 生成出来的答案也不同。只按 matchText 合流，后到的那个学生会拿到用**别人的实体**
+	 * 检索、生成出来的答案。这不是命中率问题，是错答案。
 	 *
 	 * **解析出来的 scope 也必须在键里。** `CachePrompt` 的四个字段都在键里了，所以
 	 * 只要 `ScopeResolver` 是 prompt 的纯函数，scope 就是它们的函数 —— 但那是**契约**，
@@ -1116,102 +990,29 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			};
 		}
 
-		/* 中带：有 refine 就短生成并写回替换，没有就退化成完整生成 */
-		let superseded: string | null = null;
-		if (found.outcome === "mid" && found.entryId) {
-			if (options.refine && found.payload?.kind === "answer") {
-				const refined = await options.refine(found.payload.answer, prompt, found.chunks ?? []);
-				if (!cacheable(refined)) {
-					// 旧条目还没删 —— 拿一个没有依据的微调结果去换掉它是净亏
-					trace.push({
-						gate: 6,
-						name: "中带处理",
-						verdict: "exit",
-						detail: "微调结果没有资料依据，不写回，旧条目保留",
-						evicted: false,
-					});
-					return {
-						payload: refined,
-						outcome: "refine",
-						bypassReason: null,
-						// 影子模式下 mid 已被降级成 "shadow"，refine 不可达 —— 恒为 null
-						wouldReuse: null,
-						exitedAt: null,
-						entryId: found.entryId,
-						sourceIds: [],
-						trace,
-					};
-				}
-				/**
-				 * `noStore` 下不写回 —— 票据是拒发的，直接往下走会把 resolve 整个炸掉。
-				 * 微调结果照样返回给这一次的调用方（refine 的钱已经花了，答案是好的），
-				 * 代价如实写进 trace：下次同样的问题还会再微调一次。
-				 */
-				if (found.noStoreReason !== null) {
-					trace.push({ gate: 6, name: "中带处理", verdict: "off", detail: `策略判定不写入（${found.noStoreReason}）—— 微调结果只用这一次，旧条目保留` });
-					return {
-						payload: refined,
-						outcome: "refine",
-						bypassReason: null,
-						wouldReuse: null,
-						exitedAt: null,
-						entryId: found.entryId,
-						sourceIds: refined.kind === "answer" ? refined.sourceIds : [],
-						trace,
-					};
-				}
-				// 微调的产物要写回替换旧条目。不写回的话，下次同样的问题又落进中带、
-				// 又微调一次 —— 短生成的钱一直在花，而每次算出的更好答案都被丢掉。
-				const replacement = await replaceEntry(found.entryId, prompt, refined, writeOptions, await found.prepareWrite());
-				trace.push({ gate: 6, name: "中带处理", verdict: "pass", detail: `微调后写回：${found.entryId} → ${replacement.id}` });
-				return {
-					payload: refined,
-					outcome: "refine",
-					bypassReason: null,
-					// 影子模式下 mid 已被降级成 "shadow"，refine 不可达 —— 恒为 null
-					wouldReuse: null,
-					exitedAt: null,
-					// 旧条目已经删了。返回旧 id 的话调用方拿它去 get 只会拿到 null
-					entryId: replacement.id,
-					sourceIds: refined.kind === "answer" ? refined.sourceIds : [],
-					trace,
-				};
-			}
-			trace.push({
-				gate: 6,
-				name: "中带处理",
-				verdict: "exit",
-				detail: `未提供 refine，中带退化为完整生成；旧条目 ${found.entryId} 留到新答案写成之后再删`,
-				/**
-				 * **不算 ⑥ 的驱逐。** 旧条目稍后确实会被 `replaceEntry` 删掉，但那是
-				 * 「被新答案顶替」，不是「⑥ 判它失效」—— 中带的语义恰恰是「它没失效，
-				 * 只是不够有把握」。混进 `evictions.byAnswerCheck` 会让那个数变成
-				 * 「⑥ 判负 + 中带退化」的和，于是「阈值是不是太紧」这个问题问不出来。
-				 * 而且这条路走不到写入时（答案无依据 / noStore / 影子模式）旧条目还留着。
-				 */
-				evicted: false,
-			});
-			superseded = found.entryId;
-		}
-
-		const chunks = found.chunks ?? (await options.retriever.retrieve(prompt.retrievalText, prompt.context));
+		/**
+		 * 先前这里是**中带**：⑥ 的支撑度落在 low~high 之间时，用旧答案 + 新片段做一次
+		 * 短生成（`refine`）再写回替换，写回时 `supersedes` 顶掉旧条目。中带是 ⑥ 的
+		 * 产物 —— 没有支撑度就没有「不够有把握」这个状态，所以 ⑥ 移除后它、`refine`、
+		 * 以及「顶替旧条目」这条写入路径一起消失：命中就是命中，未命中就是新写一条。
+		 */
+		// `lookup` 不再检索（⑥ 是它唯一的理由），所以生成前这一次是唯一的一次
+		const chunks = await options.retriever.retrieve(prompt.retrievalText, prompt.context);
 		const produced = await generate(prompt, chunks);
 		/**
 		 * 中带落到这里是被 ⑥ 放弃的，如实记成 6 —— 下面几条不写入的返回路径共用它，
 		 * 免得同一件事在不同分支记出不同的 `exitedAt`。
 		 */
-		const exitedAt = found.outcome === "mid" ? 6 : found.exitedAt;
+		const exitedAt = found.exitedAt;
 
 		if (!cacheable(produced)) {
 			trace.push({
-				gate: 6,
+				gate: 5,
 				name: "写入",
 				verdict: "exit",
-				detail: superseded
-					? "答案没有任何资料依据，本次不写入缓存 —— 中带的旧条目因此保留"
-					: "答案没有任何资料依据，本次不写入缓存",
+				detail: "答案没有任何资料依据，本次不写入缓存",
 				// 这条 exit 在任何生成路径上都会发，连一条候选都没有的全新 scope 也会 ——
-				// 反推驱逐的话，冷缓存也能报出一次「⑥ 判负驱逐」
+				// 反推驱逐的话，冷缓存也能报出一次「判负驱逐」
 				evicted: false,
 			});
 			return {
@@ -1240,12 +1041,12 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 		 * 5/6 正好标志「存在一条被判负但被保留的条目」；3/4 与无候选的真未命中
 		 * 撞不上去重，照常写，否则缓存永远暖不起来。
 		 */
-		if (shadow && (found.outcome === "shadow" || exitedAt === 5 || exitedAt === 6)) {
+		if (shadow && (found.outcome === "shadow" || exitedAt === 5)) {
 			const detail =
 				found.outcome === "shadow"
 					? `本会 ${found.wouldHave} —— 已改为真生成，且不写回（原条目保留）`
 					: `⑤⑥ 判负的条目已保留，写入也一并跳过 —— 否则去重会把它顶掉（本会 miss@${exitedAt}）`;
-			trace.push({ gate: 6, name: "影子模式", verdict: "off", detail });
+			trace.push({ gate: 5, name: "影子模式", verdict: "off", detail });
 			return {
 				payload: produced,
 				outcome: "generated",
@@ -1258,7 +1059,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 			};
 		}
 		if (found.noStoreReason !== null) {
-			trace.push({ gate: 6, name: "写入", verdict: "off", detail: `策略判定不写入（${found.noStoreReason}）—— 生成了，但不落缓存` });
+			trace.push({ gate: 5, name: "写入", verdict: "off", detail: `策略判定不写入（${found.noStoreReason}）—— 生成了，但不落缓存` });
 			return {
 				payload: produced,
 				outcome: "generated",
@@ -1270,10 +1071,7 @@ export function createSemanticCache(options: SemanticCacheOptions) {
 				trace,
 			};
 		}
-		const stored =
-			superseded === null
-				? await write(prompt, produced, { ...writeOptions, ticket: await found.prepareWrite() })
-				: await replaceEntry(superseded, prompt, produced, writeOptions, await found.prepareWrite());
+		const stored = await write(prompt, produced, { ...writeOptions, ticket: await found.prepareWrite() });
 		return {
 			payload: produced,
 			outcome: "generated",

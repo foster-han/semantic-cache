@@ -27,7 +27,7 @@ function isSet(context: Readonly<Record<string, string>>, key: string): boolean 
  * 判据只有一条：**输出是不是输入的确定函数。**
  *
  * - `completion` / `responses` / `anthropic_messages` —— 有采样，同输入不同输出。
- *   「相似的问题能不能复用答案」才是个真问题，才需要六道闸。**在列。**
+ *   「相似的问题能不能复用答案」才是个真问题，才需要这五道闸。**在列。**
  * - `embedding` —— 同文本必然同向量。拿相似度去匹配它，等于用「差不多的文本」
  *   换一个「差不多的向量」，正好摧毁向量本身的意义。**该走精确缓存（内容哈希）。**
  * - `rerank` —— 同 query + 同文档集必然同分数。同上。

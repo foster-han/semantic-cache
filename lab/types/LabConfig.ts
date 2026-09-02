@@ -16,9 +16,7 @@ export interface LabConfig {
 	readonly gate4: boolean;
 	/** ⑤ 资料版本比对 */
 	readonly gate5: boolean;
-	/** ⑥ 回答有效性校验 */
-	readonly gate6: boolean;
-	/** ⑥ 的检索用保留实体的原文（那条硬前提） */
+	/** 检索用保留实体的原文（匿名化文本去检索会让两个学生检出同一批片段） */
 	readonly preAnonRetrieval: boolean;
 	/** 上层是否如实声明已脱敏；声明后 SDK 拒绝把 answer 条目放进共享 scope */
 	readonly declareRedacted: boolean;
@@ -33,8 +31,6 @@ export interface LabConfig {
 	 */
 	readonly thetaQ: number | null;
 	readonly recallFloor: number;
-	readonly thetaAHi: number;
-	readonly thetaALo: number;
 	readonly topK: number;
 	readonly chunkK: number;
 	readonly chunkCut: number;
@@ -46,6 +42,5 @@ export interface LabCounters {
 	ask: number;
 	exact: number;
 	reuse: number;
-	refine: number;
 	generated: number;
 }

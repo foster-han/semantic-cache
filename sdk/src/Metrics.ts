@@ -4,7 +4,7 @@ import type { CacheResult, GateId } from "./types/Pipeline.ts";
  * 指标累加器。**喂 `CacheResult` 进去，不碰时钟、不碰网络、不碰存储。**
  *
  * 对齐 Redis LangCache 看板给的那一组（请求/命中/未命中、命中率、延迟、token 节省、
- * 分段命中率），再加上它没有的那一组 —— 六道闸各拦下了多少、驱逐是谁判的。
+ * 分段命中率），再加上它没有的那一组 —— 五道闸各拦下了多少、驱逐是谁判的。
  *
  * **刻意不算正命中率与正确拒绝率。** 那两个要标签：得知道复用的那次「答案对不对」，
  * 而线上没有这个信息。LangCache 的看板同样不给，他们用 LLM-as-a-judge 抽样补。
@@ -29,7 +29,7 @@ export interface MetricsSnapshot {
 	readonly misses: number;
 	/** hits / attempted。attempted 为 0 时是 0，不是 NaN */
 	readonly hitRate: number;
-	readonly byOutcome: Readonly<Record<"exact" | "reuse" | "refine" | "generated" | "bypassed", number>>;
+	readonly byOutcome: Readonly<Record<"exact" | "reuse" | "generated" | "bypassed", number>>;
 	/**
 	 * 策略绕开的次数，**按理由分组**。
 	 *
@@ -40,17 +40,17 @@ export interface MetricsSnapshot {
 	readonly bypassedByReason: Readonly<Record<string, number>>;
 	/**
 	 * 未命中时**被哪道闸拦下**。这是 LangCache 那类单阈值缓存给不出的东西：
-	 * 它只有「命中/未命中」，semcache 能说出是问题侧不像（③④）、资料改版了（⑤）、
-	 * 还是旧答案不再被支撑（⑥）—— 三种未命中的处理方式完全不同。
+	 * 它只有「命中/未命中」，semcache 能说出是问题侧不像（③④）还是资料改版了（⑤）——
+	 * 两种未命中的处理方式完全不同：前者调阈值或换打分器，后者说明缓存正在按预期失效。
 	 */
 	readonly missedAtGate: Readonly<Partial<Record<GateId, number>>>;
 	/**
 	 * **真的删掉了多少条**，以及是谁判的。数的是 trace 上的 `evicted`，不需要存储配合。
 	 *
-	 * 不数 `verdict === "exit"`：⑥ 的 exit 有一半什么都没删（判不了、答案无依据不写入、
-	 * 中带微调失败），影子模式下 ⑤⑥ 判负也一律不删。理由见 `GateTrace.evicted`。
+	 * 不数 `verdict === "exit"`：影子模式下 ⑤ 判负一律不删（评估不该改变被评估的东西），
+	 * 反推的话看板会报出一批根本没发生的驱逐。理由见 `GateTrace.evicted`。
 	 */
-	readonly evictions: { readonly total: number; readonly bySourceVersion: number; readonly byAnswerCheck: number };
+	readonly evictions: { readonly total: number; readonly bySourceVersion: number };
 	/**
 	 * 延迟分位。**命中与未命中分开** —— 混在一起的均值会被命中的那几毫秒拉平，
 	 * 看不出未命中要付的那次生成。
@@ -68,10 +68,6 @@ export interface MetricsSnapshot {
 	 * **完整省下的生成次数** = `exact + reuse`。给了 `costPerGeneration` 才折算成钱 ——
 	 * 单价是调用方的事，库不猜。
 	 *
-	 * **`refine` 不算在内。** 它复用了旧答案，但确实跑了一次短生成 —— 记成整次省下
-	 * 就是把节省报高。中带占比一旦上去（`support.midBandRate` 正是看这个），报高的
-	 * 幅度就不是可以忽略的零头。refine 的次数在 `byOutcome.refine` 里，想按短生成的
-	 * 单价折算用它自己乘 —— 长短两种生成的单价不一样，库不替调用方假设那个比例。
 	 */
 	readonly saved: { readonly generations: number; readonly cost: number | null };
 	/**
@@ -86,61 +82,10 @@ export interface MetricsSnapshot {
 		readonly hitRate: number;
 	}>;
 	/**
-	 * ⑥ 支撑度的分布。**命中率回答「省了多少」，这个回答「离翻车多远」。**
-	 *
-	 * 标定用的是几十条探针，线上是真实流量 —— 两者的分布不一定一样，而
-	 * FINDINGS 里那条「平台宽其实可以是好消息：风险只在于真实数据把空隙填满」
-	 * 只有在这里能被持续验证。数值取自 ⑥ 的 trace（`gate === 6` 且带 `score`），
-	 * 不需要额外计算。
-	 */
-	readonly support: {
-		/**
-		 * 命中时的支撑度。闸关着时的 `would-exit` 也算在这里 —— 那次确实复用了。
-		 *
-		 * **影子模式下的「本会命中」也算在这里。**那时 `outcome` 恒为 `generated`
-		 * （从不复用），所以按 outcome 认命中的话这一栏是空的 —— 而影子模式的用处
-		 * 恰恰是「上线前先看看那些命中有多险」，`headroomP10` / `midBandRate` 全靠
-		 * 这一栏。⑥ 判出来的那个分数，本会命中和真命中在分布上是同一个点。
-		 *
-		 * 它**不进** `hits` / `hitRate` / `latencyMs.hit`：那三个数记的是实际发生的事，
-		 * 影子模式下实际发生的是一次生成。「本会命中多少」在 `shadow.wouldReuseRate`。
-		 */
-		readonly onHit: SupportStats;
-		/**
-		 * **被 ⑥ 判负时**的支撑度。它贴近 θa低 说明阈值太紧，正在杀合法复用。
-		 *
-		 * 这里认的是「判负」而不是「真删了」—— 影子模式下判负不驱逐，但那次判定
-		 * 照样是分布上的一个点，漏掉它影子模式就量不出「上线后 ⑥ 会拦掉什么」。
-		 * 与 `evictions` 刻意不同源：那个数的是动作，这个数的是判定。
-		 */
-		readonly onEvict: SupportStats;
-		/**
-		 * 最险的 10% 命中离 θa高 还剩多少余量（`onHit.p10 − high`）。
-		 * **它往下掉比命中率下降更早**。没给 `supportThresholds` 时为 null。
-		 */
-		readonly headroomP10: number | null;
-		/** 命中里落进微调带（`low ≤ s < high`）的比例。它涨说明分布在往阈值上靠 */
-		readonly midBandRate: number | null;
-	};
-	/**
 	 * 影子模式的账。`shadow: true` 时才有意义 —— 全部请求都真生成，
 	 * 这里记的是「**本来**会不会复用」。
 	 */
 	readonly shadow: { readonly requests: number; readonly wouldReuse: number; readonly wouldReuseRate: number };
-}
-
-/**
- * 支撑度的分布。**分位取 p10/p50/p90 而不是 p50/p95/max** —— 延迟看的是尾部大的那端，
- * 支撑度看的是尾部**小**的那端：一次 0.9675 的命中（θa高 0.967）和一次 0.9990 的命中
- * 在命中率上完全一样，但前者只比阈值高 0.0005。
- */
-export interface SupportStats {
-	readonly count: number;
-	readonly p10: number;
-	readonly p50: number;
-	readonly p90: number;
-	readonly min: number;
-	readonly max: number;
 }
 
 export interface LatencyStats {
@@ -157,18 +102,9 @@ export interface MetricsOptions {
 	 * 每段最多留多少条样本（超出的环形覆盖）。默认 2048 —— 看板要的是分位数，
 	 * 不是全量；无上限的数组在长跑进程里就是内存泄漏。
 	 *
-	 * **延迟与支撑度共用这个上限**，各自独立计数：命中延迟、未命中延迟、
-	 * 命中支撑度、驱逐支撑度各一段。
+	 * 三段延迟各自独立计数：命中、未命中、策略绕开。
 	 */
 	readonly latencySamples?: number;
-	/**
-	 * ⑥ 的两档阈值。给了才算得出 `headroomP10` 与 `midBandRate` ——
-	 * 「离阈值还有多远」这个问题没有阈值就没有答案。
-	 *
-	 * 必须和 `SupportStage.thresholds` 是同一组值。库这边不去读缓存实例的配置：
-	 * 指标层刻意不碰其它组件，只吃 `CacheResult`。
-	 */
-	readonly supportThresholds?: { readonly high: number; readonly low: number };
 	/**
 	 * `bypassedByReason` 与 `bySegment` 各自最多留多少个**真实**键。默认 256，
 	 * 超出的归入 `"（其它）"` —— 所以快照里最多是 `maxDistinctKeys + 1` 项。
@@ -196,25 +132,13 @@ export interface Metrics {
 	reset(): void;
 }
 
-const HIT_OUTCOMES = new Set(["exact", "reuse", "refine"]);
+const HIT_OUTCOMES = new Set(["exact", "reuse"]);
 
 function percentile(sorted: ReadonlyArray<number>, q: number): number {
 	if (sorted.length === 0) return 0;
 	// 最近秩法：小样本下不做插值，避免报出一个没真实出现过的延迟
 	const rank = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
 	return sorted[rank];
-}
-
-function supportStats(samples: ReadonlyArray<number>): SupportStats {
-	const sorted = [...samples].sort((a, b) => a - b);
-	return {
-		count: sorted.length,
-		p10: percentile(sorted, 0.1),
-		p50: percentile(sorted, 0.5),
-		p90: percentile(sorted, 0.9),
-		min: sorted.length === 0 ? 0 : sorted[0],
-		max: sorted.length === 0 ? 0 : sorted[sorted.length - 1],
-	};
 }
 
 function stats(samples: ReadonlyArray<number>): LatencyStats {
@@ -233,9 +157,8 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 
 	let requests = 0;
 	let hits = 0;
-	const byOutcome = { exact: 0, reuse: 0, refine: 0, generated: 0, bypassed: 0 };
+	const byOutcome = { exact: 0, reuse: 0, generated: 0, bypassed: 0 };
 	const bypassedByReason = new Map<string, number>();
-	const thresholds = options?.supportThresholds;
 	const maxKeys = options?.maxDistinctKeys ?? 256;
 	const OVERFLOW = "（其它）";
 	/** 满了就把新键归入「其它」—— 已在表里的照常累加，不丢已有的统计 */
@@ -243,15 +166,10 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 		const slot = map.has(key) || map.size < maxKeys ? key : OVERFLOW;
 		map.set(slot, next(map.get(slot)));
 	}
-	const supportOnHit: Array<number> = [];
-	const supportOnEvict: Array<number> = [];
-	let supportCursor = 0;
-	let evictCursor = 0;
 	let shadowRequests = 0;
 	let shadowWouldReuse = 0;
 	const missedAtGate = new Map<GateId, number>();
 	let evictedByVersion = 0;
-	let evictedByAnswer = 0;
 	let hitLatency: Array<number> = [];
 	let missLatency: Array<number> = [];
 	let bypassLatency: Array<number> = [];
@@ -290,24 +208,11 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 				if (result.wouldReuse) shadowWouldReuse += 1;
 			}
 
-			// ⑤⑥ 的判定与驱逐。**判定看 verdict，驱逐看 evicted** —— 两者刻意不同源
+			// ⑤ 的驱逐。**认 `evicted` 而不是认 verdict** —— 理由见 `GateTrace.evicted`：
+			// 反推的话一次上游故障就能让看板报出满屏「判负驱逐」，而缓存一条没动
 			for (const step of result.trace) {
-				/**
-				 * ⑥ 的支撑度。**认「gate 6 且带 score」而不是认名字** —— 同一道闸
-				 * 在 trace 里还有「写入」「中带处理」两种条目，它们不带 score。
-				 */
-				if (step.gate === 6 && step.score !== undefined) {
-					if (step.verdict === "exit") evictCursor = push(supportOnEvict, evictCursor, step.score);
-					// 影子模式下 outcome 恒为 generated，「本会命中」只能从 wouldReuse 认（见 onHit）
-					else if (hit || result.wouldReuse === true) supportCursor = push(supportOnHit, supportCursor, step.score);
-				}
-				/**
-				 * **认 `evicted` 而不是认 verdict。**理由见 `GateTrace.evicted` —— 反推的话
-				 * retriever 一次故障就能让看板报出满屏「⑥ 判负驱逐」，而缓存一条没动。
-				 */
 				if (step.evicted !== true) continue;
 				if (step.gate === 5) evictedByVersion += 1;
-				else if (step.gate === 6) evictedByAnswer += 1;
 			}
 
 			if (ms !== undefined) {
@@ -339,20 +244,6 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 				misses: attempted - hits,
 				hitRate: attempted === 0 ? 0 : hits / attempted,
 				byOutcome: { ...byOutcome },
-				support: (() => {
-					const onHit = supportStats(supportOnHit);
-					const midBand =
-						thresholds === undefined || supportOnHit.length === 0
-							? null
-							: supportOnHit.filter(v => v >= thresholds.low && v < thresholds.high).length / supportOnHit.length;
-					return {
-						onHit,
-						onEvict: supportStats(supportOnEvict),
-						// 余量就是「最险的 10% 离阈值还有多远」，没有样本时给不出数
-						headroomP10: thresholds === undefined || onHit.count === 0 ? null : onHit.p10 - thresholds.high,
-						midBandRate: midBand,
-					};
-				})(),
 				shadow: {
 					requests: shadowRequests,
 					wouldReuse: shadowWouldReuse,
@@ -361,12 +252,10 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 				bypassedByReason: Object.fromEntries([...bypassedByReason.entries()].sort((a, b) => b[1] - a[1])),
 				missedAtGate: gates,
 				evictions: {
-					total: evictedByVersion + evictedByAnswer,
+					total: evictedByVersion,
 					bySourceVersion: evictedByVersion,
-					byAnswerCheck: evictedByAnswer,
 				},
 				latencyMs: { hit: stats(hitLatency), miss: stats(missLatency), bypassed: stats(bypassLatency) },
-				// refine 跑了一次短生成，不算整次省下 —— 见 saved 的注释
 				saved: (() => {
 					const fully = byOutcome.exact + byOutcome.reuse;
 					return { generations: fully, cost: cost === undefined ? null : fully * cost };
@@ -385,19 +274,13 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 			hits = 0;
 			byOutcome.exact = 0;
 			byOutcome.reuse = 0;
-			byOutcome.refine = 0;
 			byOutcome.generated = 0;
 			byOutcome.bypassed = 0;
 			bypassedByReason.clear();
-			supportOnHit.length = 0;
-			supportOnEvict.length = 0;
-			supportCursor = 0;
-			evictCursor = 0;
 			shadowRequests = 0;
 			shadowWouldReuse = 0;
 			missedAtGate.clear();
 			evictedByVersion = 0;
-			evictedByAnswer = 0;
 			hitLatency = [];
 			missLatency = [];
 			bypassLatency = [];

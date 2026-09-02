@@ -143,7 +143,6 @@ export function createMemoryCacheStore(options?: {
 			}
 			// pgvector 在 toVectorLiteral 里、Redis 在 vectorArgs 里查同一件事
 			assertFiniteVector("matchVector ", entry.matchVector);
-			assertFiniteVector("answerVector ", entry.answerVector);
 			entries.push(entry);
 			trim(entry.scope);
 		},

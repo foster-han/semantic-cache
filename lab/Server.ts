@@ -31,10 +31,9 @@ const MIN_RERANK_MARGIN = 0.15;
 const encoders = await createEncoders();
 
 // 向量列的维度必须跟编码器一致，所以从编码器上量，不写死：
-// stub 是 256 维、e5-small 是 384 维，写死哪个都会在换 MODE 时炸在建表之后。
+// stub 是 256 维、句对模型是 384 维，写死哪个都会在换 MODE 时炸在建表之后。
 const [probeMatch] = await encoders.embedQuestions(["dimension probe"]);
-const [probeAnswer] = await encoders.embedPassage(["dimension probe"]);
-const backing = await createLabStore({ dimensions: { match: probeMatch.length, answer: probeAnswer.length } });
+const backing = await createLabStore({ dimensions: { match: probeMatch.length } });
 const lab = createLab(encoders, backing.store);
 
 console.log(`\n模型后端：${encoders.mode}　—　${encoders.note}`);
@@ -109,7 +108,6 @@ async function snapshot() {
 			overridden: lab.calibration.overridden,
 			recallNote: lab.calibration.recallNote,
 			rerankNote: lab.calibration.rerankNote,
-			supportNote: lab.calibration.supportNote,
 		},
 		course: COURSE,
 		units: [...new Set(DOCS.map(d => d.unit))],

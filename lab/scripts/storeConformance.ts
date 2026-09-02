@@ -31,7 +31,6 @@ function entry(id: string, scope: string, hash: string, seed: number, sources: A
 		kind: "answer",
 		answer: `答案 ${id}`,
 		plan: {},
-		answerVector: vec(seed + 100),
 		sourceIds: sources,
 		sourceVersion: sources.map(s => `${s}v1`).join(","),
 		createdAt: 1_000 + seed,
@@ -59,7 +58,6 @@ function planEntry(id: string, scope: string, hash: string, seed: number): Cache
 		kind: "plan",
 		answer: "",
 		plan: { tool: "getGrade", assignment: "2" },
-		answerVector: [],
 		sourceIds: [],
 		sourceVersion: "",
 		createdAt: 1_000 + seed,
@@ -111,11 +109,11 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 	const plan = await store.getById("p");
 	out.push(
 		`往返 p(plan): kind=${plan?.kind} answer="${plan?.answer}" plan=${JSON.stringify(plan?.plan)} ` +
-			`answerVector=${JSON.stringify(plan?.answerVector)} sources=${JSON.stringify(plan?.sourceIds)} ` +
+			`sources=${JSON.stringify(plan?.sourceIds)} ` +
 			`version="${plan?.sourceVersion}" meta=${plan?.meta === undefined ? "undefined" : JSON.stringify(plan.meta)}`,
 	);
 	out.push(`byHash(course:1,h-p)=${(await store.getByHash("course:1", "h-p"))?.id ?? "null"}`);
-	// plan 条目照样要能被召回（它的 match_vector 是正常的，只有答案侧是空的）
+	// plan 条目照样要能被召回
 	out.push(`near(plan 也在)=${(await store.searchNearest("course:1", vec(7), 5)).some(c => c.entry.id === "p") ? "在" : "不在"}`);
 	await store.evict("p");
 
@@ -177,7 +175,7 @@ async function run(store: InspectableCacheStore, now: () => number): Promise<Arr
 }
 
 const now = () => 5_000;
-const backing = await createLabStore({ dimensions: { match: DIM, answer: DIM }, now });
+const backing = await createLabStore({ dimensions: { match: DIM }, now });
 if (backing.kind === "memory") {
 	throw new Error(
 		"这个脚本要内存之外的后端也在。请设 SEMCACHE_DB 或 SEMCACHE_REDIS，" +
@@ -292,7 +290,7 @@ const POLICIES = ["fifo", "lru", "lfu", "rr"] as const;
 for (const policy of POLICIES) {
 	const cfg = { policy, capacity: 3 } as const;
 	memory.push(...(await evictionRun(policy, createMemoryCacheStore({ now, eviction: cfg }))));
-	const side = await createLabStore({ dimensions: { match: DIM, answer: DIM }, now, eviction: cfg });
+	const side = await createLabStore({ dimensions: { match: DIM }, now, eviction: cfg });
 	real.push(...(await evictionRun(policy, side.store)));
 	await side.close();
 }

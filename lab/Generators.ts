@@ -1,13 +1,11 @@
 /**
  * 生成端。**这是验证台唯一一处真正要花钱/花时间的地方,所以做成可切换的接口。**
  *
- * 默认 `stub` —— 把检索到的首个片段换序换壳。它有一个**已知且严重**的方法学缺陷:
- * 真答案是 LLM 改写、压缩、综合过的,向量分布跟原始片段差得远;而 stub 几乎是
- * 原文照抄,所以 ⑥ 的支撑度天然偏高(实测能到 0.98+)。**θa 的绝对值在 stub 上
- * 标不准**,这是文章里唯一还没被验证的那一环。
+ * 默认 `stub` —— 把检索到的首个片段换序换壳。它有一个**已知**的方法学缺陷:
+ * 真答案是 LLM 改写、压缩、综合过的,而 stub 几乎是原文照抄,所以任何拿答案文本
+ * 当被测对象的结论,在 stub 上都偏乐观。
  *
- * 三个真生成选项都在回答同一个问题:换成真 LLM 之后,支撑度分布会塌多少,
- * 现在这组 θa 还立不立得住。
+ * 三个真生成选项都在回答同一个问题:换成真 LLM 之后,那些结论还立不立得住。
  *
  *   GEN=claude-cli   起一个 `claude -p` 进程,复用 Claude Code 登录,约 8.5 秒/次
  *   GEN=api          直接打 Messages API,同一套凭据,约 1~2 秒/次
@@ -16,7 +14,7 @@
 import { spawn } from "node:child_process";
 import Anthropic from "@anthropic-ai/sdk";
 import type { CachedPayload, CachePrompt, Chunk } from "../sdk/src/index.ts";
-import { compose, LANGUAGE, refineSuffix } from "./Corpus.ts";
+import { compose, LANGUAGE } from "./Corpus.ts";
 import type { ComposeChunk } from "./types/Corpus.ts";
 
 /** 检索片段带着 title/version —— `Chunk` 里没有，取的时候防御一下。 */
@@ -68,7 +66,6 @@ export interface LabGenerator {
 	 * 走 `seed` 而不是抬 temperature —— 抬温度会改变被测的那个分布本身。
 	 */
 	generate(prompt: CachePrompt, chunks: ReadonlyArray<Chunk>, variant?: number): Promise<CachedPayload>;
-	refine(cachedAnswer: string, prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload>;
 }
 
 /**
@@ -76,10 +73,9 @@ export interface LabGenerator {
  *
  * 系统提示词是模型挑答案语言的最强信号 —— 中文框架配英文语料(`npm start` 的默认形态,
  * `CORPUS_LANG` 不设就是 en),问的是英文、答的是中文。除了看着别扭,它还坏了两件事:
- * ⑥ 的支撑度是拿答案去比 passage 空间里的英文资料,跨语言比出来的分数是另一个尺度;
- * 而缓存里存的答案语言和后续提问对不上。
+ * 缓存里存的答案语言和后续提问对不上,而且检索片段与答案跨语言,分数是另一个尺度。
  *
- * 整组必须同语言 —— system、资料抬头、提问抬头、refine 指令、无资料兜底。
+ * 整组必须同语言 —— system、资料抬头、提问抬头、无资料兜底。
  * 混着来等于在 prompt 里塞进另一种语言的噪声,而这台东西量的就是分数。
  */
 interface PromptFrame {
@@ -87,7 +83,6 @@ interface PromptFrame {
 	/** 资料块的抬头,`n` 从 1 起 */
 	material(n: number, title: string): string;
 	question(text: string): string;
-	refine(cachedAnswer: string): string;
 	/** 一篇资料都没检索到时的答案 —— 和语料 `compose()` 的兜底同一句话 */
 	readonly noMaterials: string;
 }
@@ -101,10 +96,6 @@ const FRAMES: Readonly<Record<"en" | "zh", PromptFrame>> = {
 			"Just give the answer, in English.",
 		material: (n, title) => `[Material ${n}] "${title}"`,
 		question: text => `Student's question: ${text}`,
-		refine: cachedAnswer =>
-			"Below is an answer given earlier to a different student. It is broadly right but may not fit this " +
-			"material. Rewrite it **based on the material above** so that it does fit; keep whatever you can, " +
-			`don't start over:\n${cachedAnswer}`,
 		noMaterials: "(No material available for this course.)",
 	},
 	zh: {
@@ -113,9 +104,6 @@ const FRAMES: Readonly<Record<"en" | "zh", PromptFrame>> = {
 			"用两三句话讲清楚,语气平实,不要罗列要点,不要重复问题,不要写开场白。直接给答案。",
 		material: (n, title) => `【资料 ${n}】《${title}》`,
 		question: text => `学生的问题：${text}`,
-		refine: cachedAnswer =>
-			"下面是之前给别的同学的答案，大体对但不一定贴合这次的资料。请**基于上面的资料**把它改得贴合，" +
-			`能沿用就沿用，不要从头重写：\n${cachedAnswer}`,
 		noMaterials: "（本课程下没有可用资料）",
 	},
 };
@@ -139,27 +127,17 @@ function userPrompt(prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): string {
 	return `${materials(chunks)}\n\n${FRAME.question(prompt.retrievalText)}`;
 }
 
-function refinePrompt(cachedAnswer: string, prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): string {
-	return `${userPrompt(prompt, chunks)}\n\n${FRAME.refine(cachedAnswer)}`;
-}
 
 /* ---------- stub ---------- */
 
 function stubGenerator(): LabGenerator {
 	return {
 		kind: "stub",
-		note: "拼接检索到的首个片段并换序换壳 —— 不是真生成,⑥ 的支撑度天然偏高",
+		note: "拼接检索到的首个片段并换序换壳 —— 不是真生成",
 		approxMsPerCall: 0,
 		// stub 是确定性的，variant 无意义 —— 如实忽略，别装作采样了
 		async generate(_prompt, chunks) {
 			return { kind: "answer", answer: compose(chunks as unknown as ReadonlyArray<ComposeChunk>), sourceIds: chunks.map(c => c.id) };
-		},
-		async refine(cachedAnswer, _prompt, chunks) {
-			return {
-				kind: "answer",
-				answer: `${cachedAnswer}${refineSuffix(chunks[0] ? titleOf(chunks[0]) : "—")}`,
-				sourceIds: chunks.map(c => c.id),
-			};
 		},
 	};
 }
@@ -201,10 +179,6 @@ function claudeCliGenerator(): LabGenerator {
 		async generate(prompt, chunks) {
 			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks));
 			// 没有资料时 sourceIds 为空 —— SDK 会因此不把它写进缓存,这是对的
-			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
-		},
-		async refine(cachedAnswer, prompt, chunks) {
-			const answer = await ask(refinePrompt(cachedAnswer, prompt, chunks));
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 	};
@@ -298,10 +272,6 @@ function apiGenerator(): LabGenerator {
 			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks), variant);
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
-		async refine(cachedAnswer, prompt, chunks) {
-			const answer = await ask(refinePrompt(cachedAnswer, prompt, chunks));
-			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
-		},
 	};
 }
 
@@ -311,8 +281,8 @@ function apiGenerator(): LabGenerator {
  * 直接打 HTTP，不经过任何 agent harness。
  *
  * 这是**第一个能在真生成下跑完整场景集的选项**：一次 1~3 秒，416 次约 15 分钟，
- * 而 `claude -p` 起进程要 8.5 秒、同样的量要一个多小时。有了它，「关掉 ⑥ 假命中
- * 从 0 升到 4」这类端到端结论才第一次能在真 LLM 上复验，而不是在 stub 上。
+ * 而 `claude -p` 起进程要 8.5 秒、同样的量要一个多小时。有了它，端到端的结论
+ * 才第一次能在真 LLM 上复验，而不是在 stub 上。
  *
  * 零依赖：Node 自带 fetch，不引任何 SDK。
  */
@@ -387,10 +357,6 @@ function deepseekGenerator(): LabGenerator {
 		approxMsPerCall: 2_000,
 		async generate(prompt, chunks, variant) {
 			const answer = chunks.length === 0 ? FRAME.noMaterials : await ask(userPrompt(prompt, chunks), variant);
-			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
-		},
-		async refine(cachedAnswer, prompt, chunks) {
-			const answer = await ask(refinePrompt(cachedAnswer, prompt, chunks));
 			return { kind: "answer", answer, sourceIds: chunks.map(c => c.id) };
 		},
 	};
@@ -471,11 +437,6 @@ function memoize(inner: LabGenerator): LabGenerator {
 		generate(prompt, chunks, variant) {
 			return once(JSON.stringify(["generate", variant ?? null, prompt.retrievalText, ...fingerprint(chunks)]), () =>
 				inner.generate(prompt, chunks, variant),
-			);
-		},
-		refine(cachedAnswer, prompt, chunks) {
-			return once(JSON.stringify(["refine", cachedAnswer, prompt.retrievalText, ...fingerprint(chunks)]), () =>
-				inner.refine(cachedAnswer, prompt, chunks),
 			);
 		},
 	};

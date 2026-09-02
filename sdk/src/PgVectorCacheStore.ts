@@ -12,15 +12,14 @@ import type { SqlExecutor } from "./types/SqlExecutor.ts";
  * 1. **scope 与过期条件必须在 WHERE 里**，不能捞回来在应用层过滤。接口文档要求
  *    「过期行即使还没被清理也绝不能返回」—— 应用层过滤在分页/LIMIT 下做不到这点：
  *    LIMIT 先生效，过期行会挤掉本该返回的候选。
- * 2. **两个向量在不同空间，落两列**。`match_vector` 是 PairEncoder 空间（③ 召回用），
- *    `answer_vector` 是 RetrievalEncoder 的 passage 空间（⑥ 跟检索片段比）。
- *    维度可以不同，索引也必须分开——混用是这套东西最隐蔽的失效方式。
+ * 2. **只有一列向量**：`match_vector`，PairEncoder 空间（③ 召回用）。先前还有一列
+ *    `answer_vector`（⑥ 的 passage 空间），⑥ 移除后连列一起去掉了。
  * 3. **相似度用 `1 - (v <=> q)`**。pgvector 的 `<=>` 是余弦距离，取补正好等于
  *    `VectorMath.cosine`，内存实现与真库的召回排序因此一致。
  *
  * **一处真实的精度差异，别当成 bug 去修**：`vector` 列是 float4，而 JS 的 number
  * 是 float8。向量写进去就被舍到单精度（实测往返偏差约 6e-8），因此库内算出的
- * 相似度、以及读回来的 `answerVector` 参与的 ⑥ 支撑度，都和纯内存跑不会逐位相同。
+ * 相似度和纯内存跑不会逐位相同。
  * 量级远小于任何标定出来的阈值间距，但**恰好压在阈值上的样本可能倒向另一边** ——
  * 阈值标定该在哪个后端上做，就在哪个后端上验。pgvector 没有 float8 的向量类型，
  * 这不是能通过换写法绕开的东西。lab/scripts/storeConformance.ts 把这条写成了判据。
@@ -31,7 +30,7 @@ export interface PgVectorCacheStoreOptions {
 	 * 两个向量列的维度。**没有默认值**：写错了不会报错，只会让召回悄悄退化，
 	 * 所以必须由调用方从自己的编码器上量出来传进来。
 	 */
-	readonly dimensions: { readonly match: number; readonly answer: number };
+	readonly dimensions: { readonly match: number };
 	/** 表名，可带 schema 前缀（`public.semantic_cache`）。默认 `semantic_cache` */
 	readonly table?: string;
 	/**
@@ -82,8 +81,8 @@ function fromVectorLiteral(value: unknown): Array<number> {
 	 * 看不出是哪张表哪一行，而调用方拿到的是「整次请求失败」而不是「少了一条候选」。
 	 *
 	 * 返回空向量的后果良性且可见：召回相似度是 SQL 算的（`1 - (match_vector <=> q)`），
-	 * 不看这个值；答案向量为空时 ⑥ 走「判不了」—— 本次不复用，但也不驱逐。
-	 * 和「缺证据不是有罪」是同一族取舍。
+	 * 不看这个值；而一条读回来的向量是空的，`③` 的复核会照常按 scope 与文本判定，
+	 * 不会因为它静默返回错答案。
 	 */
 	try {
 		const parsed: unknown = JSON.parse(value);
@@ -132,7 +131,6 @@ function toEntry(row: Record<string, unknown>): CacheEntry {
 		kind: kind === "plan" ? "plan" : "answer",
 		answer: readString(row, "answer"),
 		plan: readRecord(row, "plan"),
-		answerVector: fromVectorLiteral(row.answer_vector),
 		sourceIds: readStringArray(row, "source_ids"),
 		sourceVersion: readString(row, "source_version"),
 		createdAt: readNumber(row, "created_at"),
@@ -143,9 +141,52 @@ function toEntry(row: Record<string, unknown>): CacheEntry {
 	};
 }
 
-const COLUMNS =
-	"id, scope, match_text, match_hash, match_vector, kind, answer, plan, answer_vector, " +
-	"source_ids, source_version, created_at, expires_at, meta, last_used_at, use_count";
+/**
+ * 写入的列，**顺序就是 `put` 里值数组的顺序**。
+ *
+ * 占位符与值的个数都从这里派生，一个都不手写 —— 手写过一次就脱节过一次：⑥ 移除时
+ * 这里删掉了 `answer_vector`、值数组也删了一项，但 `VALUES` 里的 `$1…$16` 忘了跟着改，
+ * 16 个表达式对 15 个列，Postgres 报「INSERT has more expressions than target columns」。
+ *
+ * 这类脱节**两道现成的网都兜不住**：`tsc` 看不见模板字符串里的 SQL，而内存后端的
+ * 单测根本不发 SQL —— 它只在真库上现形，也就是只在应用跑起来之后现形。
+ * 派生之后，改一处列名/加一列，占位符自动跟上，值数组少一项或多一项是类型错误。
+ */
+const COLUMN_LIST = [
+	"id",
+	"scope",
+	"match_text",
+	"match_hash",
+	"match_vector",
+	"kind",
+	"answer",
+	"plan",
+	"source_ids",
+	"source_version",
+	"created_at",
+	"expires_at",
+	"meta",
+	"last_used_at",
+	"use_count",
+] as const;
+
+/**
+ * 需要显式类型标注的列。参数是以文本发过去的，这几列 Postgres 推不出类型 ——
+ * 键写错了是类型错误，不会静默少一个 `::vector`。
+ */
+const COLUMN_CASTS: Readonly<Partial<Record<(typeof COLUMN_LIST)[number], string>>> = {
+	match_vector: "::vector",
+	plan: "::jsonb",
+	source_ids: "::text[]",
+	meta: "::jsonb",
+};
+
+const COLUMNS = COLUMN_LIST.join(", ");
+const INSERT_PLACEHOLDERS = COLUMN_LIST.map((column, i) => `$${i + 1}${COLUMN_CASTS[column] ?? ""}`).join(", ");
+
+/** 值数组的形状：长度与 `COLUMN_LIST` 锁死，多一项少一项都编译不过 */
+type SameShape<T extends ReadonlyArray<unknown>> = { [K in keyof T]: unknown };
+type InsertValues = SameShape<typeof COLUMN_LIST>;
 
 /** `vector(384)` → 384；不是向量列时返回 null。 */
 function parseVectorDimension(formattedType: string): number | null {
@@ -193,9 +234,6 @@ export function createPgVectorCacheStore(
 	if (!Number.isInteger(dimensions.match) || dimensions.match <= 0) {
 		throw new Error(`match 向量维度必须是正整数，收到 ${String(dimensions.match)}`);
 	}
-	if (!Number.isInteger(dimensions.answer) || dimensions.answer <= 0) {
-		throw new Error(`answer 向量维度必须是正整数，收到 ${String(dimensions.answer)}`);
-	}
 
 	/**
 	 * 建表已存在时，校验维度对不对得上。
@@ -208,13 +246,13 @@ export function createPgVectorCacheStore(
 		const found = await sql.query(
 			`SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS declared
 			 FROM pg_attribute a
-			 WHERE a.attrelid = to_regclass($1) AND a.attname IN ('match_vector', 'answer_vector')`,
+			 WHERE a.attrelid = to_regclass($1) AND a.attname = 'match_vector'`,
 			[table],
 		);
 		for (const row of found.rows) {
 			const column = readString(row, "attname");
 			const actual = parseVectorDimension(readString(row, "declared"));
-			const expected = column === "match_vector" ? dimensions.match : dimensions.answer;
+			const expected = dimensions.match;
 			if (actual !== null && actual !== expected) {
 				throw new Error(
 					`${table}.${column} 是 vector(${actual})，但当前编码器给出 ${expected} 维。` +
@@ -284,7 +322,6 @@ export function createPgVectorCacheStore(
 					kind           text NOT NULL CHECK (kind IN ('answer', 'plan')),
 					answer         text NOT NULL DEFAULT '',
 					plan           jsonb NOT NULL DEFAULT '{}'::jsonb,
-					answer_vector  vector(${dimensions.answer}),
 					source_ids     text[] NOT NULL DEFAULT '{}',
 					source_version text NOT NULL DEFAULT '',
 					created_at     bigint NOT NULL,
@@ -353,29 +390,25 @@ export function createPgVectorCacheStore(
 		},
 
 		async put(entry) {
-			await sql.query(
-				`INSERT INTO ${table} (${COLUMNS})
-				 VALUES ($1, $2, $3, $4, $5::vector, $6, $7, $8::jsonb, $9::vector, $10::text[], $11, $12, $13, $14::jsonb, $15, $16)`,
-				[
-					entry.id,
-					entry.scope,
-					entry.matchText,
-					entry.matchHash,
-					toVectorLiteral("matchVector ", entry.matchVector),
-					entry.kind,
-					entry.answer,
-					JSON.stringify(entry.plan),
-					// plan 条目没有答案向量。pgvector 存不了 0 维，落 NULL
-					entry.answerVector.length === 0 ? null : toVectorLiteral("answerVector ", entry.answerVector),
-					[...entry.sourceIds],
-					entry.sourceVersion,
-					entry.createdAt,
-					entry.expiresAt,
-					entry.meta === undefined ? null : JSON.stringify(entry.meta),
-					entry.lastUsedAt ?? null,
-					entry.useCount ?? null,
-				],
-			);
+			// 顺序必须与 COLUMN_LIST 一致；个数由 InsertValues 锁住
+			const values: InsertValues = [
+				entry.id,
+				entry.scope,
+				entry.matchText,
+				entry.matchHash,
+				toVectorLiteral("matchVector ", entry.matchVector),
+				entry.kind,
+				entry.answer,
+				JSON.stringify(entry.plan),
+				[...entry.sourceIds],
+				entry.sourceVersion,
+				entry.createdAt,
+				entry.expiresAt,
+				entry.meta === undefined ? null : JSON.stringify(entry.meta),
+				entry.lastUsedAt ?? null,
+				entry.useCount ?? null,
+			];
+			await sql.query(`INSERT INTO ${table} (${COLUMNS}) VALUES (${INSERT_PLACEHOLDERS})`, values);
 			if (eviction) await evictOverCapacityIn(entry.scope);
 		},
 

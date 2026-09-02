@@ -76,7 +76,7 @@ async function loadRedisClient(url: string): Promise<RedisClient> {
 
 export interface LabStoreOptions {
 	/** 两个向量列的维度，从编码器上量出来 —— 写死会让召回悄悄退化 */
-	readonly dimensions: { readonly match: number; readonly answer: number };
+	readonly dimensions: { readonly match: number };
 	/** 注入时钟，供一致性测试构造「已过期」条目 */
 	readonly now?: () => number;
 	/** 容量淘汰。一致性测试要按策略分别建库，所以从外面传 */
@@ -128,9 +128,7 @@ export async function createLabStore(options: LabStoreOptions): Promise<LabStore
 	 * 错的是让它们默认同名。显式给 SEMCACHE_TABLE / SEMCACHE_NS 仍然完全覆盖。
 	 */
 	const dims =
-		options.dimensions.match === options.dimensions.answer
-			? String(options.dimensions.match)
-			: `${options.dimensions.match}x${options.dimensions.answer}`;
+		String(options.dimensions.match);
 
 	if (kind === "memory") {
 		return {
@@ -186,7 +184,7 @@ export async function createLabStore(options: LabStoreOptions): Promise<LabStore
 	return {
 		store,
 		kind,
-		note: `pgvector ${mask(pgUrl)} 表 ${table}（match ${options.dimensions.match} 维 / answer ${options.dimensions.answer} 维${ann ? "，HNSW" : "，scope 内精确 KNN"}）`,
+		note: `pgvector ${mask(pgUrl)} 表 ${table}（match ${options.dimensions.match} 维${ann ? "，HNSW" : "，scope 内精确 KNN"}）`,
 		async close() {
 			await pool.end();
 		},

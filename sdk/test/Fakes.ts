@@ -8,9 +8,9 @@
  */
 import { createMemoryCacheStore } from "../src/MemoryCacheStore.ts";
 import { createSemanticCache } from "../src/SemanticCache.ts";
-import type { GateSwitches, Refine, ScopeResolver } from "../src/types/Pipeline.ts";
+import type { GateSwitches, ScopeResolver } from "../src/types/Pipeline.ts";
 import type { CachePolicy } from "../src/types/CachePolicy.ts";
-import type { PairEncoder, Reranker, RerankTarget, RetrievalEncoder } from "../src/types/Encoders.ts";
+import type { PairEncoder, Reranker, RerankTarget } from "../src/types/Encoders.ts";
 import type { Chunk, Retriever, SourceVersionResolver } from "../src/types/Retrieval.ts";
 import type { CacheStore, InspectableCacheStore } from "../src/types/CacheStore.ts";
 
@@ -26,8 +26,6 @@ export type VectorTable = Readonly<Record<string, ReadonlyArray<number>>>;
 
 export interface Counts {
 	questions: number;
-	query: number;
-	passage: number;
 	retrieve: number;
 	generate: number;
 	refine: number;
@@ -35,7 +33,7 @@ export interface Counts {
 }
 
 export function freshCounts(): Counts {
-	return { questions: 0, query: 0, passage: 0, retrieve: 0, generate: 0, refine: 0, rerank: 0 };
+	return { questions: 0, retrieve: 0, generate: 0, refine: 0, rerank: 0 };
 }
 
 function lookupVector(table: VectorTable, text: string): Array<number> {
@@ -47,19 +45,6 @@ export function fakePair(table: VectorTable, counts: Counts): PairEncoder {
 	return {
 		async embedQuestions(texts) {
 			counts.questions += 1;
-			return texts.map(t => lookupVector(table, t));
-		},
-	};
-}
-
-export function fakeRetrieval(table: VectorTable, counts: Counts): RetrievalEncoder {
-	return {
-		async embedQuery(texts) {
-			counts.query += 1;
-			return texts.map(t => lookupVector(table, t));
-		},
-		async embedPassage(texts) {
-			counts.passage += 1;
 			return texts.map(t => lookupVector(table, t));
 		},
 	};
@@ -78,8 +63,6 @@ export function fakeReranker(scores: Readonly<Record<string, number>>, counts: C
 export interface HarnessConfig {
 	/** 问题文本 → 召回向量（PairEncoder 空间） */
 	readonly pair?: VectorTable;
-	/** 答案与片段文本 → passage 向量（RetrievalEncoder 空间） */
-	readonly passage?: VectorTable;
 	readonly retrieve?: (retrievalText: string, context: Readonly<Record<string, string>>) => Array<Chunk>;
 	readonly rerank?: Readonly<Record<string, number>>;
 	readonly rerankFloor?: number;
@@ -89,9 +72,7 @@ export interface HarnessConfig {
 	 */
 	readonly rerankTarget?: RerankTarget;
 	readonly recallFloor?: number;
-	readonly support?: { readonly high: number; readonly low: number };
 	readonly gates?: Partial<GateSwitches>;
-	readonly refine?: Refine;
 	readonly scope?: ScopeResolver;
 	readonly sourceVersion?: SourceVersionResolver;
 	readonly store?: CacheStore;
@@ -113,7 +94,6 @@ export function harness(config: HarnessConfig = {}) {
 	const counts = freshCounts();
 	const store: InspectableCacheStore = (config.store as InspectableCacheStore) ?? createMemoryCacheStore({ now: config.now });
 	const pair = fakePair(config.pair ?? {}, counts);
-	const retrieval = fakeRetrieval(config.passage ?? {}, counts);
 	const retrieveFn = config.retrieve ?? (() => [{ ...DEFAULT_CHUNK }]);
 	const retriever: Retriever = {
 		async retrieve(text, context) {
@@ -123,11 +103,6 @@ export function harness(config: HarnessConfig = {}) {
 	};
 	const cache = createSemanticCache({
 		recall: { scorer: pair, thresholds: { floor: config.recallFloor ?? 0.5 }, calibratedOn: "测试用假件" },
-		support: {
-			scorer: retrieval,
-			thresholds: { high: config.support?.high ?? 0.9, low: config.support?.low ?? 0.8 },
-			calibratedOn: "测试用假件",
-		},
 		rerank:
 			config.rerank === undefined
 				? undefined
@@ -140,7 +115,6 @@ export function harness(config: HarnessConfig = {}) {
 		retriever,
 		scope: config.scope ?? (() => ({ key: "course:1", shared: true, org: "org:1" })),
 		sourceVersion: config.sourceVersion ?? (() => "v1"),
-		refine: config.refine,
 		gates: config.gates,
 		recallLimit: config.recallLimit ?? 5,
 		singleFlight: config.singleFlight,
@@ -149,7 +123,7 @@ export function harness(config: HarnessConfig = {}) {
 		shadow: config.shadow,
 		now: config.now,
 	});
-	return { cache, store, counts, retrieval, pair };
+	return { cache, store, counts, pair };
 }
 
 /** 最常用的生成：答案文本固定，依据固定。 */

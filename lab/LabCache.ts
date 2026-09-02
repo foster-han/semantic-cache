@@ -1,7 +1,7 @@
 /**
  * 把验证台接到 SDK 上。
  *
- * 重构前这里有一套和 SDK 重复的六道闸实现。那种状态下 SDK 等于没被验证过 ——
+ * 重构前这里有一套和 SDK 重复的闸实现。那种状态下 SDK 等于没被验证过 ——
  * 现在判定逻辑只有一份，跑验证台就是在跑 SDK。
  *
  * 验证台特有的东西留在这里：语料与版本、检索（含章节加权）、答案拼装、匿名化，
@@ -37,7 +37,6 @@ import type { LabConfig, LabCounters } from "./types/LabConfig.ts";
 export const BASE_DEFAULTS = {
 	gate1: false,
 	gate5: true,
-	gate6: true,
 	preAnonRetrieval: true,
 	declareRedacted: false,
 	scopeMode: "course",
@@ -45,7 +44,7 @@ export const BASE_DEFAULTS = {
 	chunkK: 3,
 	chunkCut: 0.85,
 	unitBoost: 0.92,
-} as const satisfies Omit<LabConfig, "gate4" | "thetaQ" | "recallFloor" | "thetaAHi" | "thetaALo">;
+} as const satisfies Omit<LabConfig, "gate4" | "thetaQ" | "recallFloor">;
 
 /**
  * 把标定表那一行合成一份完整默认配置。
@@ -59,8 +58,6 @@ export function defaultsFor(calibration: ActiveCalibration): LabConfig {
 		gate4: calibration.thetaQ !== null,
 		thetaQ: calibration.thetaQ,
 		recallFloor: calibration.recallFloor,
-		thetaAHi: calibration.thetaAHi,
-		thetaALo: calibration.thetaALo,
 	};
 }
 
@@ -94,7 +91,7 @@ export interface LabResult {
 	/** SDK 原始返回 —— 指标累加器要吃它，验证台自己的字段是给页面看的 */
 	readonly raw: CacheResult;
 	readonly answer: string;
-	readonly decision: "reuse" | "tune" | "regenerate";
+	readonly decision: "reuse" | "regenerate";
 	readonly outcome: string;
 	readonly exitedAt: number | null;
 	readonly entryId: string | null;
@@ -138,7 +135,7 @@ export function createLab(
 ) {
 	let docs: Array<CourseDoc> = DOCS.map(d => ({ ...d }));
 	let counters: LabCounters = fresh();
-	/** 手动提问的运行指标。对齐 Redis LangCache 看板那一组，再加六道闸的分布 */
+	/** 手动提问的运行指标。对齐 Redis LangCache 看板那一组，再加五道闸的分布 */
 	const metrics = createMetrics({ latencySamples: 512 });
 	/**
 	 * 这一次运行该用哪组阈值，由 (语料 × 编码器 × 生成端) 决定 —— 三者都是运行期才
@@ -156,7 +153,7 @@ export function createLab(
 	const defaults = defaultsFor(calibration);
 
 	function fresh(): LabCounters {
-		return { ask: 0, exact: 0, reuse: 0, refine: 0, generated: 0 };
+		return { ask: 0, exact: 0, reuse: 0, generated: 0 };
 	}
 
 	/** 指纹只覆盖这条缓存实际引用过的资料 —— 引用资料级，不是课程级。 */
@@ -224,9 +221,8 @@ export function createLab(
 		 * **最高分为负时这个公式会反过来**（`-0.1 * 0.85 = -0.085 > -0.1`），连 top-1
 		 * 自己都被筛掉，返回空片段。这里把它写成明确的决定，不留成意外：余弦全负
 		 * 说明这个问题跟整个语料都不沾边，那时**返回空比硬留 top-1 更安全**。
-		 * 空片段会让 ⑥ 走「判不了」（本次不复用，但不驱逐）；硬留一条不相关的 top-1
-		 * 反而会让 ⑥ 算出一个低支撑度、进而把一条本来好好的缓存**判负驱逐**掉 ——
-		 * 一个跟缓存内容毫无关系的问题，就能删掉别人的条目。
+		 * 生成端拿到空片段会走「没有资料」那条兜底，而那种答案 `cacheable()` 拒绝写入；
+		 * 硬留一条不相关的 top-1 反而会让它据此写出一条有依据、内容却不相干的缓存。
 		 */
 		if (ranked[0].score <= 0) return [];
 		const cut = ranked[0].score * cfg.chunkCut;
@@ -240,9 +236,6 @@ export function createLab(
 	// ⑥ 的支撑度因此天然偏高，θa 的绝对值在它上面标不准。见 Generators.ts。
 	const generate = (prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload> =>
 		generator.generate(prompt, chunks);
-
-	const refine = (cachedAnswer: string, prompt: CachePrompt, chunks: ReadonlyArray<Chunk>): Promise<CachedPayload> =>
-		generator.refine(cachedAnswer, prompt, chunks);
 
 	/**
 	 * 按一组开关组装一个 SDK 实例。
@@ -289,11 +282,6 @@ export function createLab(
 				thresholds: { floor: cfg.recallFloor },
 				calibratedOn: calibration.recallNote,
 			},
-			support: {
-				scorer: { embedQuery: t => encoder.embedQuery(t), embedPassage: t => encoder.embedPassage(t) },
-				thresholds: { high: cfg.thetaAHi, low: cfg.thetaALo },
-				calibratedOn: calibration.supportNote,
-			},
 			// 关掉 ④ 就是不传这一段 —— 连同它的阈值一起消失
 			rerank:
 				cfg.gate4 && encoder.reranker && cfg.thetaQ !== null
@@ -318,8 +306,7 @@ export function createLab(
 				return { key, shared: true, org };
 			},
 			sourceVersion: ids => fingerprint(ids),
-			refine: (answer, prompt, chunks) => (genOverride ?? generator).refine(answer, prompt, chunks),
-			gates: { sourceVersion: cfg.gate5, answerCheck: cfg.gate6 },
+			gates: { sourceVersion: cfg.gate5 },
 			recallLimit: cfg.topK,
 			ttlMs: null,
 		});
@@ -356,7 +343,7 @@ export function createLab(
 			result.payload.kind === "answer" ? result.payload.answer : `【工具计划】${JSON.stringify(result.payload.plan)}`;
 		return {
 			answer,
-			decision: result.outcome === "generated" ? "regenerate" : result.outcome === "refine" ? "tune" : "reuse",
+			decision: result.outcome === "generated" ? "regenerate" : "reuse",
 			outcome: result.outcome,
 			exitedAt: result.exitedAt,
 			entryId: result.entryId,

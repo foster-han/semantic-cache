@@ -51,7 +51,7 @@ export interface RedisVectorSetCacheStoreOptions {
 	 * `answer` 这里只做合法性检查——答案向量不进向量集，它躺在 entry hash 里，
 	 * 只被「已经被重排选中的那一条」用到，是点查不是检索。
 	 */
-	readonly dimensions: { readonly match: number; readonly answer: number };
+	readonly dimensions: { readonly match: number };
 	/** key 前缀，默认 `semcache`。换编码器就换一个，等同于 pgvector 那边换表名 */
 	readonly namespace?: string;
 	/** 容量淘汰。不给就不维护排序集合，零额外开销 */
@@ -90,7 +90,6 @@ const FIELDS = [
 	"kind",
 	"answer",
 	"plan",
-	"answer_vector",
 	"source_ids",
 	"source_version",
 	"created_at",
@@ -169,7 +168,6 @@ function toEntry(values: ReadonlyArray<unknown>): CacheEntry | null {
 		kind: kind === "plan" ? "plan" : "answer",
 		answer: at("answer"),
 		plan: parseRecord(at("plan")),
-		answerVector: parseNumberArray(at("answer_vector")),
 		sourceIds: parseStringArray(at("source_ids")),
 		sourceVersion: at("source_version"),
 		createdAt: Number(at("created_at")),
@@ -422,9 +420,6 @@ export function createRedisVectorSetCacheStore(
 	if (!Number.isInteger(dimensions.match) || dimensions.match <= 0) {
 		throw new Error(`match 向量维度必须是正整数，收到 ${String(dimensions.match)}`);
 	}
-	if (!Number.isInteger(dimensions.answer) || dimensions.answer <= 0) {
-		throw new Error(`answer 向量维度必须是正整数，收到 ${String(dimensions.answer)}`);
-	}
 
 	/**
 	 * 六个结构。**只有第一个是 Redis 给的，其余五个是这里自己维护的二级索引** ——
@@ -568,8 +563,6 @@ export function createRedisVectorSetCacheStore(
 		},
 
 		async put(entry) {
-			// 答案向量不进向量集，但同样不能带 NaN —— ⑥ 拿它算支撑度
-			assertFiniteVector("answerVector ", entry.answerVector);
 			const fields: Array<string> = [
 				"id", entry.id,
 				"scope", entry.scope,
@@ -579,7 +572,6 @@ export function createRedisVectorSetCacheStore(
 				"kind", entry.kind,
 				"answer", entry.answer,
 				"plan", JSON.stringify(entry.plan),
-				"answer_vector", JSON.stringify(entry.answerVector),
 				"source_ids", JSON.stringify(entry.sourceIds),
 				"source_version", entry.sourceVersion,
 				"created_at", String(entry.createdAt),

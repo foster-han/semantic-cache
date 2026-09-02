@@ -115,7 +115,10 @@
   .gate .dt { font-size:12.5px; margin-top:.15rem; }
   .gate .ex { font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:.28rem; word-break:break-all; }
   .pill { font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; padding:.14rem .45rem; border-radius:99px; white-space:nowrap; border:1px solid transparent; }
-  .p-pass,.p-hit { background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+  /* 绿色只给「命中」。「放行」不是好消息，它只是「没在这一道拦」—— 先前两者同色，
+     于是一条被 ④ 拦下的未命中看上去是「三绿一红」，第一眼像是通过了 */
+  .p-pass { background:var(--surface); color:var(--muted); border-color:var(--border-strong); }
+  .p-hit { background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
   .p-exit { background:var(--bad-soft); color:var(--bad); border-color:var(--bad); }
   .p-would { background:var(--warn-soft); color:var(--warn); border-color:var(--warn); }
   .p-off,.p-miss { background:var(--surface); color:var(--muted); border-style:dashed; border-color:var(--border-strong); }
@@ -125,6 +128,30 @@
   .outcome { font-size:13.5px; padding:.6rem .85rem; border-radius:9px; margin-bottom:.8rem; border:1px solid var(--border); }
   .outcome.right { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
   .outcome.wrong { background:var(--bad-soft); border-color:var(--bad); color:var(--bad); }
+
+  /* 判定行：第一句只回答「命中了没有」。先前它写的是「应该复用，实际重新生成」，
+     读者得先在心里做一次「重新生成 = 未命中」的映射才知道结果 */
+  .verdict { display:flex; align-items:baseline; gap:.5rem .8rem; flex-wrap:wrap;
+             padding:.55rem .85rem; border-radius:9px; margin-bottom:.55rem; border:1px solid var(--border); background:var(--surface); }
+  .verdict .big { font-size:15.5px; font-weight:700; letter-spacing:-.01em; }
+  .verdict .sub { font-size:12px; color:var(--muted); font-family:var(--mono); }
+  .verdict .judge { font-size:11.5px; font-family:var(--mono); padding:.08rem .45rem; border-radius:99px; border:1px solid currentColor; }
+  .verdict.hit { background:var(--accent-soft); border-color:var(--accent); }
+  .verdict.hit .big { color:var(--accent-ink); }
+  .verdict.miss { background:var(--bad-soft); border-color:var(--bad); }
+  .verdict.miss .big { color:var(--bad); }
+  .verdict.bypass { background:var(--warn-soft); border-color:var(--warn); }
+  .verdict.bypass .big { color:var(--warn); }
+
+  /* 五道闸读完要有个出口 —— 「最后到底命中没有」不该让读者自己从一排徽章里推 */
+  .exit-row { display:grid; grid-template-columns:1.9rem 1fr; gap:.6rem; align-items:baseline;
+              padding:.55rem .75rem; border-radius:9px; margin-bottom:.4rem; border:1px solid; font-size:13px; }
+  .exit-row .n { font-family:var(--mono); font-size:13px; }
+  .exit-row.hit { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .exit-row.miss { background:var(--bad-soft); border-color:var(--bad); color:var(--bad); }
+  .exit-row.bypass { background:var(--warn-soft); border-color:var(--warn); color:var(--warn); }
+  .gate details.note { margin-top:.2rem; }
+  .gate details.note > summary { font-family:var(--mono); font-size:11px; color:var(--muted); cursor:pointer; }
   .answer { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:.7rem .85rem; white-space:pre-wrap; font-size:13px; margin-top:.3rem; }
   label.fld { display:block; font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:.85rem 0 .25rem; }
   input[type=text], select { width:100%; max-width:26rem; padding:.42rem .6rem; border:1px solid var(--border-strong); border-radius:7px; background:var(--surface-2); color:var(--ink); font:inherit; }
@@ -175,13 +202,8 @@
     <div class="dbody">
       <p class="dnote">点一个场景，自动完成「清空 → 播种 → （必要时语料改版）→ 探测」，下面显示探测那一次逐道闸的判定。开关在最后一个折叠区里改。</p>
       <div class="scen" id="scen"></div>
-      <div class="legend">
-        <span><i style="background:var(--accent)"></i>放行 / 命中</span>
-        <span><i style="background:var(--bad)"></i>在这里拦下</span>
-        <span><i style="background:var(--warn)"></i>本会拦下，但闸关着</span>
-        <span><i style="background:var(--border-strong)"></i>未启用 / 未命中</span>
-      </div>
       <div id="outcome"></div>
+      <div class="legend" id="legendScen"></div>
       <div id="trace"><p class="empty">还没跑。点上面任意一个场景。（手动提问的结果显示在「手动探索」区里）</p></div>
       <div id="answerBox"></div>
     </div>
@@ -212,8 +234,6 @@
           <div class="thr">
             <div>θq <input type="number" id="thetaQ" step="0.001" min="0" max="1" placeholder="未标定"></div>
             <div>召回下限 <input type="number" id="recallFloor" step="0.01" min="0" max="1"></div>
-            <div>θa 高 <input type="number" id="thetaAHi" step="0.01" min="0" max="1"></div>
-            <div>θa 低 <input type="number" id="thetaALo" step="0.01" min="0" max="1"></div>
           </div>
           <label class="fld" for="scopeMode">缓存 pre-filter 粒度</label>
           <select id="scopeMode">
@@ -229,7 +249,7 @@
         <label class="fld">运行指标 —— 只统计手动提问，不含对照实验与场景回放</label>
         <p class="dnote" style="margin:.2rem 0 .7rem">
           上排是 Redis LangCache 看板给的那一组。下排是它给不出的：<b>未命中时被哪道闸拦下</b> ——
-          问题侧不像（③④）、资料改版（⑤）、旧答案不再被支撑（⑥），三种未命中的处置完全不同。
+          问题侧不像（③④）、资料改版（⑤），两种未命中的处置完全不同。
           <b>这里没有「正命中率」</b>：那要知道复用的答案对不对，线上没有这个信息，只能靠标注集或抽样人工判。
         </p>
         <div id="metricsBox"></div>
@@ -263,49 +283,37 @@ const GATE_PLAIN = {
   3: "找出语义最近的几条缓存（top-5，不是 top-1）",
   4: "把问题和缓存条目拼在一起送模型打分，比各自编码再算余弦准",
   5: "比对语料版本号——确定性判据，不算相似度",
-  6: "看旧答案还能不能被这次检索到的片段撑住",
 };
 
 const GATES = [
   { key:"gate1", label:"① Presidio 门控", desc:"检出实体就强制 user scope。开启后跨学生共享不再发生。" },
   { key:"gate4", label:"④ Cross-encoder 重排", desc:"没有这道闸时问题侧只由 ③ 的召回下限把关。" },
   { key:"gate5", label:"⑤ 语料版本比对", desc:"关掉后过期答案会照常返回。" },
-  { key:"gate6", label:"⑥ 回答侧校验", desc:"关掉后占位符塌陷应当立刻放行。" },
-  { key:"preAnonRetrieval", label:"⑥ 检索用保留实体的原文", desc:"关掉 → ⑥ 应当对实体塌陷失明。" },
   { key:"declareRedacted", label:"如实声明已脱敏", desc:"声明后 SDK 拒绝把 answer 条目放进共享 scope —— 打开它并关掉 ① 会被当场拒绝，那是对的。" },
 ];
 
 const EXPERIMENTS = [
-  { key:"g6", title:"⑥ 回答侧校验有没有必要",
-    q:"问题侧已经有重排了，还需要在答案上再校验一次吗？",
-    a:{ label:"开着 ⑥", cfg:{} }, b:{ label:"关掉 ⑥", cfg:{ gate6:false } } },
-
-  { key:"prean", title:"⑥ 的硬前提：检索必须在匿名化之前",
-    q:"如果检索也跑在匿名化后的文本上，⑥ 还拦得住吗？",
-    expect:"预期是「选择性失效」——只漏占位符塌陷，课程语境仍该拦得住。要是整体失效，说明别的地方坏了。",
-    a:{ label:"检索用保留实体的原文", cfg:{} }, b:{ label:"检索用匿名化后的文本", cfg:{ preAnonRetrieval:false } } },
-
   { key:"ce", title:"④ cross-encoder 重排值不值",
     q:"把余弦阈值调高就够了，还是真需要一个重排器？",
     // 显式开 ④，不吃默认值 —— 当前组合没有标定过的 θq 时默认是关着的，
     // 那种情况下这张卡应当**被拒绝**（并说明原因），而不是两边跑出一样的数
     a:{ label:"开着 ④ 重排", cfg:{ gate4:true } }, b:{ label:"关掉 ④（问题侧只剩召回下限）", cfg:{ gate4:false } } },
 
-  { key:"gate1", title:"① 门控能不能替代 ⑥",
-    q:"入口就按检出实体分流到 user scope，是不是就不用 ⑥ 了？",
-    a:{ label:"开门控 · 关 ⑥", cfg:{ gate1:true, gate6:false } },
-    b:{ label:"关门控 · 关 ⑥", cfg:{ gate1:false, gate6:false } } },
+  { key:"gate1", title:"① 门控挡不挡得住实体塌陷",
+    q:"入口就按检出实体分流到 user scope，两个学生还会不会共用同一条缓存？",
+    a:{ label:"开门控", cfg:{ gate1:true } },
+    b:{ label:"关门控", cfg:{ gate1:false } } },
 
   { key:"redact", title:"脱敏声明这道防线",
     q:"上层如实声明「这条已脱敏」之后，把它放进全班共享的缓存会怎样？",
-    expect:"预期 B 被拒绝：脱敏之后两个学生塌成同一个缓存键，而答案里带着占位符 —— 跨主体复用必然张冠李戴。这不是概率问题，所以 SDK 直接抛错，而不是等 ⑥ 去兜。",
+    expect:"预期 B 被拒绝：脱敏之后两个学生塌成同一个缓存键，而答案里带着占位符 —— 跨主体复用必然张冠李戴。这不是概率问题，所以 SDK 直接抛错。",
     a:{ label:"声明脱敏 + ① 按学生隔离", cfg:{ declareRedacted:true, gate1:true } },
     b:{ label:"声明脱敏 + 落进共享 scope", cfg:{ declareRedacted:true, gate1:false }, expectRejected:true } },
 
   { key:"prefilter", title:"pre-filter 比校验便宜",
     q:"把「学生当前章节」加进缓存的 pre-filter，能不能直接省掉一次校验？",
-    a:{ label:"pre-filter = course + unit", cfg:{ scopeMode:"unit", gate6:false } },
-    b:{ label:"pre-filter = course（全班一个缓存）", cfg:{ scopeMode:"course", gate6:false } } },
+    a:{ label:"pre-filter = course + unit", cfg:{ scopeMode:"unit" } },
+    b:{ label:"pre-filter = course（全班一个缓存）", cfg:{ scopeMode:"course" } } },
 ];
 
 let DEF = {};
@@ -365,7 +373,7 @@ function conclude(exp, A, B) {
   const improved = B.rows.filter(r => r.ok && !a[r.key].ok).map(r => r.label);
   const d = B.falseHit - A.falseHit;
 
-  // 有两张卡的 A/B 之差不是「开/关一道闸」（① 门控替代 ⑥、pre-filter 粒度），
+  // 有两张卡的 A/B 之差不是「开/关一道闸」（① 门控、pre-filter 粒度），
   // 所以措辞一律用 B 那一侧的标签，别硬说成「关掉之后」和「这道闸的价值」
   const toB = `换成「${esc(exp.b.label)}」之后`;
   if (d > 0) {
@@ -456,23 +464,63 @@ function markCeCard(p) {
 
 /* ---------- 单条场景 ---------- */
 
+const CIRCLED = ["", "①", "②", "③", "④", "⑤"];
+
+/* 图例只有一份 —— 先前静态 HTML 和手动提问各写了一份，改一处另一处就会漂 */
+const LEGEND_HTML = `
+  <span><i style="background:var(--accent)"></i>命中</span>
+  <span><i style="background:transparent;border:1px solid var(--border-strong)"></i>放行（这道闸没拦）</span>
+  <span><i style="background:var(--bad)"></i>在这里拦下</span>
+  <span><i style="background:var(--warn)"></i>本会拦下，但闸关着</span>
+  <span><i style="background:transparent;border:1px dashed var(--border-strong)"></i>未启用 / 没找到</span>`;
+
 function pill(v) {
   const map = { pass:"p-pass", hit:"p-hit", exit:"p-exit", "would-exit":"p-would", off:"p-off", miss:"p-miss" };
-  const txt = { "would-exit":"本会拦下", off:"未启用", pass:"放行", hit:"命中", exit:"在这里拦下", miss:"未命中" };
+  // ② 的 hit 是「逐字命中」，跟整条管线的「命中」不是同一件事 —— 同名会让人以为闸②一亮就命中了
+  const txt = { "would-exit":"本会拦下", off:"未启用", pass:"放行", hit:"逐字命中", exit:"在这里拦下", miss:"没找到" };
   return `<span class="pill ${map[v] || "p-off"}">${txt[v] || v}</span>`;
 }
 
-function renderResult(r, sc) {
-  const names = DECISION_NAMES;
+/* 命中只认这两个 outcome。**别从 decision 反推** —— 它把「策略绕开」也归成了 reuse，
+   而绕开是「压根没查缓存」，跟复用了一条旧答案是相反的两件事 */
+function isHit(r) {
+  return r.outcome === "exact" || r.outcome === "reuse";
+}
+
+function verdictKind(r) {
+  return r.outcome === "bypassed" ? "bypass" : isHit(r) ? "hit" : "miss";
+}
+
+const VERDICT_HEAD = {
+  hit: "命中 · 复用了缓存",
+  miss: "未命中 · 重新生成",
+  bypass: "绕开 · 按策略没查缓存",
+};
+
+/**
+ * 判定行。`sc` 有值时再补一句「跟期望比对上没有」，`extra` 是手动提问那边的耗时。
+ * 顺序是刻意的：先「命中/未命中」，再「判对/判错」—— 这是两个问题，先前挤成了一句。
+ */
+function verdictHtml(r, sc, extra) {
+  const kind = verdictKind(r);
+  const bits = [];
+  if (r.exitedAt) bits.push(`第 ${CIRCLED[r.exitedAt] || r.exitedAt} 道闸拦下`);
+  if (kind === "hit" && r.entryId) bits.push(`条目 #${esc(String(r.entryId))}`);
+  if (extra) bits.push(extra);
+  let judge = "";
   if (sc) {
-    const got = r.decision === "regenerate" ? "regenerate" : "reuse";
-    const ok = got === sc.expect;
-    $("outcome").innerHTML = `<div class="outcome ${ok ? "right" : "wrong"}">
-      ${ok ? "✓ 判对了" : "✗ 判错了"}　—　应该 <b>${sc.expect === "reuse" ? "复用" : "重新生成"}</b>，实际 <b>${names[r.decision]}</b>${r.exitedAt ? `（第 ${r.exitedAt} 道闸拦下）` : ""}
-    </div>`;
-  } else {
-    $("outcome").innerHTML = `<div class="outcome">判定：<b>${names[r.decision]}</b>${r.exitedAt ? `　（第 ${r.exitedAt} 道闸拦下）` : ""}${r.entryId ? `　命中条目 #${r.entryId}` : ""}</div>`;
+    const ok = (r.decision === "regenerate" ? "regenerate" : "reuse") === sc.expect;
+    judge = `<span class="judge">${ok ? "✓ 判对了" : "✗ 判错了"}：应该${sc.expect === "reuse" ? "命中复用" : "未命中重生成"}</span>`;
   }
+  return `<div class="verdict ${kind}">
+    <span class="big">${VERDICT_HEAD[kind]}</span>
+    ${bits.length ? `<span class="sub">${bits.join("　·　")}</span>` : ""}
+    ${judge}
+  </div>`;
+}
+
+function renderResult(r, sc) {
+  $("outcome").innerHTML = verdictHtml(r, sc, null);
   $("trace").innerHTML = traceHtml(r);
   $("answerBox").innerHTML = answerHtml(r);
 }
@@ -480,21 +528,53 @@ function renderResult(r, sc) {
 function traceHtml(r) {
   return r.trace.map(t => `
     <div class="gate ${t.verdict === "exit" ? "g-exit" : t.verdict === "would-exit" ? "g-would" : ""}">
-      <div class="n">${["","①","②","③","④","⑤","⑥"][t.gate]}</div>
+      <div class="n">${CIRCLED[t.gate] || t.gate}</div>
       <div>
         <div class="nm">${esc(t.name)}</div>
         <div class="plain">${esc(GATE_PLAIN[t.gate] || "")}</div>
-        <div class="dt">${esc(t.detail)}</div>
+        <div class="dt">${detailHtml(t.detail)}</div>
       </div>
       <div>${pill(t.verdict)}</div>
-    </div>`).join("");
+    </div>`).join("") + exitRowHtml(r);
 }
 
+/**
+ * ④ 的 detail 后半段是标定出处加一整段注解，先前它把「分数 vs 闸值」这个结论整段淹掉了。
+ * 折叠而不是删：那些注解说的是「这个数该怎么读」，要留着，只是不该排在结论前面。
+ */
+function detailHtml(detail) {
+  const d = detail || "";
+  if (d.length <= 140) return esc(d);
+  return `${esc(d.slice(0, 140))}…<details class="note"><summary>展开完整判据</summary>${esc(d)}</details>`;
+}
+
+/* 管线的出口。读完五道闸必须有人把话说完：最后是复用了，还是又生成了一次 */
+function exitRowHtml(r) {
+  const kind = verdictKind(r);
+  const why =
+    kind === "hit"
+      ? `复用了缓存条目 #${esc(String(r.entryId ?? "-"))}，没有调生成`
+      : kind === "bypass"
+        ? "策略要求不查缓存，直接生成"
+        : `${r.exitedAt ? `第 ${CIRCLED[r.exitedAt] || r.exitedAt} 道闸拦下，` : ""}重新生成了一次`;
+  return `<div class="exit-row ${kind}">
+    <div class="n">→</div>
+    <div><b>${kind === "hit" ? "命中" : kind === "bypass" ? "绕开" : "未命中"}</b>　${why}</div>
+  </div>`;
+}
+
+/* 答案本身看不出来路 —— 未命中重生成出来的那句，字面上常常跟缓存里那条一模一样。
+   所以来路要写在标签上，否则光看这个框永远分不出命中没命中 */
 function answerHtml(r) {
-  return `<label class="fld">返回给学生的答案</label><div class="answer">${esc(r.answer)}</div>`;
+  const kind = verdictKind(r);
+  const src =
+    kind === "hit"
+      ? `复用的 · 缓存条目 #${esc(String(r.entryId ?? "-"))}`
+      : kind === "bypass"
+        ? "绕开缓存直接生成的"
+        : "这一次新生成的";
+  return `<label class="fld">返回给学生的答案（${src}）</label><div class="answer">${esc(r.answer)}</div>`;
 }
-
-const DECISION_NAMES = { reuse:"直接复用缓存", tune:"微调后复用", regenerate:"重新生成" };
 
 async function runScenario(sc) {
   // 播种 → 改版 → 探测 全部在服务端一次做完，跑在场景自己的缓存上。
@@ -521,7 +601,7 @@ function renderAxes(s) {
     // pooling 也要显示：拿 mean 跑一个 CLS 模型，1000 对 QQP 上「正命中率 ≥97% 时的
     // 命中率」从 60.0% 掉到 54.8%，而且一路不报错
     : [`句对（③ 召回）　${esc(m.pair ?? "?")} <span class="d">${esc(m.pairPooling ?? "?")}</span>`,
-       `检索（⑥ 支撑度）${esc(m.retrieval ?? "?")} <span class="d">${esc(m.retrievalPooling ?? "?")}</span>`,
+       `检索（验证台自己的 RAG）${esc(m.retrieval ?? "?")} <span class="d">${esc(m.retrievalPooling ?? "?")}</span>`,
        // 形态和模型 id 一样重要：同一个模型换个形态就是另一个尺度（bge 上 0.1228 vs 0.3494），
        // 只显示模型名的话，「④ 到底在比什么」看不出来
        `重排（④ 精排）　${m.rerank ? `${esc(m.rerank)} <span class="d">${m.rerankTarget === "answer" ? "问↔答" : "问↔问"}</span>` : "无 —— 没有这道闸"}`].join("<br>");
@@ -572,7 +652,6 @@ const GATE_MISS_LABEL = {
   3: "③ 向量召回：没有足够像的候选",
   4: "④ 精排：像但判定不是同一件事",
   5: "⑤ 资料改版：旧答案引的是上一版",
-  6: "⑥ 回答校验：旧答案不再被支撑",
 };
 
 function pctOf(x) { return `${(x * 100).toFixed(1)}%`; }
@@ -590,10 +669,9 @@ function renderMetrics(m) {
        <div class="mono" style="font-size:.74rem;color:var(--muted)">${sub}</div>
      </div>`;
 
-  // saved 只含 exact + reuse —— refine 跑了一次短生成，不算整次省下，所以单列出来
-  const refineNote = m.byOutcome.refine ? `（另有 ${m.byOutcome.refine} 次微调，各付一次短生成）` : "";
+
   const saved =
-    (m.saved.cost === null ? `完整省下 ${m.saved.generations} 次` : `完整省下 $${m.saved.cost.toFixed(4)}`) + refineNote;
+    (m.saved.cost === null ? `完整省下 ${m.saved.generations} 次` : `完整省下 $${m.saved.cost.toFixed(4)}`);
   const top = [
     // 分母是 attempted（真的查了缓存的），不是 requests —— 策略绕开的那些一道闸都没跑
     tile(
@@ -604,15 +682,14 @@ function renderMetrics(m) {
     tile("命中延迟", ms(m.latencyMs.hit.p50), m.latencyMs.hit.count ? `p95 ${ms(m.latencyMs.hit.p95)}` : "无样本"),
     tile("未命中延迟", ms(m.latencyMs.miss.p50), m.latencyMs.miss.count ? `p95 ${ms(m.latencyMs.miss.p95)}` : "无样本"),
     tile("省下的生成", String(m.saved.generations), saved),
-    // 驱逐 = 真删掉的条数。⑥ 判负但没删的（判不了 / 无依据不写入 / 影子模式）不算在内，
+    // 驱逐 = 真删掉的条数。判负但没删的（无依据不写入 / 影子模式）不算在内，
     // 那些看下面的「未命中被哪道闸拦下」
-    tile("驱逐", String(m.evictions.total), `⑤ ${m.evictions.bySourceVersion} · ⑥ ${m.evictions.byAnswerCheck}`),
+    tile("驱逐", String(m.evictions.total), `⑤ ${m.evictions.bySourceVersion}`),
   ].join("");
 
   const outcomes = [
     ["② 精确命中", m.byOutcome.exact],
     ["③④ 语义复用", m.byOutcome.reuse],
-    ["中带微调复用", m.byOutcome.refine],
     ["重新生成", m.byOutcome.generated],
   ];
   const maxOut = Math.max(1, ...outcomes.map(o => o[1]));
@@ -665,9 +742,9 @@ function renderState(s) {
     paintCache(s);
   }
   const c = s.counters;
-  // 字段名必须和服务端的 LabCounters 一致：exact / reuse / refine / generated。
+  // 字段名必须和服务端的 LabCounters 一致：exact / reuse / generated。
   // 先前这里读的是 tune / regen / evict，三个都是 undefined，页面上就那么显示着。
-  $("counters").textContent = `提问 ${c.ask} · 精确命中 ${c.exact} · 直接复用 ${c.reuse} · 微调 ${c.refine} · 重新生成 ${c.generated}`;
+  $("counters").textContent = `提问 ${c.ask} · 精确命中 ${c.exact} · 直接复用 ${c.reuse} · 重新生成 ${c.generated}`;
 }
 
 function paintCache(s) {
@@ -712,6 +789,7 @@ async function boot() {
   const stub = s.mode === "stub";
   CALIB = s.calibration ?? { summary:"", borrowed:false, overridden:[] };
   renderAxes(s);
+  $("legendScen").innerHTML = LEGEND_HTML;
 
   /**
    * 横幅只留警告。**「现在跑的是什么」归上面那张配置表** ——
@@ -723,7 +801,7 @@ async function boot() {
   if (!stub && !s.rerankAvailable) warnings.push("重排器没加载 —— 没有 ④ 这道闸（不会退化成拿 θq 去卡余弦）");
   // 加载到了模型却没有 θq，和根本没加载到是两件事，警告要分开说 —— 前者的出路是标定，后者是换模型
   if (!stub && s.rerankAvailable && DEF.thetaQ === null) warnings.push(`重排器加载了，但 (${(s.models ?? {}).rerank} × ${(s.models ?? {}).rerankTarget === "answer" ? "问↔答" : "问↔问"}) 这个组合没标定过 θq —— ④ 因此是关的。中文上已知可用：CE_MODEL=Xenova/bge-reranker-base CE_TARGET=answer`);
-  if (GEN.kind === "stub") warnings.push("生成端是 stub —— 答案是拼接检索到的首个片段，不是真生成，⑥ 的支撑度因此天然偏高，θa 的绝对值在它上面标不准");
+  if (GEN.kind === "stub") warnings.push("生成端是 stub —— 答案是拼接检索到的首个片段，不是真生成，别拿它的输出质量说事");
   if (CALIB.borrowed) warnings.push("阈值是借用的 —— 当前组合没标定过，见上面「标定」那行");
   if ((CALIB.overridden ?? []).length > 0) warnings.push(`阈值被环境变量覆盖：${CALIB.overridden.join("、")}`);
   $("banner").hidden = warnings.length === 0;
@@ -763,7 +841,7 @@ async function boot() {
 
   renderToggles();
   renderState(s);
-  for (const k of ["thetaQ","recallFloor","thetaAHi","thetaALo"]) {
+  for (const k of ["thetaQ","recallFloor"]) {
     // θq 可以是 null（这个组合没标定过 ④）。空框就是 null，不是 0 ——
     // Number("") 是 0，那会变成一道恒放行的假闸
     $(k).value = cfg[k] === null || cfg[k] === undefined ? "" : cfg[k];
@@ -857,16 +935,11 @@ async function ask() {
       return;
     }
     const secs = ((Date.now() - started) / 1000).toFixed(1);
-    // 命中缓存时不调 LLM —— 这个耗时差本身就是缓存在省的东西，值得显式写出来
-    const hit = r.decision !== "regenerate";
+    // 命中时不调 LLM —— 这个耗时差本身就是缓存在省的东西，值得跟判定写在同一行
+    const extra = `${secs}s${slow ? (isHit(r) ? "　没调 LLM" : "　调了一次 LLM") : ""}`;
     out.innerHTML = `
-      <div class="outcome">判定：<b>${DECISION_NAMES[r.decision]}</b>${r.exitedAt ? `　（第 ${r.exitedAt} 道闸拦下）` : ""}${r.entryId ? `　条目 #${esc(String(r.entryId))}` : ""}　<span class="mono" style="color:var(--muted)">${secs}s${slow ? (hit ? "　· 命中，没调 LLM" : "　· 未命中，调了一次 LLM") : ""}</span></div>
-      <div class="legend" style="margin:.6rem 0">
-        <span><i style="background:var(--accent)"></i>放行 / 命中</span>
-        <span><i style="background:var(--bad)"></i>在这里拦下</span>
-        <span><i style="background:var(--warn)"></i>本会拦下，但闸关着</span>
-        <span><i style="background:var(--border-strong)"></i>未启用 / 未命中</span>
-      </div>
+      ${verdictHtml(r, null, extra)}
+      <div class="legend" style="margin:.6rem 0">${LEGEND_HTML}</div>
       ${traceHtml(r)}
       ${answerHtml(r)}`;
     renderState(r.state);

@@ -7,14 +7,12 @@ export interface CacheEntry {
 	readonly matchHash: string;
 	/** PairEncoder 空间 */
 	readonly matchVector: ReadonlyArray<number>;
-	/** 缓存的是文本答案还是工具计划 —— 决定 ⑤⑥ 是否适用 */
+	/** 缓存的是文本答案还是工具计划 —— 决定 ⑤ 是否适用 */
 	readonly kind: "answer" | "plan";
 	/** kind === "plan" 时为空串 */
 	readonly answer: string;
 	/** kind === "plan" 时为空对象 */
 	readonly plan: Readonly<Record<string, string>>;
-	/** RetrievalEncoder 的 **passage** 空间 —— 与检索片段可比。plan 条目为空数组 */
-	readonly answerVector: ReadonlyArray<number>;
 	/** 生成这条答案时引用的资料 id，顺序即重要性，[0] 是首要依据。plan 条目为空 */
 	readonly sourceIds: ReadonlyArray<string>;
 	/** 写入时这些资料的版本指纹。plan 条目为空串 */

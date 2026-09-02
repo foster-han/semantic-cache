@@ -19,7 +19,6 @@ const expectByKey = new Map(SCENARIOS.map(s => [s.key, s.expect]));
 
 const CONFIGS: ReadonlyArray<readonly [string, Partial<LabConfig>]> = [
 	["全闸打开", {}],
-	["关掉 ⑥", { gate6: false }],
 	["关掉 ④", { gate4: false }],
 ];
 

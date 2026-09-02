@@ -19,7 +19,6 @@ import type { LabConfig } from "../types/LabConfig.ts";
 
 const CONFIGS: ReadonlyArray<readonly [string, Partial<LabConfig>]> = [
 	["全闸打开", {}],
-	["关掉 ⑥", { gate6: false }],
 	["关掉 ⑤", { gate5: false }],
 	["关掉 ④", { gate4: false }],
 	["关掉 preAnon", { preAnonRetrieval: false }],

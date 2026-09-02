@@ -91,6 +91,4 @@ export interface CourseCorpus {
 	 * 标定脚本与运行路径引用**同一个函数**，标定与实现从此不可能分叉。
 	 */
 	readonly compose: (chunks: ReadonlyArray<ComposeChunk>) => string;
-	/** 微调时追加的一句。同样跟着语料语言走。 */
-	readonly refineSuffix: (title: string) => string;
 }
